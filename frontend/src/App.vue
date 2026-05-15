@@ -1,0 +1,83 @@
+<script lang="ts" setup>
+import noface from '@/assets/noface.png';
+import { computed, onMounted } from 'vue';
+import router from './router';
+import { useMessagesStore } from './stores/snackbar';
+import { useAuthStore } from './stores/auth';
+
+const auth = useAuthStore();
+const messages = useMessagesStore();
+
+const calculatedPath = computed(() => {
+  console.log('Current route path:', router.currentRoute.value.path.replace('/', ''));
+  return router.currentRoute.value.path.replace('/', '') || 'home';
+});
+
+onMounted(async () => {
+  await auth.checkLoginStatus();
+})
+</script>
+
+<template>
+  <v-app class="rounded rounded-md">
+    <v-navigation-drawer expand-on-hover permanent rail>
+      <v-list :activated="calculatedPath">
+        <v-list-item v-if="!auth.isLogin" :prepend-avatar="noface" subtitle="UID: -" title="Not logged in" />
+        <v-list-item v-else :prepend-avatar="auth.avatarDataUri || noface" :subtitle="`UID: ${auth.uid}`"
+          :title="auth.username" />
+      </v-list>
+      <v-divider />
+      <v-list density="compact" nav activatable :activated="calculatedPath">
+        <v-list-subheader>
+          Uncategorized
+        </v-list-subheader>
+        <v-list-item title="Home" value="home" prepend-icon="mdi-home"
+          @click="router.push('/')" />
+        <v-list-item title="Account" value="account" :class="{
+          'text-red': !auth.isLogin && calculatedPath !== 'account',
+          'text-red-darken-2': !auth.isLogin && calculatedPath === 'account',
+        }" @click="router.push('/account')">
+          <template #prepend>
+            <v-icon v-if="auth.isLogin">mdi-account-check</v-icon>
+            <v-icon v-else>mdi-account-alert</v-icon>
+          </template>
+        </v-list-item>
+        <v-divider />
+        <v-list-subheader>
+          Ticket Area
+        </v-list-subheader>
+        <v-list-item title="Overview" value="ticket-overview" :disabled="!auth.isLogin"
+          @click="router.push('/ticket-overview')" prepend-icon="mdi-eye" />
+        <v-list-item title="Project Lookup" value="ticket-project" :disabled="!auth.isLogin"
+          @click="router.push('/ticket-project')" prepend-icon="mdi-magnify" />
+        <v-list-item title="Scheduler" value="scheduler" :disabled="!auth.isLogin" @click="router.push('/scheduler')"
+          prepend-icon="mdi-calendar-clock" />
+        <v-divider />
+        <v-list-subheader>
+          Settings Area
+        </v-list-subheader>
+        <v-list-item title="Notify" value="notify" @click="router.push('/notify')" prepend-icon="mdi-bell-ring" />
+        <v-list-item title="Update" value="update" @click="router.push('/update')" prepend-icon="mdi-update" />
+      </v-list>
+    </v-navigation-drawer>
+    <v-main>
+      <v-container>
+        <router-view />
+      </v-container>
+    </v-main>
+    <v-snackbar-queue v-model="messages.queue" closable :total-visible="3" collapsed contained
+      display-strategy="overflow" location="bottom center">
+      <template v-slot:actions="{ props }">
+        <v-icon-btn aria-label="Close" icon="mdi-close" size="small" variant="text" v-bind="props"></v-icon-btn>
+      </template>
+    </v-snackbar-queue>
+  </v-app>
+</template>
+
+<style lang="scss">
+.v-container {
+  max-width: 1185px;
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
+</style>

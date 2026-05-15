@@ -1,0 +1,40 @@
+// Helper functions for scheduler types defined in wailsjs/go/models.ts namespace scheduler.
+// Types are imported from models.ts; this file only re-exports helpers.
+
+import type { scheduler, notify } from '../../wailsjs/go/models'
+
+// Re-export for convenience	
+export type FrontendTaskStatus = scheduler.FrontendTaskStatus
+export type FrontendTicket = scheduler.FrontendTicket
+export type LogEntry = scheduler.LogEntry
+export type FrontendNotifyChannel = scheduler.FrontendNotifyChannel
+export type NotifyChannelFieldMeta = notify.NotifyChannelFieldMeta
+export type NotifyChannelTypeMeta = notify.NotifyChannelTypeMeta
+// RunningStat enum values from Go
+export const StatWaiting = 0
+export const StatPending = 1
+export const StatSuccess = 2
+export const StatFailed = 3
+export const StatError = 4
+
+export function statLabel(s: number): string {
+    switch (s) {
+        case StatWaiting: return '等待中'
+        case StatPending: return '执行中'
+        case StatSuccess: return '已成功'
+        case StatFailed: return '已失败'
+        case StatError: return '错误'
+        default: return '未知'
+    }
+}
+
+export function statColor(s: number): string {
+    switch (s) {
+        case StatWaiting: return 'blue'
+        case StatPending: return 'orange'
+        case StatSuccess: return 'green'
+        case StatFailed: return 'grey'
+        case StatError: return 'red'
+        default: return 'grey'
+    }
+}

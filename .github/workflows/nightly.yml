@@ -1,0 +1,184 @@
+name: nightly
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "v2"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [amd64, arm64]
+        platform: [windows, linux]
+        include:
+          - platform: windows
+            arch: amd64
+            os: windows-latest
+            ext: .exe
+            cgo: 0
+          - platform: windows
+            arch: arm64
+            os: windows-11-arm
+            ext: .exe
+            cgo: 0
+          - platform: linux
+            arch: amd64
+            os: ubuntu-24.04
+            ext: ""
+            cgo: 1
+          - platform: linux
+            arch: arm64
+            os: ubuntu-24.04-arm
+            ext: ""
+            cgo: 1
+          - platform: darwin
+            arch: arm64
+            os: macos-14
+            ext: ""
+            cgo: 1
+    runs-on: ${{ matrix.os }}
+    outputs:
+      commit_short: ${{ steps.set_commit.outputs.short }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set commit hash
+        id: set_commit
+        shell: bash
+        run: |
+          SHORT="${GITHUB_SHA:0:7}"
+          echo "short=$SHORT" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.25
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cache apt packages
+        if: matrix.platform == 'linux'
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ matrix.os }}-apt-${{ hashFiles('.github/workflows/nightly.yml') }}
+          restore-keys: |
+            ${{ matrix.os }}-apt-
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build app with Wails
+        shell: bash
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          COMMIT="${{ steps.set_commit.outputs.short }}"
+          BUILD_TAGS="${{ matrix.platform == 'linux' && 'webkit2_41' || '' }}"
+          BUILD_TIME=$(date -u +%Y%m%dT%H%M%S)
+          if [ -n "$BUILD_TAGS" ]; then
+            wails build -clean -nopackage -tags "$BUILD_TAGS" -ldflags "-X bilibili-ticket-golang/global.GitCommit=${COMMIT} -X bilibili-ticket-golang/global.BuildTime=${BUILD_TIME}"
+          else
+            wails build -clean -nopackage -ldflags "-X bilibili-ticket-golang/global.GitCommit=${COMMIT} -X bilibili-ticket-golang/global.BuildTime=${BUILD_TIME}"
+          fi
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          COMMIT="${{ steps.set_commit.outputs.short }}"
+          mkdir -p release
+          BIN_NAME="bilibili-ticket-golang"
+          SOURCE_FILE="build/bin/${BIN_NAME}${{ matrix.ext }}"
+          TARGET_BASE="${BIN_NAME}_${{ matrix.platform }}_${{ matrix.arch }}_${COMMIT}"
+          cp "$SOURCE_FILE" "release/${BIN_NAME}${{ matrix.ext }}"
+          tar -C release -czf "release/${TARGET_BASE}.tar.gz" "${BIN_NAME}${{ matrix.ext }}"
+          rm -f "release/${BIN_NAME}${{ matrix.ext }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set commit hash
+        id: set_commit
+        shell: bash
+        run: |
+          SHORT="${GITHUB_SHA:0:7}"
+          echo "short=$SHORT" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Flatten artifact tree
+        run: |
+          find release-assets -type f -name '*.tar.gz' -exec cp {} release-assets/ \;
+
+      - name: Generate checksums
+        run: |
+          COMMIT="${{ steps.set_commit.outputs.short }}"
+          cd release-assets
+          sha256sum *.tar.gz > "checksums_${COMMIT}.txt"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: "${{ secrets.GITHUB_TOKEN }}"
+          tag_name: "${{ steps.set_commit.outputs.short }}"
+          name: "Build ${{ steps.set_commit.outputs.short }}"
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/*.tar.gz
+            release-assets/checksums_*.txt
+
+      - name: Cleanup old releases (keep latest 10)
+        shell: bash
+        run: |
+          RELEASES=$(gh release list --repo "${{ github.repository }}" --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName')
+          COUNT=0
+          for TAG in $RELEASES; do
+            COUNT=$((COUNT + 1))
+            if [ $COUNT -gt 10 ]; then
+              echo "Deleting old release: $TAG"
+              gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag
+            fi
+          done
+        env:
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
