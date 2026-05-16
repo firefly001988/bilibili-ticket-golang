@@ -1,12 +1,15 @@
 <script lang="ts" setup>
 import noface from '@/assets/noface.png';
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import router from './router';
 import { useMessagesStore } from './stores/snackbar';
 import { useAuthStore } from './stores/auth';
+import VerifiedOverlay from './components/VerifiedOverlay.vue';
 
 const auth = useAuthStore();
 const messages = useMessagesStore();
+
+const verified = ref(false)
 
 const calculatedPath = computed(() => {
   console.log('Current route path:', router.currentRoute.value.path.replace('/', ''));
@@ -19,7 +22,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <v-app class="rounded rounded-md">
+  <VerifiedOverlay @verified="verified = true" />
+  <v-app v-if="verified" class="rounded rounded-md">
     <v-navigation-drawer expand-on-hover permanent rail>
       <v-list :activated="calculatedPath">
         <v-list-item v-if="!auth.isLogin" :prepend-avatar="noface" subtitle="UID: -" title="Not logged in" />
@@ -31,8 +35,7 @@ onMounted(async () => {
         <v-list-subheader>
           Uncategorized
         </v-list-subheader>
-        <v-list-item title="Home" value="home" prepend-icon="mdi-home"
-          @click="router.push('/')" />
+        <v-list-item title="Home" value="home" prepend-icon="mdi-home" @click="router.push('/')" />
         <v-list-item title="Account" value="account" :class="{
           'text-red': !auth.isLogin && calculatedPath !== 'account',
           'text-red-darken-2': !auth.isLogin && calculatedPath === 'account',
@@ -42,7 +45,7 @@ onMounted(async () => {
             <v-icon v-else>mdi-account-alert</v-icon>
           </template>
         </v-list-item>
-        <v-divider />
+        <v-divider class="mt-1" />
         <v-list-subheader>
           Ticket Area
         </v-list-subheader>
@@ -52,7 +55,7 @@ onMounted(async () => {
           @click="router.push('/ticket-project')" prepend-icon="mdi-magnify" />
         <v-list-item title="Scheduler" value="scheduler" :disabled="!auth.isLogin" @click="router.push('/scheduler')"
           prepend-icon="mdi-calendar-clock" />
-        <v-divider />
+        <v-divider class="mt-1" />
         <v-list-subheader>
           Settings Area
         </v-list-subheader>

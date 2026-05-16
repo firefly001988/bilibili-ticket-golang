@@ -1,9 +1,59 @@
 <template>
   <div class="index">
-    <h1>Welcome to Bilibili Ticket System</h1>
-    <p>This is the home page.</p>
+    <!-- ── Header ─────────────────────────────────────── -->
+    <div class="d-flex align-center mb-4">
+      <div>
+        <h1 class="text-h4 font-weight-bold">Bilibili Ticket System</h1>
+      </div>
+      <v-spacer />
+      <!-- Mirror selector (shown on error) -->
+      <v-select v-if="error && mirrorOptions.length > 1" :model-value="activeMirrorIndex" :items="mirrorOptions"
+        item-title="title" item-value="value" label="切换镜像" variant="outlined" density="compact" hide-details
+        style="max-width: 180px;" class="mr-2" @update:model-value="switchMirror" />
+      <!-- Refresh button -->
+      <v-btn icon="mdi-refresh" variant="text" size="small" :loading="loading" @click="refresh()" />
+    </div>
+
+    <v-divider class="mb-6" />
+
+    <!-- ── Network error banner ──────────────────────── -->
+    <v-alert v-if="error" type="warning" variant="tonal" class="mb-4">
+      公告获取失败：{{ error }}。已显示上次缓存的内容，可尝试切换镜像重试。
+    </v-alert>
+
+    <!-- ── Loading skeleton ─────────────────────────── -->
+    <v-row v-if="loading && announcements.length === 0">
+      <v-col v-for="n in 3" :key="n" cols="12" sm="6" lg="4">
+        <v-skeleton-loader type="card" />
+      </v-col>
+    </v-row>
+
+    <!-- ── Announcement waterfall ─────────────────────── -->
+    <v-row v-if="announcements.length > 0">
+      <v-col v-for="ann in announcements" :key="ann.timestamp" cols="12" sm="6" lg="4">
+        <v-slide-y-transition>
+          <AnnouncementCard :announcement="ann" />
+        </v-slide-y-transition>
+      </v-col>
+    </v-row>
+
+    <!-- ── Empty state ────────────────────────────────── -->
+    <v-card v-if="!loading && !error && announcements.length === 0" variant="outlined" class="pa-8 text-center"
+      rounded="lg">
+      <v-icon icon="mdi-check-circle" size="48" color="success" class="mb-3" />
+      <p class="text-body-1 text-medium-emphasis">暂无公告，一切正常 🎉</p>
+    </v-card>
   </div>
 </template>
 
 <script lang="ts" setup>
+import { onMounted } from 'vue'
+import AnnouncementCard from '@/components/AnnouncementFloatingCard.vue'
+import { useAnnouncements } from '@/composables/useAnnouncements'
+
+const { announcements, refresh, loading, error, mirrorOptions, activeMirrorIndex, switchMirror } = useAnnouncements()
+
+onMounted(() => {
+  refresh()
+})
 </script>

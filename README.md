@@ -1,8 +1,40 @@
 # Bilibili-ticket-golang
-A Go library for interacting with Bilibili's ticketing system, providing functionalities such as fetching event details, managing user accounts, and handling ticket purchases. This library is designed to simplify the process of integrating Bilibili's ticketing services into Go applications, making it easier for developers to create applications that can interact with Bilibili's platform effectively.
-## Features
-- Fetch event details and ticket information from Bilibili.
-- Manage user accounts and authentication.
-- Handle ticket purchases and order management.
-## Contact
-Note: This project is open-source and contributions are welcome. If you have any questions or suggestions, please feel free to contact the maintainer or submit an issue on GitHub.
+
+又一个 Bilibili 会员购抢票辅助工具。
+
+基于 [Wails v2](https://wails.io/) 构建的跨平台桌面应用，使用 Go 后端 + Vue/Vuetify 前端，提供账号管理、场次查询、定时抢票、多渠道消息通知等功能。
+
+## 功能特性
+
+- **账号管理** — 支持扫码登录, Cookie 持久化与自动刷新
+- **场次查询** — 查看项目详情、票价、场次、实名制要求等信息
+- **定时抢票** — 基于 NTP 对时的精确定时任务，支持多任务并发执行
+- **通知推送** — 支持 Bark、Gotify、PushPlus 三种通知渠道，可同时启用多个
+- **设备指纹** — 模拟 Android 设备环境，包含 WBI 签名、RSA 加密等风控绕过机制
+- **任务日志** — 完整的抢票日志记录与可视化查看
+
+## 免责声明
+
+1. **本软件仅供学习、研究与技术交流使用**，不得用于任何商业用途。
+2. **禁止利用本软件从事任何违法违规行为**，包括但不限于黄牛倒票、扰乱票务秩序、非法获取他人信息等。
+3. 使用本软件造成的任何后果（包括但不限于账号封禁、财产损失、法律纠纷）由用户自行承担，开发者不承担任何责任。
+4. 您应当遵守所在国家或地区的法律法规，若在使用本软件时出现与相关法律法规冲突的行为，请立即停止使用。
+5. **请尊重 Bilibili 平台的正常运营秩序**，合理使用本工具，勿进行高频率、大批量的恶意请求，避免对平台服务器造成不必要的负担。
+6. 如有任何内容涉嫌侵权、违反法律法规或不适宜公开，请及时通过 Issue 或邮箱联系我们，我们将在收到通知后第一时间处理或下架相关内容。
+
+## 平台尊重声明
+
+本项目开发者充分尊重 **Bilibili** 平台及其「会员购」票务系统的运营规则与商业权益。
+
+- 本工具并非用于破坏平台秩序或进行商业化黄牛行为，初衷在于帮助普通用户在遵守平台规则的前提下，提升手动购票的成功率。
+- 我们坚决反对利用技术手段进行恶意抢票、囤票、高价倒卖等损害平台与广大用户利益的行为。
+- 若 Bilibili 官方认为本项目对平台运营造成了不良影响，请通过以下联系方式告知，我们愿意配合进行整改或下架。
+- 请使用者自觉遵守 Bilibili 用户协议及相关规定，共同维护公平、健康的票务环境。
+
+## 联系方式
+
+- 作者: firefly
+- 邮箱: firefly0019@proton.me
+- Telegram: [@It's bili-ticket-go!!!!!](https://t.me/+M1zqAAGhWA1mZDJh)
+
+欢迎提交 Issue 或 Pull Request 参与贡献。

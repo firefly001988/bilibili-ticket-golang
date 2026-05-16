@@ -16,6 +16,8 @@ import { createApp } from 'vue'
 
 // Styles
 import 'unfonts.css'
+import 'markstream-vue/index.css'
+
 import router from './router'
 
 const app = createApp(App)

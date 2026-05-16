@@ -2,11 +2,13 @@ package scheduler
 
 import (
 	"bilibili-ticket-golang/biliutils"
+	"bilibili-ticket-golang/biliutils/clock"
 	"bilibili-ticket-golang/biliutils/notify"
 	"bilibili-ticket-golang/biliutils/token"
 	"bilibili-ticket-golang/global"
 	r "bilibili-ticket-golang/models/bili/response"
 	"bilibili-ticket-golang/store/configuration"
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -74,6 +76,9 @@ type SchedulerService struct {
 	notifier     *notify.MultiNotifier
 	notifyChData *configuration.NotifyChannelData
 	store        *configuration.DataStorage // for persisting notify channel changes
+
+	calibCtx    context.Context
+	calibCancel context.CancelFunc
 }
 
 // NewSchedulerService creates a new SchedulerService.
@@ -468,5 +473,71 @@ func (svc *SchedulerService) persistNotify() {
 	}
 	if err := svc.store.Save(); err != nil {
 		println("Failed to persist notify channels:", err.Error())
+	}
+}
+
+// ── Clock calibration ────────────────────────────────────────────────────
+
+const clockCalibrationInterval = 10 * time.Second
+
+// StartClockCalibration begins a background goroutine that periodically
+// calibrates the scheduler's global time offset against Bilibili's server
+// clock (with NTP fallback). Calibration runs every 10 seconds while there
+// are active tasks.
+func (svc *SchedulerService) StartClockCalibration() {
+	svc.calibCtx, svc.calibCancel = context.WithCancel(context.Background())
+
+	// Calibrate immediately at startup
+	svc.calibrateOnce()
+
+	go func() {
+		ticker := time.NewTicker(clockCalibrationInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-svc.calibCtx.Done():
+				return
+			case <-ticker.C:
+				svc.calibrateOnce()
+			}
+		}
+	}()
+}
+
+// StopClockCalibration stops the background clock calibration goroutine.
+func (svc *SchedulerService) StopClockCalibration() {
+	if svc.calibCancel != nil {
+		svc.calibCancel()
+	}
+}
+
+// calibrateOnce performs a single clock offset measurement and updates
+// the scheduler. Skips the update if no tasks are present.
+func (svc *SchedulerService) calibrateOnce() {
+	// Only calibrate when there are tasks to avoid unnecessary API calls
+	if svc.scheduler.GetTaskCount() == 0 {
+		return
+	}
+
+	// Try Bilibili live API first (most accurate for ticket timing)
+	offset, err := clock.GetBilibiliClockOffset()
+	if err != nil {
+		// Fallback to NTP (ntp.aliyun.com)
+		offset, err = clock.GetNTPClockOffset("ntp.aliyun.com")
+		if err != nil {
+			println("[clock] calibration failed:", err.Error())
+			return
+		}
+		println("[clock] NTP offset:", offset)
+	} else {
+		println("[clock] Bilibili offset:", offset)
+	}
+
+	oldOffset := svc.scheduler.GetGlobalOffset()
+	svc.scheduler.SetGlobalOffset(offset)
+
+	if global.Debug {
+		fmt.Printf("[clock] offset updated: %v → %v (Δ%v)\n", oldOffset, offset, offset-oldOffset)
 	}
 }

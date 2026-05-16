@@ -2,32 +2,26 @@
 import { ref, onMounted, computed } from 'vue'
 import { CheckForUpdate } from '../../wailsjs/go/biliutils/BiliClient'
 import type { githubutils } from '../../wailsjs/go/models'
+import { mirrorSelectOptionsByPrefix, MIRROR_KEYS } from '@/composables/mirrors'
 
 const info = ref<githubutils.UpdateInfo | null>(null)
 const loading = ref(false)
 const error = ref('')
 
-// ── Mirror sources ─────────────────────────────────────
-const mirrorOptions = [
-    { title: 'GitHub (直连)', value: '' },
-    { title: 'gh-proxy.com', value: 'https://gh-proxy.com/' },
-    { title: 'gh.ddlc.top', value: 'https://gh.ddlc.top/' },
-    { title: 'ghproxy.net', value: 'https://ghproxy.net/' },
-]
+// ── Mirror sources (from shared config) ─────────────────
+const mirrorOptions = mirrorSelectOptionsByPrefix()
 const selectedMirror = ref(mirrorOptions[0].value)
-
-const MIRROR_KEY = 'update.mirrorSource'
 
 // Persist mirror choice in localStorage
 function loadMirror() {
-    const saved = localStorage.getItem(MIRROR_KEY)
+    const saved = localStorage.getItem(MIRROR_KEYS.update)
     if (saved && mirrorOptions.some(m => m.value === saved)) {
         selectedMirror.value = saved
     }
 }
 function saveMirror(v: string) {
     selectedMirror.value = v
-    localStorage.setItem(MIRROR_KEY, v)
+    localStorage.setItem(MIRROR_KEYS.update, v)
 }
 
 const mirrorPrefix = computed(() => selectedMirror.value || '')

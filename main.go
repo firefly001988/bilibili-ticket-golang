@@ -91,13 +91,20 @@ func main() {
 	// Scheduler service — orchestrates tasks, BiliClient, LogBroker and ticket storage
 	schedSvc := scheduler.NewSchedulerService(c, logBroker, store.TicketData, notifier, store.NotifyChData, store)
 
+	// App instance for frontend verification & misc utilities
+	app := NewAppWithClient(c)
+
 	defer func() {
+		schedSvc.StopClockCalibration()
 		c.PersistCookies()
 		logBroker.FlushLogs()
 	}()
 
 	// Auto-restart persisted tasks on launch (DefaultIntervalMs)
 	schedSvc.ReloadTickets(global.DefaultIntervalMs)
+
+	// Start periodic clock calibration against Bilibili server (every 10s)
+	schedSvc.StartClockCalibration()
 
 	// Keep tickets persisted on change
 	store.TicketData.SetChangeCallback(func(_ *configuration.TicketData, _ configuration.TicketEntry) {
@@ -119,6 +126,7 @@ func main() {
 			logBroker.SetContext(ctx)
 		},
 		Bind: []interface{}{
+			app,
 			c,
 			logBroker,
 			schedSvc,
