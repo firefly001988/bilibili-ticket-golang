@@ -57,6 +57,12 @@ onMounted(async () => {
           prepend-icon="mdi-calendar-clock" />
         <v-divider class="mt-1" />
         <v-list-subheader>
+          Plugin Area
+        </v-list-subheader>
+        <v-list-item title="Plugin Download" value="plugins" @click="router.push('/plugins')"
+          prepend-icon="mdi-puzzle" />
+        <v-divider class="mt-1" />
+        <v-list-subheader>
           Settings Area
         </v-list-subheader>
         <v-list-item title="Notify" value="notify" @click="router.push('/notify')" prepend-icon="mdi-bell-ring" />

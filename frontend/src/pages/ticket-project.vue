@@ -130,12 +130,7 @@ async function fetchBuyers() {
     if (!selectedTicket.value || !projectInfo.value) return;
     fetchingBuyers.value = true;
     try {
-        const buyers = await FetchRealNameBuyers(
-            projectInfo.value.ProjectID,
-            selectedTicket.value.skuId,
-            selectedTicket.value.screenId,
-            projectInfo.value.IsHotProject,
-        );
+        const buyers = await FetchRealNameBuyers();
         buyerList.value = buyers || [];
         debugLog('[fetchBuyers] result:', buyers);
         if (buyerList.value.length === 0) {

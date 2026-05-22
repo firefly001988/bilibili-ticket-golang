@@ -49,4 +49,6 @@ export const MIRROR_KEYS = {
     announcement: 'announcement.mirrorIndex',
     /** Currently active mirror for update download page. */
     update: 'update.mirrorSource',
+    /** Currently active mirror for plugin download page. */
+    plugin: 'plugin.mirrorSource',
 } as const

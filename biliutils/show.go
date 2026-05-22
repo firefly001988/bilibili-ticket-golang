@@ -210,3 +210,32 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 
 	return nil, apiResp.GetCode(), apiResp.GetMessage(), apiResp.Data
 }
+
+// GetRealnameBuyerList fetches the list of buyers for a real-name project, which includes sensitive info like ID numbers.
+// Parameters: none
+//
+// Returns: error and list of buyers with non-sensitive info (ID number is not included)
+func (c *BiliClient) GetRealnameBuyerList() (error, []api.BuyerNoSensitiveStruct) {
+	query := c.SignAppParams(map[string]any{
+		"actionKey":   "appkey",
+		"mobi_app":    "android",
+		"build":       c.appVersion.Build,
+		"mallVersion": c.appVersion.Build,
+		"device":      "phone",
+		"c_locale":    "zh-Hans_CN",
+		"s_locale":    "zh-Hans_CN",
+	})
+	res, err := c.client.R().SetQueryString(query.Encode()).Get("https://show.bilibili.com/api/ticket/buyerinfo/list")
+	if err != nil {
+		return err, nil
+	}
+	var data api.ShowApiDataRoot[api.BuyerNoSensitiveInfoApiStruct]
+	err = res.Unmarshal(&data)
+	if err != nil {
+		return err, nil
+	}
+	if err = data.CheckValid(); err != nil {
+		return err, nil
+	}
+	return nil, data.Data.Vo.List
+}

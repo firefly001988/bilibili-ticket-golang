@@ -51,6 +51,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/plugins': RouteRecordInfo<
+      '/plugins',
+      '/plugins',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/scheduler': RouteRecordInfo<
       '/scheduler',
       '/scheduler',
@@ -107,6 +114,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/notify.vue': {
       routes:
         | '/notify'
+      views:
+        | never
+    }
+    'src/pages/plugins.vue': {
+      routes:
+        | '/plugins'
       views:
         | never
     }

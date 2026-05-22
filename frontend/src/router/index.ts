@@ -15,6 +15,7 @@ const routes = [
   { path: '/scheduler', component: () => import('@/pages/scheduler.vue'), id: 'scheduler' },
   { path: '/notify', component: () => import('@/pages/notify.vue'), id: 'notify' },
   { path: '/update', component: () => import('@/pages/update.vue'), id: 'update' },
+  { path: '/plugins', component: () => import('@/pages/plugins.vue'), id: 'plugins' },
 ]
 
 const router = createRouter({

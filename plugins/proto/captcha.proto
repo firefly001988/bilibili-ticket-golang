@@ -1,0 +1,168 @@
+syntax = "proto3";
+
+package captcha;
+
+option go_package = "./plugins/captcha";
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+// CaptchaType mirrors captcha.CaptchaType (SlideType / ClickType / UnknownType).
+enum CaptchaType {
+  UNKNOWN = 0;
+  SLIDE = 1;
+  CLICK = 2;
+}
+
+// =============================================================================
+// Shared data structures (matching old/captcha/geetest.go)
+// =============================================================================
+
+// GeetestCS holds the C/S data returned by GetCS.
+// Corresponds to: type GeetestCS struct { s string; c []byte }
+message GeetestCS {
+  string s = 1;
+  bytes c = 2;
+}
+
+// NewCSArgs bundles the arguments needed for CalculateKey / GenerateW.
+// Corresponds to: type NewCSArgs struct { c, s, s1, s2, s3, s4 }
+message NewCSArgs {
+  bytes c = 1;
+  string s = 2;
+  string new_challenge = 3;   // s1 – the new challenge string
+  string full_bg_url = 4;     // s2 – full background image URL
+  string miss_bg_url = 5;     // s3 – missing background image URL
+  string slider_url = 6;      // s4 – slider image URL
+}
+
+// =============================================================================
+// SolveGeetestCaptcha – full pipeline (matches Click.Solve / Slide.Solve)
+// =============================================================================
+
+message SolveGeetestCaptchaRequest {
+  string gt = 1;
+  string challenge = 2;
+}
+
+message SolveGeetestCaptchaResponse {
+  bool success = 1;
+  string validate = 2;        // the final validate string on success
+  string error = 3;           // error message on failure
+}
+
+// =============================================================================
+// GetCS
+// =============================================================================
+
+message GetCSRequest {
+  string gt = 1;
+  string challenge = 2;
+  string w = 3;               // optional; empty string means nil
+}
+
+message GetCSResponse {
+  bool success = 1;
+  GeetestCS cs = 2;
+  string error = 3;
+}
+
+// =============================================================================
+// GetType
+// =============================================================================
+
+message GetTypeRequest {
+  string gt = 1;
+  string challenge = 2;
+  string w = 3;               // optional
+}
+
+message GetTypeResponse {
+  bool success = 1;
+  CaptchaType type = 2;
+  string error = 3;
+}
+
+// =============================================================================
+// GetNewCSArgs
+// =============================================================================
+
+message GetNewCSArgsRequest {
+  string gt = 1;
+  string challenge = 2;
+}
+
+message GetNewCSArgsResponse {
+  bool success = 1;
+  NewCSArgs args = 2;
+  string error = 3;
+}
+
+// =============================================================================
+// CalculateKey
+// =============================================================================
+
+message CalculateKeyRequest {
+  string gt = 1;
+  string challenge = 2;
+  NewCSArgs args = 3;
+}
+
+message CalculateKeyResponse {
+  bool success = 1;
+  string key = 2;
+  string error = 3;
+}
+
+// =============================================================================
+// GenerateW
+// =============================================================================
+
+message GenerateWRequest {
+  string gt = 1;
+  string challenge = 2;
+  string key = 3;
+  NewCSArgs args = 4;
+}
+
+message GenerateWResponse {
+  bool success = 1;
+  string w = 2;
+  string error = 3;
+}
+
+// =============================================================================
+// Verify
+// =============================================================================
+
+message VerifyRequest {
+  string gt = 1;
+  string challenge = 2;
+  string w = 3;
+}
+
+message VerifyResponse {
+  bool success = 1;
+  string validate = 2;
+  string error = 3;
+}
+
+// =============================================================================
+// gRPC Service
+// =============================================================================
+
+// CaptchaService exposes both the high-level Solve pipeline and each
+// fine-grained step, matching the Click / Slide API from old/captcha/geetest.go.
+service CaptchaService {
+  // Solve runs the full pipeline: GetCS → GetType → GetNewCSArgs → CalculateKey → GenerateW → Verify.
+  rpc Solve(SolveGeetestCaptchaRequest) returns (SolveGeetestCaptchaResponse);
+
+  // Individual steps for callers that need fine-grained control.
+  rpc GetCS(GetCSRequest) returns (GetCSResponse);
+  rpc GetType(GetTypeRequest) returns (GetTypeResponse);
+  rpc GetNewCSArgs(GetNewCSArgsRequest) returns (GetNewCSArgsResponse);
+  rpc CalculateKey(CalculateKeyRequest) returns (CalculateKeyResponse);
+  rpc GenerateW(GenerateWRequest) returns (GenerateWResponse);
+  rpc Verify(VerifyRequest) returns (VerifyResponse);
+}

@@ -1,0 +1,3 @@
+[submodule "ticker_workspace"]
+	path = ticker_workspace
+	url = https://github.com/firefly001988/biliTicker_gt

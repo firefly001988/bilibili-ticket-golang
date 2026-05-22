@@ -4,7 +4,6 @@ import (
 	"bilibili-ticket-golang/biliutils"
 	"bilibili-ticket-golang/biliutils/clock"
 	"bilibili-ticket-golang/biliutils/notify"
-	"bilibili-ticket-golang/biliutils/token"
 	"bilibili-ticket-golang/global"
 	r "bilibili-ticket-golang/models/bili/response"
 	"bilibili-ticket-golang/store/configuration"
@@ -298,40 +297,19 @@ func (svc *SchedulerService) ReloadTickets(intervalMs int) {
 // FetchRealNameBuyers obtains the real-name buyer list for a given project/sku/screen.
 // Returns a list of verified buyers the user can choose from.
 // Works for both hot and normal projects.
-func (svc *SchedulerService) FetchRealNameBuyers(projectID string, skuID int64, screenID int64, isHot bool) ([]FrontendBuyer, error) {
-	// Build a temporary TicketSkuScreenID for token generation
-	ticket := r.TicketSkuScreenID{
-		SkuID:    skuID,
-		ScreenID: screenID,
-	}
-
-	// Choose token generator
-	var tokenGen token.Generator
-	if isHot {
-		tokenGen = token.NewCTokenGenerator()
-	} else {
-		tokenGen = token.NewNormalTokenGenerator()
-	}
-
-	// Get tokens
-	tokens, err := svc.client.GetRequestTokenAndPToken(tokenGen, projectID, ticket)
-	if err != nil {
-		return nil, fmt.Errorf("获取下单 Token 失败: %w", err)
-	}
-
-	// Get confirm info (includes buyer list)
-	confirm, err := svc.client.GetConfirmInformation(tokens, projectID)
+func (svc *SchedulerService) FetchRealNameBuyers() ([]FrontendBuyer, error) {
+	err, buyers := svc.client.GetRealnameBuyerList()
 	if err != nil {
 		return nil, fmt.Errorf("获取实名信息失败: %w", err)
 	}
 
-	result := make([]FrontendBuyer, len(confirm.BuyerList.List))
-	for i, b := range confirm.BuyerList.List {
+	result := make([]FrontendBuyer, len(buyers))
+	for i, b := range buyers {
 		result[i] = FrontendBuyer{
 			ID:         b.Id,
 			Name:       b.Name,
 			Tel:        b.Tel,
-			PersonalID: b.PersonalId,
+			PersonalID: b.IdCard,
 			IDType:     b.IdType,
 		}
 	}
@@ -478,7 +456,7 @@ func (svc *SchedulerService) persistNotify() {
 
 // ── Clock calibration ────────────────────────────────────────────────────
 
-const clockCalibrationInterval = 10 * time.Second
+const clockCalibrationInterval = 120 * time.Second
 
 // StartClockCalibration begins a background goroutine that periodically
 // calibrates the scheduler's global time offset against Bilibili's server
