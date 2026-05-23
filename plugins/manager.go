@@ -17,11 +17,6 @@ import (
 	"github.com/hashicorp/go-plugin"
 )
 
-var windowsProcAttr = &syscall.SysProcAttr{
-	HideWindow:    true,
-	CreationFlags: 0x08000000,
-}
-
 // timestampWriter prepends a timestamp to each line written.
 type timestampWriter struct {
 	w   io.Writer
