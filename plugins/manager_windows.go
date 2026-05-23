@@ -1,6 +1,6 @@
 //go:build windows
 
-package plugin
+package plugins
 
 import "syscall"
 
