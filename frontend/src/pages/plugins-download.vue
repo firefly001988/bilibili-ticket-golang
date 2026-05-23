@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed } from 'vue'
-import { GetAvailablePlugins, FetchPluginList } from '../../wailsjs/go/biliutils/BiliClient'
+import { GetAvailablePlugins, FetchPluginListByName } from '../../wailsjs/go/biliutils/BiliClient'
 import type { plugins } from '../../wailsjs/go/models'
 import { mirrorSelectOptionsByPrefix, MIRROR_KEYS } from '@/composables/mirrors'
 
@@ -16,7 +16,9 @@ type PluginListResult = plugins.PluginListResult
 
 const result = ref<PluginListResult | null>(null)
 const definitions = ref<PluginDefinition[]>([])
-const loading = ref(false)
+const selectedPlugin = ref('')
+const loadingDefs = ref(false)
+const loadingReleases = ref(false)
 const error = ref('')
 
 // ── Mirror sources (from shared config) ─────────────────
@@ -46,23 +48,45 @@ function mirrorUrl(url: string): string {
 // Data loading
 // =============================================================================
 
-async function fetchList() {
-    loading.value = true
+async function fetchDefinitions() {
+    loadingDefs.value = true
     error.value = ''
     try {
-        const [defs, releases] = await Promise.all([
-            GetAvailablePlugins(),
-            FetchPluginList(),
-        ])
+        const defs = await GetAvailablePlugins()
         console.log('Fetched plugin definitions:', defs)
-        console.log('Fetched plugin releases:', releases)
         definitions.value = defs ?? []
+    } catch (e: any) {
+        error.value = String(e)
+    } finally {
+        loadingDefs.value = false
+    }
+}
+
+async function fetchReleases(name: string) {
+    if (!name) return
+    loadingReleases.value = true
+    error.value = ''
+    result.value = null
+    try {
+        const releases = await FetchPluginListByName(name)
+        console.log('Fetched plugin releases:', releases)
         result.value = releases
     } catch (e: any) {
         error.value = String(e)
     } finally {
-        loading.value = false
+        loadingReleases.value = false
     }
+}
+
+function selectPlugin(name: string) {
+    if (selectedPlugin.value === name) {
+        // deselect
+        selectedPlugin.value = ''
+        result.value = null
+        return
+    }
+    selectedPlugin.value = name
+    fetchReleases(name)
 }
 
 // =============================================================================
@@ -81,19 +105,13 @@ function formatDate(rfc3339: string): string {
     return new Date(rfc3339).toLocaleString('zh-CN')
 }
 
-/** Total download size of all assets in a release. */
-function totalSize(assets: PluginAsset[]): string {
-    const sum = assets.reduce((acc, a) => acc + (a.size || 0), 0)
-    return formatSize(sum)
-}
-
 // =============================================================================
 // Lifecycle
 // =============================================================================
 
 onMounted(() => {
     loadMirror()
-    fetchList()
+    fetchDefinitions()
 })
 </script>
 
@@ -106,21 +124,44 @@ onMounted(() => {
             <v-select v-model="selectedMirror" :items="mirrorOptions" item-title="title" item-value="value"
                 label="下载加速源" variant="outlined" density="compact" hide-details style="max-width: 200px" class="mr-2"
                 @update:model-value="(v: string) => saveMirror(v as string)" />
-            <v-btn prepend-icon="mdi-refresh" variant="tonal" size="default" :loading="loading" @click="fetchList">
-                刷新列表
-            </v-btn>
         </div>
         <v-divider thickness="3" class="mb-4" />
 
-        <!-- Available plugin definitions -->
-        <v-card v-if="definitions && definitions.length > 0" variant="outlined" class="pa-3 mb-4">
-            <div class="text-body-2 font-weight-bold mb-2">可用插件 ({{ definitions.length }})</div>
-            <div class="d-flex flex-wrap ga-2">
-                <v-chip v-for="def in definitions" :key="def.name" variant="tonal" size="small">
-                    <v-icon start size="16">mdi-puzzle</v-icon>
-                    {{ def.name }}
-                    <span class="ml-1 text-grey text-caption">{{ def.source }}</span>
-                </v-chip>
+        <!-- Available plugin definitions – selectable -->
+        <v-card variant="outlined" class="pa-3 mb-4">
+            <div class="d-flex align-center mb-3">
+                <v-icon start size="20" color="primary">mdi-puzzle</v-icon>
+                <span class="text-body-2 font-weight-bold">选择要下载的插件 ({{ definitions.length }})</span>
+                <v-spacer />
+                <v-progress-circular v-if="loadingDefs" indeterminate size="16" width="2" color="primary" />
+            </div>
+
+            <v-row v-if="definitions.length > 0" dense>
+                <v-col v-for="def in definitions" :key="def.name" cols="12" sm="6" md="4">
+                    <v-card :variant="selectedPlugin === def.name ? 'elevated' : 'outlined'"
+                        :color="selectedPlugin === def.name ? 'primary' : undefined" class="cursor-pointer plugin-card"
+                        :class="{ 'selected': selectedPlugin === def.name }" @click="selectPlugin(def.name)">
+                        <v-card-item>
+                            <template #title>
+                                <div style="align-items: center; display: flex;">
+                                    <v-icon start size="18" :color="selectedPlugin === def.name ? 'white' : 'primary'">
+                                        {{ selectedPlugin === def.name ? 'mdi-check-circle' : 'mdi-puzzle-outline' }}
+                                    </v-icon>
+                                    <span :class="selectedPlugin === def.name ? 'text-white' : ''">{{ def.name }}</span>
+                                </div>
+                            </template>
+                            <template #subtitle>
+                                <span :class="selectedPlugin === def.name ? 'text-white' : 'text-grey'">
+                                    {{ def.description }}
+                                </span>
+                            </template>
+                        </v-card-item>
+                    </v-card>
+                </v-col>
+            </v-row>
+
+            <div v-else-if="!loadingDefs" class="text-body-2 text-grey pa-3 text-center">
+                暂无可用的插件定义
             </div>
         </v-card>
 
@@ -129,21 +170,38 @@ onMounted(() => {
             <v-card-text>{{ error }}</v-card-text>
         </v-card>
 
-        <!-- Loading -->
-        <v-card v-if="loading && !result" variant="outlined" class="pa-6 text-center">
+        <!-- Prompt to select a plugin -->
+        <v-card v-if="!selectedPlugin && !loadingReleases && !result" variant="outlined" class="pa-6 text-center">
+            <v-icon size="48" color="grey" class="mb-2">mdi-arrow-up-bold</v-icon>
+            <div class="text-body-1 text-grey">请先选择上方插件以查看版本列表</div>
+        </v-card>
+
+        <!-- Loading releases -->
+        <v-card v-if="loadingReleases" variant="outlined" class="pa-6 text-center">
             <v-progress-circular indeterminate color="primary" class="mb-2" />
-            <div class="text-body-2 text-grey">正在获取插件列表...</div>
+            <div class="text-body-2 text-grey">正在获取 {{ selectedPlugin }} 的版本列表...</div>
         </v-card>
 
-        <!-- Empty -->
-        <v-card v-if="result && (!result.plugins || result.plugins.length === 0) && !result.error" variant="outlined"
-            class="pa-6 text-center">
+        <!-- Empty releases -->
+        <v-card v-if="result && (!result.plugins || result.plugins.length === 0) && !result.error && !loadingReleases"
+            variant="outlined" class="pa-6 text-center">
             <v-icon size="48" color="grey" class="mb-2">mdi-package-variant-closed</v-icon>
-            <div class="text-body-1 text-grey">暂无可用插件</div>
+            <div class="text-body-1 text-grey">暂无可用版本</div>
         </v-card>
 
-        <!-- Plugin list -->
+        <!-- Plugin version list -->
         <div v-if="result?.plugins?.length">
+            <div class="d-flex align-center mb-2">
+                <span class="text-body-2 text-grey">
+                    {{ selectedPlugin }} 共 {{ result.plugins.length }} 个版本
+                </span>
+                <v-spacer />
+                <v-btn variant="text" size="small" prepend-icon="mdi-refresh" :loading="loadingReleases"
+                    @click="fetchReleases(selectedPlugin)">
+                    刷新版本
+                </v-btn>
+            </div>
+
             <v-card v-for="(plugin, i) in result.plugins" :key="plugin.version" variant="outlined"
                 :class="['mb-4', i > 0 ? 'mt-2' : '']">
                 <v-card-item>
@@ -187,3 +245,18 @@ onMounted(() => {
         </div>
     </div>
 </template>
+
+<style scoped>
+.plugin-card {
+    transition: all 0.2s ease;
+}
+
+.plugin-card:hover {
+    border-color: rgb(var(--v-theme-primary));
+    transform: translateY(-1px);
+}
+
+.plugin-card.selected {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+</style>

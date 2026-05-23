@@ -5,3 +5,6 @@ data
 old
 logs
 build
+plugins/captcha-plugin*
+plugins/captcha.log
+plugins/models

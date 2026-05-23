@@ -447,11 +447,12 @@ func (tt *TicketTask) ticketFunc() {
 			}
 
 			// Handle specific error codes
-			if code == 100034 {
+			switch code {
+			case 100034:
 				oldPrice := targetSku.Price
 				targetSku.Price = orderResult.PayMoney
 				tt.sendLog(LogInfo, fmt.Sprintf("价格变更: ¥%.2f → ¥%.2f", float64(oldPrice)/100.0, float64(targetSku.Price)/100.0))
-			} else if code == 100017 {
+			case 100017:
 				tt.sendLog(LogError, fmt.Sprintf("不可售 — %s (%d)", msg, code))
 				tt.setStat(StatFailed)
 				return

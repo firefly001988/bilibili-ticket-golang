@@ -21,6 +21,16 @@ const (
 	SourceGitHub PluginSource = "github"
 )
 
+var plugins = []PluginDefinition{
+	{
+		Name:        "captcha-plugin",
+		Description: "极验验证码自动识别插件",
+		Source:      SourceGitHub,
+		RepoOwner:   "firefly001988",
+		RepoName:    "biliTicker_gt",
+	},
+}
+
 // AllPluginSources returns all available plugin sources.
 func AllPluginSources() []PluginSource {
 	return []PluginSource{SourceGitHub}
@@ -46,15 +56,7 @@ type PluginDefinition struct {
 
 // AvailablePlugins returns the list of known plugins.
 func AvailablePlugins() []PluginDefinition {
-	return []PluginDefinition{
-		{
-			Name:        "captcha-plugin",
-			Description: "极验验证码自动识别插件",
-			Source:      SourceGitHub,
-			RepoOwner:   "firefly001988",
-			RepoName:    "biliTicker_gt",
-		},
-	}
+	return plugins
 }
 
 // =============================================================================
@@ -183,6 +185,17 @@ func FetchPluginList() *PluginListResult {
 		allPlugins = append(allPlugins, result.Plugins...)
 	}
 	return &PluginListResult{Plugins: allPlugins}
+}
+
+// FetchPluginListByName fetches releases for a single plugin identified by name.
+func FetchPluginListByName(name string) *PluginListResult {
+	for _, def := range AvailablePlugins() {
+		if def.Name == name {
+			f := NewFetcher(def.RepoOwner, def.RepoName, def.Name)
+			return f.fetchPluginList()
+		}
+	}
+	return &PluginListResult{Error: fmt.Sprintf("unknown plugin: %s", name)}
 }
 
 // fetchPluginList fetches the latest release for a single plugin.

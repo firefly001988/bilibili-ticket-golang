@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.34.1
-// source: plugins/proto/captcha.proto
+// source: captcha.proto
 
 package captcha
 
@@ -19,23 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CaptchaService_Solve_FullMethodName        = "/captcha.CaptchaService/Solve"
-	CaptchaService_GetCS_FullMethodName        = "/captcha.CaptchaService/GetCS"
-	CaptchaService_GetType_FullMethodName      = "/captcha.CaptchaService/GetType"
-	CaptchaService_GetNewCSArgs_FullMethodName = "/captcha.CaptchaService/GetNewCSArgs"
-	CaptchaService_CalculateKey_FullMethodName = "/captcha.CaptchaService/CalculateKey"
-	CaptchaService_GenerateW_FullMethodName    = "/captcha.CaptchaService/GenerateW"
-	CaptchaService_Verify_FullMethodName       = "/captcha.CaptchaService/Verify"
+	ClickService_Solve_FullMethodName        = "/captcha.ClickService/Solve"
+	ClickService_GetCS_FullMethodName        = "/captcha.ClickService/GetCS"
+	ClickService_GetType_FullMethodName      = "/captcha.ClickService/GetType"
+	ClickService_GetNewCSArgs_FullMethodName = "/captcha.ClickService/GetNewCSArgs"
+	ClickService_CalculateKey_FullMethodName = "/captcha.ClickService/CalculateKey"
+	ClickService_GenerateW_FullMethodName    = "/captcha.ClickService/GenerateW"
+	ClickService_Verify_FullMethodName       = "/captcha.ClickService/Verify"
+	ClickService_Version_FullMethodName      = "/captcha.ClickService/Version"
 )
 
-// CaptchaServiceClient is the client API for CaptchaService service.
+// ClickServiceClient is the client API for ClickService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// CaptchaService exposes both the high-level Solve pipeline and each
-// fine-grained step, matching the Click / Slide API from old/captcha/geetest.go.
-type CaptchaServiceClient interface {
-	// Solve runs the full pipeline: GetCS → GetType → GetNewCSArgs → CalculateKey → GenerateW → Verify.
+type ClickServiceClient interface {
+	// Solve runs the full click pipeline.
 	Solve(ctx context.Context, in *SolveGeetestCaptchaRequest, opts ...grpc.CallOption) (*SolveGeetestCaptchaResponse, error)
 	// Individual steps for callers that need fine-grained control.
 	GetCS(ctx context.Context, in *GetCSRequest, opts ...grpc.CallOption) (*GetCSResponse, error)
@@ -44,94 +42,102 @@ type CaptchaServiceClient interface {
 	CalculateKey(ctx context.Context, in *CalculateKeyRequest, opts ...grpc.CallOption) (*CalculateKeyResponse, error)
 	GenerateW(ctx context.Context, in *GenerateWRequest, opts ...grpc.CallOption) (*GenerateWResponse, error)
 	Verify(ctx context.Context, in *VerifyRequest, opts ...grpc.CallOption) (*VerifyResponse, error)
+	Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error)
 }
 
-type captchaServiceClient struct {
+type clickServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewCaptchaServiceClient(cc grpc.ClientConnInterface) CaptchaServiceClient {
-	return &captchaServiceClient{cc}
+func NewClickServiceClient(cc grpc.ClientConnInterface) ClickServiceClient {
+	return &clickServiceClient{cc}
 }
 
-func (c *captchaServiceClient) Solve(ctx context.Context, in *SolveGeetestCaptchaRequest, opts ...grpc.CallOption) (*SolveGeetestCaptchaResponse, error) {
+func (c *clickServiceClient) Solve(ctx context.Context, in *SolveGeetestCaptchaRequest, opts ...grpc.CallOption) (*SolveGeetestCaptchaResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SolveGeetestCaptchaResponse)
-	err := c.cc.Invoke(ctx, CaptchaService_Solve_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ClickService_Solve_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *captchaServiceClient) GetCS(ctx context.Context, in *GetCSRequest, opts ...grpc.CallOption) (*GetCSResponse, error) {
+func (c *clickServiceClient) GetCS(ctx context.Context, in *GetCSRequest, opts ...grpc.CallOption) (*GetCSResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetCSResponse)
-	err := c.cc.Invoke(ctx, CaptchaService_GetCS_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ClickService_GetCS_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *captchaServiceClient) GetType(ctx context.Context, in *GetTypeRequest, opts ...grpc.CallOption) (*GetTypeResponse, error) {
+func (c *clickServiceClient) GetType(ctx context.Context, in *GetTypeRequest, opts ...grpc.CallOption) (*GetTypeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetTypeResponse)
-	err := c.cc.Invoke(ctx, CaptchaService_GetType_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ClickService_GetType_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *captchaServiceClient) GetNewCSArgs(ctx context.Context, in *GetNewCSArgsRequest, opts ...grpc.CallOption) (*GetNewCSArgsResponse, error) {
+func (c *clickServiceClient) GetNewCSArgs(ctx context.Context, in *GetNewCSArgsRequest, opts ...grpc.CallOption) (*GetNewCSArgsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetNewCSArgsResponse)
-	err := c.cc.Invoke(ctx, CaptchaService_GetNewCSArgs_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ClickService_GetNewCSArgs_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *captchaServiceClient) CalculateKey(ctx context.Context, in *CalculateKeyRequest, opts ...grpc.CallOption) (*CalculateKeyResponse, error) {
+func (c *clickServiceClient) CalculateKey(ctx context.Context, in *CalculateKeyRequest, opts ...grpc.CallOption) (*CalculateKeyResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CalculateKeyResponse)
-	err := c.cc.Invoke(ctx, CaptchaService_CalculateKey_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ClickService_CalculateKey_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *captchaServiceClient) GenerateW(ctx context.Context, in *GenerateWRequest, opts ...grpc.CallOption) (*GenerateWResponse, error) {
+func (c *clickServiceClient) GenerateW(ctx context.Context, in *GenerateWRequest, opts ...grpc.CallOption) (*GenerateWResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GenerateWResponse)
-	err := c.cc.Invoke(ctx, CaptchaService_GenerateW_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ClickService_GenerateW_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *captchaServiceClient) Verify(ctx context.Context, in *VerifyRequest, opts ...grpc.CallOption) (*VerifyResponse, error) {
+func (c *clickServiceClient) Verify(ctx context.Context, in *VerifyRequest, opts ...grpc.CallOption) (*VerifyResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(VerifyResponse)
-	err := c.cc.Invoke(ctx, CaptchaService_Verify_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, ClickService_Verify_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// CaptchaServiceServer is the server API for CaptchaService service.
-// All implementations must embed UnimplementedCaptchaServiceServer
+func (c *clickServiceClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VersionResponse)
+	err := c.cc.Invoke(ctx, ClickService_Version_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ClickServiceServer is the server API for ClickService service.
+// All implementations must embed UnimplementedClickServiceServer
 // for forward compatibility.
-//
-// CaptchaService exposes both the high-level Solve pipeline and each
-// fine-grained step, matching the Click / Slide API from old/captcha/geetest.go.
-type CaptchaServiceServer interface {
-	// Solve runs the full pipeline: GetCS → GetType → GetNewCSArgs → CalculateKey → GenerateW → Verify.
+type ClickServiceServer interface {
+	// Solve runs the full click pipeline.
 	Solve(context.Context, *SolveGeetestCaptchaRequest) (*SolveGeetestCaptchaResponse, error)
 	// Individual steps for callers that need fine-grained control.
 	GetCS(context.Context, *GetCSRequest) (*GetCSResponse, error)
@@ -140,220 +146,618 @@ type CaptchaServiceServer interface {
 	CalculateKey(context.Context, *CalculateKeyRequest) (*CalculateKeyResponse, error)
 	GenerateW(context.Context, *GenerateWRequest) (*GenerateWResponse, error)
 	Verify(context.Context, *VerifyRequest) (*VerifyResponse, error)
-	mustEmbedUnimplementedCaptchaServiceServer()
+	Version(context.Context, *VersionRequest) (*VersionResponse, error)
+	mustEmbedUnimplementedClickServiceServer()
 }
 
-// UnimplementedCaptchaServiceServer must be embedded to have
+// UnimplementedClickServiceServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedCaptchaServiceServer struct{}
+type UnimplementedClickServiceServer struct{}
 
-func (UnimplementedCaptchaServiceServer) Solve(context.Context, *SolveGeetestCaptchaRequest) (*SolveGeetestCaptchaResponse, error) {
+func (UnimplementedClickServiceServer) Solve(context.Context, *SolveGeetestCaptchaRequest) (*SolveGeetestCaptchaResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Solve not implemented")
 }
-func (UnimplementedCaptchaServiceServer) GetCS(context.Context, *GetCSRequest) (*GetCSResponse, error) {
+func (UnimplementedClickServiceServer) GetCS(context.Context, *GetCSRequest) (*GetCSResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetCS not implemented")
 }
-func (UnimplementedCaptchaServiceServer) GetType(context.Context, *GetTypeRequest) (*GetTypeResponse, error) {
+func (UnimplementedClickServiceServer) GetType(context.Context, *GetTypeRequest) (*GetTypeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetType not implemented")
 }
-func (UnimplementedCaptchaServiceServer) GetNewCSArgs(context.Context, *GetNewCSArgsRequest) (*GetNewCSArgsResponse, error) {
+func (UnimplementedClickServiceServer) GetNewCSArgs(context.Context, *GetNewCSArgsRequest) (*GetNewCSArgsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetNewCSArgs not implemented")
 }
-func (UnimplementedCaptchaServiceServer) CalculateKey(context.Context, *CalculateKeyRequest) (*CalculateKeyResponse, error) {
+func (UnimplementedClickServiceServer) CalculateKey(context.Context, *CalculateKeyRequest) (*CalculateKeyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CalculateKey not implemented")
 }
-func (UnimplementedCaptchaServiceServer) GenerateW(context.Context, *GenerateWRequest) (*GenerateWResponse, error) {
+func (UnimplementedClickServiceServer) GenerateW(context.Context, *GenerateWRequest) (*GenerateWResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GenerateW not implemented")
 }
-func (UnimplementedCaptchaServiceServer) Verify(context.Context, *VerifyRequest) (*VerifyResponse, error) {
+func (UnimplementedClickServiceServer) Verify(context.Context, *VerifyRequest) (*VerifyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Verify not implemented")
 }
-func (UnimplementedCaptchaServiceServer) mustEmbedUnimplementedCaptchaServiceServer() {}
-func (UnimplementedCaptchaServiceServer) testEmbeddedByValue()                        {}
+func (UnimplementedClickServiceServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Version not implemented")
+}
+func (UnimplementedClickServiceServer) mustEmbedUnimplementedClickServiceServer() {}
+func (UnimplementedClickServiceServer) testEmbeddedByValue()                      {}
 
-// UnsafeCaptchaServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to CaptchaServiceServer will
+// UnsafeClickServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ClickServiceServer will
 // result in compilation errors.
-type UnsafeCaptchaServiceServer interface {
-	mustEmbedUnimplementedCaptchaServiceServer()
+type UnsafeClickServiceServer interface {
+	mustEmbedUnimplementedClickServiceServer()
 }
 
-func RegisterCaptchaServiceServer(s grpc.ServiceRegistrar, srv CaptchaServiceServer) {
-	// If the following call panics, it indicates UnimplementedCaptchaServiceServer was
+func RegisterClickServiceServer(s grpc.ServiceRegistrar, srv ClickServiceServer) {
+	// If the following call panics, it indicates UnimplementedClickServiceServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&CaptchaService_ServiceDesc, srv)
+	s.RegisterService(&ClickService_ServiceDesc, srv)
 }
 
-func _CaptchaService_Solve_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ClickService_Solve_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SolveGeetestCaptchaRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CaptchaServiceServer).Solve(ctx, in)
+		return srv.(ClickServiceServer).Solve(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CaptchaService_Solve_FullMethodName,
+		FullMethod: ClickService_Solve_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CaptchaServiceServer).Solve(ctx, req.(*SolveGeetestCaptchaRequest))
+		return srv.(ClickServiceServer).Solve(ctx, req.(*SolveGeetestCaptchaRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CaptchaService_GetCS_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ClickService_GetCS_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetCSRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CaptchaServiceServer).GetCS(ctx, in)
+		return srv.(ClickServiceServer).GetCS(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CaptchaService_GetCS_FullMethodName,
+		FullMethod: ClickService_GetCS_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CaptchaServiceServer).GetCS(ctx, req.(*GetCSRequest))
+		return srv.(ClickServiceServer).GetCS(ctx, req.(*GetCSRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CaptchaService_GetType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ClickService_GetType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetTypeRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CaptchaServiceServer).GetType(ctx, in)
+		return srv.(ClickServiceServer).GetType(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CaptchaService_GetType_FullMethodName,
+		FullMethod: ClickService_GetType_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CaptchaServiceServer).GetType(ctx, req.(*GetTypeRequest))
+		return srv.(ClickServiceServer).GetType(ctx, req.(*GetTypeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CaptchaService_GetNewCSArgs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ClickService_GetNewCSArgs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetNewCSArgsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CaptchaServiceServer).GetNewCSArgs(ctx, in)
+		return srv.(ClickServiceServer).GetNewCSArgs(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CaptchaService_GetNewCSArgs_FullMethodName,
+		FullMethod: ClickService_GetNewCSArgs_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CaptchaServiceServer).GetNewCSArgs(ctx, req.(*GetNewCSArgsRequest))
+		return srv.(ClickServiceServer).GetNewCSArgs(ctx, req.(*GetNewCSArgsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CaptchaService_CalculateKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ClickService_CalculateKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CalculateKeyRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CaptchaServiceServer).CalculateKey(ctx, in)
+		return srv.(ClickServiceServer).CalculateKey(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CaptchaService_CalculateKey_FullMethodName,
+		FullMethod: ClickService_CalculateKey_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CaptchaServiceServer).CalculateKey(ctx, req.(*CalculateKeyRequest))
+		return srv.(ClickServiceServer).CalculateKey(ctx, req.(*CalculateKeyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CaptchaService_GenerateW_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ClickService_GenerateW_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GenerateWRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CaptchaServiceServer).GenerateW(ctx, in)
+		return srv.(ClickServiceServer).GenerateW(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CaptchaService_GenerateW_FullMethodName,
+		FullMethod: ClickService_GenerateW_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CaptchaServiceServer).GenerateW(ctx, req.(*GenerateWRequest))
+		return srv.(ClickServiceServer).GenerateW(ctx, req.(*GenerateWRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CaptchaService_Verify_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _ClickService_Verify_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(VerifyRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CaptchaServiceServer).Verify(ctx, in)
+		return srv.(ClickServiceServer).Verify(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CaptchaService_Verify_FullMethodName,
+		FullMethod: ClickService_Verify_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CaptchaServiceServer).Verify(ctx, req.(*VerifyRequest))
+		return srv.(ClickServiceServer).Verify(ctx, req.(*VerifyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// CaptchaService_ServiceDesc is the grpc.ServiceDesc for CaptchaService service.
+func _ClickService_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClickServiceServer).Version(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClickService_Version_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClickServiceServer).Version(ctx, req.(*VersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// ClickService_ServiceDesc is the grpc.ServiceDesc for ClickService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var CaptchaService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "captcha.CaptchaService",
-	HandlerType: (*CaptchaServiceServer)(nil),
+var ClickService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "captcha.ClickService",
+	HandlerType: (*ClickServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "Solve",
-			Handler:    _CaptchaService_Solve_Handler,
+			Handler:    _ClickService_Solve_Handler,
 		},
 		{
 			MethodName: "GetCS",
-			Handler:    _CaptchaService_GetCS_Handler,
+			Handler:    _ClickService_GetCS_Handler,
 		},
 		{
 			MethodName: "GetType",
-			Handler:    _CaptchaService_GetType_Handler,
+			Handler:    _ClickService_GetType_Handler,
 		},
 		{
 			MethodName: "GetNewCSArgs",
-			Handler:    _CaptchaService_GetNewCSArgs_Handler,
+			Handler:    _ClickService_GetNewCSArgs_Handler,
 		},
 		{
 			MethodName: "CalculateKey",
-			Handler:    _CaptchaService_CalculateKey_Handler,
+			Handler:    _ClickService_CalculateKey_Handler,
 		},
 		{
 			MethodName: "GenerateW",
-			Handler:    _CaptchaService_GenerateW_Handler,
+			Handler:    _ClickService_GenerateW_Handler,
 		},
 		{
 			MethodName: "Verify",
-			Handler:    _CaptchaService_Verify_Handler,
+			Handler:    _ClickService_Verify_Handler,
+		},
+		{
+			MethodName: "Version",
+			Handler:    _ClickService_Version_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "plugins/proto/captcha.proto",
+	Metadata: "captcha.proto",
+}
+
+const (
+	SlideService_Solve_FullMethodName        = "/captcha.SlideService/Solve"
+	SlideService_GetCS_FullMethodName        = "/captcha.SlideService/GetCS"
+	SlideService_GetType_FullMethodName      = "/captcha.SlideService/GetType"
+	SlideService_GetNewCSArgs_FullMethodName = "/captcha.SlideService/GetNewCSArgs"
+	SlideService_CalculateKey_FullMethodName = "/captcha.SlideService/CalculateKey"
+	SlideService_GenerateW_FullMethodName    = "/captcha.SlideService/GenerateW"
+	SlideService_Verify_FullMethodName       = "/captcha.SlideService/Verify"
+	SlideService_Version_FullMethodName      = "/captcha.SlideService/Version"
+)
+
+// SlideServiceClient is the client API for SlideService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type SlideServiceClient interface {
+	// Solve runs the full slide pipeline.
+	Solve(ctx context.Context, in *SolveGeetestCaptchaRequest, opts ...grpc.CallOption) (*SolveGeetestCaptchaResponse, error)
+	// Individual steps for callers that need fine-grained control.
+	GetCS(ctx context.Context, in *GetCSRequest, opts ...grpc.CallOption) (*GetCSResponse, error)
+	GetType(ctx context.Context, in *GetTypeRequest, opts ...grpc.CallOption) (*GetTypeResponse, error)
+	GetNewCSArgs(ctx context.Context, in *GetNewCSArgsRequest, opts ...grpc.CallOption) (*GetNewCSArgsResponse, error)
+	CalculateKey(ctx context.Context, in *CalculateKeyRequest, opts ...grpc.CallOption) (*CalculateKeyResponse, error)
+	GenerateW(ctx context.Context, in *GenerateWRequest, opts ...grpc.CallOption) (*GenerateWResponse, error)
+	Verify(ctx context.Context, in *VerifyRequest, opts ...grpc.CallOption) (*VerifyResponse, error)
+	Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error)
+}
+
+type slideServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewSlideServiceClient(cc grpc.ClientConnInterface) SlideServiceClient {
+	return &slideServiceClient{cc}
+}
+
+func (c *slideServiceClient) Solve(ctx context.Context, in *SolveGeetestCaptchaRequest, opts ...grpc.CallOption) (*SolveGeetestCaptchaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SolveGeetestCaptchaResponse)
+	err := c.cc.Invoke(ctx, SlideService_Solve_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *slideServiceClient) GetCS(ctx context.Context, in *GetCSRequest, opts ...grpc.CallOption) (*GetCSResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCSResponse)
+	err := c.cc.Invoke(ctx, SlideService_GetCS_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *slideServiceClient) GetType(ctx context.Context, in *GetTypeRequest, opts ...grpc.CallOption) (*GetTypeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTypeResponse)
+	err := c.cc.Invoke(ctx, SlideService_GetType_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *slideServiceClient) GetNewCSArgs(ctx context.Context, in *GetNewCSArgsRequest, opts ...grpc.CallOption) (*GetNewCSArgsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetNewCSArgsResponse)
+	err := c.cc.Invoke(ctx, SlideService_GetNewCSArgs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *slideServiceClient) CalculateKey(ctx context.Context, in *CalculateKeyRequest, opts ...grpc.CallOption) (*CalculateKeyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CalculateKeyResponse)
+	err := c.cc.Invoke(ctx, SlideService_CalculateKey_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *slideServiceClient) GenerateW(ctx context.Context, in *GenerateWRequest, opts ...grpc.CallOption) (*GenerateWResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GenerateWResponse)
+	err := c.cc.Invoke(ctx, SlideService_GenerateW_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *slideServiceClient) Verify(ctx context.Context, in *VerifyRequest, opts ...grpc.CallOption) (*VerifyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VerifyResponse)
+	err := c.cc.Invoke(ctx, SlideService_Verify_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *slideServiceClient) Version(ctx context.Context, in *VersionRequest, opts ...grpc.CallOption) (*VersionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VersionResponse)
+	err := c.cc.Invoke(ctx, SlideService_Version_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SlideServiceServer is the server API for SlideService service.
+// All implementations must embed UnimplementedSlideServiceServer
+// for forward compatibility.
+type SlideServiceServer interface {
+	// Solve runs the full slide pipeline.
+	Solve(context.Context, *SolveGeetestCaptchaRequest) (*SolveGeetestCaptchaResponse, error)
+	// Individual steps for callers that need fine-grained control.
+	GetCS(context.Context, *GetCSRequest) (*GetCSResponse, error)
+	GetType(context.Context, *GetTypeRequest) (*GetTypeResponse, error)
+	GetNewCSArgs(context.Context, *GetNewCSArgsRequest) (*GetNewCSArgsResponse, error)
+	CalculateKey(context.Context, *CalculateKeyRequest) (*CalculateKeyResponse, error)
+	GenerateW(context.Context, *GenerateWRequest) (*GenerateWResponse, error)
+	Verify(context.Context, *VerifyRequest) (*VerifyResponse, error)
+	Version(context.Context, *VersionRequest) (*VersionResponse, error)
+	mustEmbedUnimplementedSlideServiceServer()
+}
+
+// UnimplementedSlideServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedSlideServiceServer struct{}
+
+func (UnimplementedSlideServiceServer) Solve(context.Context, *SolveGeetestCaptchaRequest) (*SolveGeetestCaptchaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Solve not implemented")
+}
+func (UnimplementedSlideServiceServer) GetCS(context.Context, *GetCSRequest) (*GetCSResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCS not implemented")
+}
+func (UnimplementedSlideServiceServer) GetType(context.Context, *GetTypeRequest) (*GetTypeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetType not implemented")
+}
+func (UnimplementedSlideServiceServer) GetNewCSArgs(context.Context, *GetNewCSArgsRequest) (*GetNewCSArgsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetNewCSArgs not implemented")
+}
+func (UnimplementedSlideServiceServer) CalculateKey(context.Context, *CalculateKeyRequest) (*CalculateKeyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CalculateKey not implemented")
+}
+func (UnimplementedSlideServiceServer) GenerateW(context.Context, *GenerateWRequest) (*GenerateWResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GenerateW not implemented")
+}
+func (UnimplementedSlideServiceServer) Verify(context.Context, *VerifyRequest) (*VerifyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Verify not implemented")
+}
+func (UnimplementedSlideServiceServer) Version(context.Context, *VersionRequest) (*VersionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Version not implemented")
+}
+func (UnimplementedSlideServiceServer) mustEmbedUnimplementedSlideServiceServer() {}
+func (UnimplementedSlideServiceServer) testEmbeddedByValue()                      {}
+
+// UnsafeSlideServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SlideServiceServer will
+// result in compilation errors.
+type UnsafeSlideServiceServer interface {
+	mustEmbedUnimplementedSlideServiceServer()
+}
+
+func RegisterSlideServiceServer(s grpc.ServiceRegistrar, srv SlideServiceServer) {
+	// If the following call panics, it indicates UnimplementedSlideServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&SlideService_ServiceDesc, srv)
+}
+
+func _SlideService_Solve_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SolveGeetestCaptchaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SlideServiceServer).Solve(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SlideService_Solve_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SlideServiceServer).Solve(ctx, req.(*SolveGeetestCaptchaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SlideService_GetCS_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCSRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SlideServiceServer).GetCS(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SlideService_GetCS_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SlideServiceServer).GetCS(ctx, req.(*GetCSRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SlideService_GetType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SlideServiceServer).GetType(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SlideService_GetType_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SlideServiceServer).GetType(ctx, req.(*GetTypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SlideService_GetNewCSArgs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNewCSArgsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SlideServiceServer).GetNewCSArgs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SlideService_GetNewCSArgs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SlideServiceServer).GetNewCSArgs(ctx, req.(*GetNewCSArgsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SlideService_CalculateKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CalculateKeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SlideServiceServer).CalculateKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SlideService_CalculateKey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SlideServiceServer).CalculateKey(ctx, req.(*CalculateKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SlideService_GenerateW_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GenerateWRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SlideServiceServer).GenerateW(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SlideService_GenerateW_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SlideServiceServer).GenerateW(ctx, req.(*GenerateWRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SlideService_Verify_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VerifyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SlideServiceServer).Verify(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SlideService_Verify_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SlideServiceServer).Verify(ctx, req.(*VerifyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SlideService_Version_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VersionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SlideServiceServer).Version(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SlideService_Version_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SlideServiceServer).Version(ctx, req.(*VersionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// SlideService_ServiceDesc is the grpc.ServiceDesc for SlideService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var SlideService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "captcha.SlideService",
+	HandlerType: (*SlideServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Solve",
+			Handler:    _SlideService_Solve_Handler,
+		},
+		{
+			MethodName: "GetCS",
+			Handler:    _SlideService_GetCS_Handler,
+		},
+		{
+			MethodName: "GetType",
+			Handler:    _SlideService_GetType_Handler,
+		},
+		{
+			MethodName: "GetNewCSArgs",
+			Handler:    _SlideService_GetNewCSArgs_Handler,
+		},
+		{
+			MethodName: "CalculateKey",
+			Handler:    _SlideService_CalculateKey_Handler,
+		},
+		{
+			MethodName: "GenerateW",
+			Handler:    _SlideService_GenerateW_Handler,
+		},
+		{
+			MethodName: "Verify",
+			Handler:    _SlideService_Verify_Handler,
+		},
+		{
+			MethodName: "Version",
+			Handler:    _SlideService_Version_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "captcha.proto",
 }

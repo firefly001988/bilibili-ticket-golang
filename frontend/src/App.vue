@@ -59,8 +59,10 @@ onMounted(async () => {
         <v-list-subheader>
           Plugin Area
         </v-list-subheader>
-        <v-list-item title="Plugin Download" value="plugins" @click="router.push('/plugins')"
+        <v-list-item title="Plugin Download" value="plugin-download" @click="router.push('/plugin-download')"
           prepend-icon="mdi-puzzle" />
+        <v-list-item title="Plugin Management" value="plugin-management" @click="router.push('/plugin-management')"
+          prepend-icon="mdi-puzzle-edit" />
         <v-divider class="mt-1" />
         <v-list-subheader>
           Settings Area

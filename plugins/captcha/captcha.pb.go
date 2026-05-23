@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.34.1
-// source: plugins/proto/captcha.proto
+// source: captcha.proto
 
 package captcha
 
@@ -55,11 +55,11 @@ func (x CaptchaType) String() string {
 }
 
 func (CaptchaType) Descriptor() protoreflect.EnumDescriptor {
-	return file_plugins_proto_captcha_proto_enumTypes[0].Descriptor()
+	return file_captcha_proto_enumTypes[0].Descriptor()
 }
 
 func (CaptchaType) Type() protoreflect.EnumType {
-	return &file_plugins_proto_captcha_proto_enumTypes[0]
+	return &file_captcha_proto_enumTypes[0]
 }
 
 func (x CaptchaType) Number() protoreflect.EnumNumber {
@@ -68,7 +68,7 @@ func (x CaptchaType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CaptchaType.Descriptor instead.
 func (CaptchaType) EnumDescriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{0}
+	return file_captcha_proto_rawDescGZIP(), []int{0}
 }
 
 // GeetestCS holds the C/S data returned by GetCS.
@@ -83,7 +83,7 @@ type GeetestCS struct {
 
 func (x *GeetestCS) Reset() {
 	*x = GeetestCS{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[0]
+	mi := &file_captcha_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -95,7 +95,7 @@ func (x *GeetestCS) String() string {
 func (*GeetestCS) ProtoMessage() {}
 
 func (x *GeetestCS) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[0]
+	mi := &file_captcha_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -108,7 +108,7 @@ func (x *GeetestCS) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GeetestCS.ProtoReflect.Descriptor instead.
 func (*GeetestCS) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{0}
+	return file_captcha_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *GeetestCS) GetS() string {
@@ -141,7 +141,7 @@ type NewCSArgs struct {
 
 func (x *NewCSArgs) Reset() {
 	*x = NewCSArgs{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[1]
+	mi := &file_captcha_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -153,7 +153,7 @@ func (x *NewCSArgs) String() string {
 func (*NewCSArgs) ProtoMessage() {}
 
 func (x *NewCSArgs) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[1]
+	mi := &file_captcha_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -166,7 +166,7 @@ func (x *NewCSArgs) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NewCSArgs.ProtoReflect.Descriptor instead.
 func (*NewCSArgs) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{1}
+	return file_captcha_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *NewCSArgs) GetC() []byte {
@@ -221,7 +221,7 @@ type SolveGeetestCaptchaRequest struct {
 
 func (x *SolveGeetestCaptchaRequest) Reset() {
 	*x = SolveGeetestCaptchaRequest{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[2]
+	mi := &file_captcha_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -233,7 +233,7 @@ func (x *SolveGeetestCaptchaRequest) String() string {
 func (*SolveGeetestCaptchaRequest) ProtoMessage() {}
 
 func (x *SolveGeetestCaptchaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[2]
+	mi := &file_captcha_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -246,7 +246,7 @@ func (x *SolveGeetestCaptchaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SolveGeetestCaptchaRequest.ProtoReflect.Descriptor instead.
 func (*SolveGeetestCaptchaRequest) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{2}
+	return file_captcha_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SolveGeetestCaptchaRequest) GetGt() string {
@@ -274,7 +274,7 @@ type SolveGeetestCaptchaResponse struct {
 
 func (x *SolveGeetestCaptchaResponse) Reset() {
 	*x = SolveGeetestCaptchaResponse{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[3]
+	mi := &file_captcha_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -286,7 +286,7 @@ func (x *SolveGeetestCaptchaResponse) String() string {
 func (*SolveGeetestCaptchaResponse) ProtoMessage() {}
 
 func (x *SolveGeetestCaptchaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[3]
+	mi := &file_captcha_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -299,7 +299,7 @@ func (x *SolveGeetestCaptchaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SolveGeetestCaptchaResponse.ProtoReflect.Descriptor instead.
 func (*SolveGeetestCaptchaResponse) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{3}
+	return file_captcha_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SolveGeetestCaptchaResponse) GetSuccess() bool {
@@ -334,7 +334,7 @@ type GetCSRequest struct {
 
 func (x *GetCSRequest) Reset() {
 	*x = GetCSRequest{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[4]
+	mi := &file_captcha_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -346,7 +346,7 @@ func (x *GetCSRequest) String() string {
 func (*GetCSRequest) ProtoMessage() {}
 
 func (x *GetCSRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[4]
+	mi := &file_captcha_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -359,7 +359,7 @@ func (x *GetCSRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCSRequest.ProtoReflect.Descriptor instead.
 func (*GetCSRequest) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{4}
+	return file_captcha_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetCSRequest) GetGt() string {
@@ -394,7 +394,7 @@ type GetCSResponse struct {
 
 func (x *GetCSResponse) Reset() {
 	*x = GetCSResponse{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[5]
+	mi := &file_captcha_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -406,7 +406,7 @@ func (x *GetCSResponse) String() string {
 func (*GetCSResponse) ProtoMessage() {}
 
 func (x *GetCSResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[5]
+	mi := &file_captcha_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -419,7 +419,7 @@ func (x *GetCSResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCSResponse.ProtoReflect.Descriptor instead.
 func (*GetCSResponse) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{5}
+	return file_captcha_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetCSResponse) GetSuccess() bool {
@@ -454,7 +454,7 @@ type GetTypeRequest struct {
 
 func (x *GetTypeRequest) Reset() {
 	*x = GetTypeRequest{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[6]
+	mi := &file_captcha_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -466,7 +466,7 @@ func (x *GetTypeRequest) String() string {
 func (*GetTypeRequest) ProtoMessage() {}
 
 func (x *GetTypeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[6]
+	mi := &file_captcha_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -479,7 +479,7 @@ func (x *GetTypeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTypeRequest.ProtoReflect.Descriptor instead.
 func (*GetTypeRequest) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{6}
+	return file_captcha_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetTypeRequest) GetGt() string {
@@ -514,7 +514,7 @@ type GetTypeResponse struct {
 
 func (x *GetTypeResponse) Reset() {
 	*x = GetTypeResponse{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[7]
+	mi := &file_captcha_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -526,7 +526,7 @@ func (x *GetTypeResponse) String() string {
 func (*GetTypeResponse) ProtoMessage() {}
 
 func (x *GetTypeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[7]
+	mi := &file_captcha_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -539,7 +539,7 @@ func (x *GetTypeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTypeResponse.ProtoReflect.Descriptor instead.
 func (*GetTypeResponse) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{7}
+	return file_captcha_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetTypeResponse) GetSuccess() bool {
@@ -573,7 +573,7 @@ type GetNewCSArgsRequest struct {
 
 func (x *GetNewCSArgsRequest) Reset() {
 	*x = GetNewCSArgsRequest{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[8]
+	mi := &file_captcha_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -585,7 +585,7 @@ func (x *GetNewCSArgsRequest) String() string {
 func (*GetNewCSArgsRequest) ProtoMessage() {}
 
 func (x *GetNewCSArgsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[8]
+	mi := &file_captcha_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -598,7 +598,7 @@ func (x *GetNewCSArgsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNewCSArgsRequest.ProtoReflect.Descriptor instead.
 func (*GetNewCSArgsRequest) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{8}
+	return file_captcha_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetNewCSArgsRequest) GetGt() string {
@@ -626,7 +626,7 @@ type GetNewCSArgsResponse struct {
 
 func (x *GetNewCSArgsResponse) Reset() {
 	*x = GetNewCSArgsResponse{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[9]
+	mi := &file_captcha_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -638,7 +638,7 @@ func (x *GetNewCSArgsResponse) String() string {
 func (*GetNewCSArgsResponse) ProtoMessage() {}
 
 func (x *GetNewCSArgsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[9]
+	mi := &file_captcha_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -651,7 +651,7 @@ func (x *GetNewCSArgsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNewCSArgsResponse.ProtoReflect.Descriptor instead.
 func (*GetNewCSArgsResponse) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{9}
+	return file_captcha_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetNewCSArgsResponse) GetSuccess() bool {
@@ -686,7 +686,7 @@ type CalculateKeyRequest struct {
 
 func (x *CalculateKeyRequest) Reset() {
 	*x = CalculateKeyRequest{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[10]
+	mi := &file_captcha_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -698,7 +698,7 @@ func (x *CalculateKeyRequest) String() string {
 func (*CalculateKeyRequest) ProtoMessage() {}
 
 func (x *CalculateKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[10]
+	mi := &file_captcha_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -711,7 +711,7 @@ func (x *CalculateKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalculateKeyRequest.ProtoReflect.Descriptor instead.
 func (*CalculateKeyRequest) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{10}
+	return file_captcha_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CalculateKeyRequest) GetGt() string {
@@ -746,7 +746,7 @@ type CalculateKeyResponse struct {
 
 func (x *CalculateKeyResponse) Reset() {
 	*x = CalculateKeyResponse{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[11]
+	mi := &file_captcha_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -758,7 +758,7 @@ func (x *CalculateKeyResponse) String() string {
 func (*CalculateKeyResponse) ProtoMessage() {}
 
 func (x *CalculateKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[11]
+	mi := &file_captcha_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -771,7 +771,7 @@ func (x *CalculateKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CalculateKeyResponse.ProtoReflect.Descriptor instead.
 func (*CalculateKeyResponse) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{11}
+	return file_captcha_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CalculateKeyResponse) GetSuccess() bool {
@@ -807,7 +807,7 @@ type GenerateWRequest struct {
 
 func (x *GenerateWRequest) Reset() {
 	*x = GenerateWRequest{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[12]
+	mi := &file_captcha_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -819,7 +819,7 @@ func (x *GenerateWRequest) String() string {
 func (*GenerateWRequest) ProtoMessage() {}
 
 func (x *GenerateWRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[12]
+	mi := &file_captcha_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -832,7 +832,7 @@ func (x *GenerateWRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateWRequest.ProtoReflect.Descriptor instead.
 func (*GenerateWRequest) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{12}
+	return file_captcha_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GenerateWRequest) GetGt() string {
@@ -874,7 +874,7 @@ type GenerateWResponse struct {
 
 func (x *GenerateWResponse) Reset() {
 	*x = GenerateWResponse{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[13]
+	mi := &file_captcha_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -886,7 +886,7 @@ func (x *GenerateWResponse) String() string {
 func (*GenerateWResponse) ProtoMessage() {}
 
 func (x *GenerateWResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[13]
+	mi := &file_captcha_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -899,7 +899,7 @@ func (x *GenerateWResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateWResponse.ProtoReflect.Descriptor instead.
 func (*GenerateWResponse) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{13}
+	return file_captcha_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GenerateWResponse) GetSuccess() bool {
@@ -934,7 +934,7 @@ type VerifyRequest struct {
 
 func (x *VerifyRequest) Reset() {
 	*x = VerifyRequest{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[14]
+	mi := &file_captcha_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -946,7 +946,7 @@ func (x *VerifyRequest) String() string {
 func (*VerifyRequest) ProtoMessage() {}
 
 func (x *VerifyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[14]
+	mi := &file_captcha_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -959,7 +959,7 @@ func (x *VerifyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyRequest.ProtoReflect.Descriptor instead.
 func (*VerifyRequest) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{14}
+	return file_captcha_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *VerifyRequest) GetGt() string {
@@ -994,7 +994,7 @@ type VerifyResponse struct {
 
 func (x *VerifyResponse) Reset() {
 	*x = VerifyResponse{}
-	mi := &file_plugins_proto_captcha_proto_msgTypes[15]
+	mi := &file_captcha_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1006,7 +1006,7 @@ func (x *VerifyResponse) String() string {
 func (*VerifyResponse) ProtoMessage() {}
 
 func (x *VerifyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugins_proto_captcha_proto_msgTypes[15]
+	mi := &file_captcha_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1019,7 +1019,7 @@ func (x *VerifyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyResponse.ProtoReflect.Descriptor instead.
 func (*VerifyResponse) Descriptor() ([]byte, []int) {
-	return file_plugins_proto_captcha_proto_rawDescGZIP(), []int{15}
+	return file_captcha_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *VerifyResponse) GetSuccess() bool {
@@ -1043,11 +1043,99 @@ func (x *VerifyResponse) GetError() string {
 	return ""
 }
 
-var File_plugins_proto_captcha_proto protoreflect.FileDescriptor
+type VersionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
 
-const file_plugins_proto_captcha_proto_rawDesc = "" +
+func (x *VersionRequest) Reset() {
+	*x = VersionRequest{}
+	mi := &file_captcha_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VersionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VersionRequest) ProtoMessage() {}
+
+func (x *VersionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_captcha_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VersionRequest.ProtoReflect.Descriptor instead.
+func (*VersionRequest) Descriptor() ([]byte, []int) {
+	return file_captcha_proto_rawDescGZIP(), []int{16}
+}
+
+type VersionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GitCommit     string                 `protobuf:"bytes,1,opt,name=git_commit,json=gitCommit,proto3" json:"git_commit,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VersionResponse) Reset() {
+	*x = VersionResponse{}
+	mi := &file_captcha_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VersionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VersionResponse) ProtoMessage() {}
+
+func (x *VersionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_captcha_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VersionResponse.ProtoReflect.Descriptor instead.
+func (*VersionResponse) Descriptor() ([]byte, []int) {
+	return file_captcha_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *VersionResponse) GetGitCommit() string {
+	if x != nil {
+		return x.GitCommit
+	}
+	return ""
+}
+
+func (x *VersionResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+var File_captcha_proto protoreflect.FileDescriptor
+
+const file_captcha_proto_rawDesc = "" +
 	"\n" +
-	"\x1bplugins/proto/captcha.proto\x12\acaptcha\"'\n" +
+	"\rcaptcha.proto\x12\acaptcha\"'\n" +
 	"\tGeetestCS\x12\f\n" +
 	"\x01s\x18\x01 \x01(\tR\x01s\x12\f\n" +
 	"\x01c\x18\x02 \x01(\fR\x01c\"\xab\x01\n" +
@@ -1113,35 +1201,50 @@ const file_plugins_proto_captcha_proto_rawDesc = "" +
 	"\x0eVerifyResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x1a\n" +
 	"\bvalidate\x18\x02 \x01(\tR\bvalidate\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error*0\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\x10\n" +
+	"\x0eVersionRequest\"J\n" +
+	"\x0fVersionResponse\x12\x1d\n" +
+	"\n" +
+	"git_commit\x18\x01 \x01(\tR\tgitCommit\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion*0\n" +
 	"\vCaptchaType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\t\n" +
 	"\x05SLIDE\x10\x01\x12\t\n" +
-	"\x05CLICK\x10\x022\xf3\x03\n" +
-	"\x0eCaptchaService\x12R\n" +
+	"\x05CLICK\x10\x022\xaf\x04\n" +
+	"\fClickService\x12R\n" +
 	"\x05Solve\x12#.captcha.SolveGeetestCaptchaRequest\x1a$.captcha.SolveGeetestCaptchaResponse\x126\n" +
 	"\x05GetCS\x12\x15.captcha.GetCSRequest\x1a\x16.captcha.GetCSResponse\x12<\n" +
 	"\aGetType\x12\x17.captcha.GetTypeRequest\x1a\x18.captcha.GetTypeResponse\x12K\n" +
 	"\fGetNewCSArgs\x12\x1c.captcha.GetNewCSArgsRequest\x1a\x1d.captcha.GetNewCSArgsResponse\x12K\n" +
 	"\fCalculateKey\x12\x1c.captcha.CalculateKeyRequest\x1a\x1d.captcha.CalculateKeyResponse\x12B\n" +
 	"\tGenerateW\x12\x19.captcha.GenerateWRequest\x1a\x1a.captcha.GenerateWResponse\x129\n" +
-	"\x06Verify\x12\x16.captcha.VerifyRequest\x1a\x17.captcha.VerifyResponseB\x13Z\x11./plugins/captchab\x06proto3"
+	"\x06Verify\x12\x16.captcha.VerifyRequest\x1a\x17.captcha.VerifyResponse\x12<\n" +
+	"\aVersion\x12\x17.captcha.VersionRequest\x1a\x18.captcha.VersionResponse2\xaf\x04\n" +
+	"\fSlideService\x12R\n" +
+	"\x05Solve\x12#.captcha.SolveGeetestCaptchaRequest\x1a$.captcha.SolveGeetestCaptchaResponse\x126\n" +
+	"\x05GetCS\x12\x15.captcha.GetCSRequest\x1a\x16.captcha.GetCSResponse\x12<\n" +
+	"\aGetType\x12\x17.captcha.GetTypeRequest\x1a\x18.captcha.GetTypeResponse\x12K\n" +
+	"\fGetNewCSArgs\x12\x1c.captcha.GetNewCSArgsRequest\x1a\x1d.captcha.GetNewCSArgsResponse\x12K\n" +
+	"\fCalculateKey\x12\x1c.captcha.CalculateKeyRequest\x1a\x1d.captcha.CalculateKeyResponse\x12B\n" +
+	"\tGenerateW\x12\x19.captcha.GenerateWRequest\x1a\x1a.captcha.GenerateWResponse\x129\n" +
+	"\x06Verify\x12\x16.captcha.VerifyRequest\x1a\x17.captcha.VerifyResponse\x12<\n" +
+	"\aVersion\x12\x17.captcha.VersionRequest\x1a\x18.captcha.VersionResponseB\vZ\t./captchab\x06proto3"
 
 var (
-	file_plugins_proto_captcha_proto_rawDescOnce sync.Once
-	file_plugins_proto_captcha_proto_rawDescData []byte
+	file_captcha_proto_rawDescOnce sync.Once
+	file_captcha_proto_rawDescData []byte
 )
 
-func file_plugins_proto_captcha_proto_rawDescGZIP() []byte {
-	file_plugins_proto_captcha_proto_rawDescOnce.Do(func() {
-		file_plugins_proto_captcha_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_plugins_proto_captcha_proto_rawDesc), len(file_plugins_proto_captcha_proto_rawDesc)))
+func file_captcha_proto_rawDescGZIP() []byte {
+	file_captcha_proto_rawDescOnce.Do(func() {
+		file_captcha_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_captcha_proto_rawDesc), len(file_captcha_proto_rawDesc)))
 	})
-	return file_plugins_proto_captcha_proto_rawDescData
+	return file_captcha_proto_rawDescData
 }
 
-var file_plugins_proto_captcha_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_plugins_proto_captcha_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
-var file_plugins_proto_captcha_proto_goTypes = []any{
+var file_captcha_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_captcha_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_captcha_proto_goTypes = []any{
 	(CaptchaType)(0),                    // 0: captcha.CaptchaType
 	(*GeetestCS)(nil),                   // 1: captcha.GeetestCS
 	(*NewCSArgs)(nil),                   // 2: captcha.NewCSArgs
@@ -1159,55 +1262,75 @@ var file_plugins_proto_captcha_proto_goTypes = []any{
 	(*GenerateWResponse)(nil),           // 14: captcha.GenerateWResponse
 	(*VerifyRequest)(nil),               // 15: captcha.VerifyRequest
 	(*VerifyResponse)(nil),              // 16: captcha.VerifyResponse
+	(*VersionRequest)(nil),              // 17: captcha.VersionRequest
+	(*VersionResponse)(nil),             // 18: captcha.VersionResponse
 }
-var file_plugins_proto_captcha_proto_depIdxs = []int32{
+var file_captcha_proto_depIdxs = []int32{
 	1,  // 0: captcha.GetCSResponse.cs:type_name -> captcha.GeetestCS
 	0,  // 1: captcha.GetTypeResponse.type:type_name -> captcha.CaptchaType
 	2,  // 2: captcha.GetNewCSArgsResponse.args:type_name -> captcha.NewCSArgs
 	2,  // 3: captcha.CalculateKeyRequest.args:type_name -> captcha.NewCSArgs
 	2,  // 4: captcha.GenerateWRequest.args:type_name -> captcha.NewCSArgs
-	3,  // 5: captcha.CaptchaService.Solve:input_type -> captcha.SolveGeetestCaptchaRequest
-	5,  // 6: captcha.CaptchaService.GetCS:input_type -> captcha.GetCSRequest
-	7,  // 7: captcha.CaptchaService.GetType:input_type -> captcha.GetTypeRequest
-	9,  // 8: captcha.CaptchaService.GetNewCSArgs:input_type -> captcha.GetNewCSArgsRequest
-	11, // 9: captcha.CaptchaService.CalculateKey:input_type -> captcha.CalculateKeyRequest
-	13, // 10: captcha.CaptchaService.GenerateW:input_type -> captcha.GenerateWRequest
-	15, // 11: captcha.CaptchaService.Verify:input_type -> captcha.VerifyRequest
-	4,  // 12: captcha.CaptchaService.Solve:output_type -> captcha.SolveGeetestCaptchaResponse
-	6,  // 13: captcha.CaptchaService.GetCS:output_type -> captcha.GetCSResponse
-	8,  // 14: captcha.CaptchaService.GetType:output_type -> captcha.GetTypeResponse
-	10, // 15: captcha.CaptchaService.GetNewCSArgs:output_type -> captcha.GetNewCSArgsResponse
-	12, // 16: captcha.CaptchaService.CalculateKey:output_type -> captcha.CalculateKeyResponse
-	14, // 17: captcha.CaptchaService.GenerateW:output_type -> captcha.GenerateWResponse
-	16, // 18: captcha.CaptchaService.Verify:output_type -> captcha.VerifyResponse
-	12, // [12:19] is the sub-list for method output_type
-	5,  // [5:12] is the sub-list for method input_type
+	3,  // 5: captcha.ClickService.Solve:input_type -> captcha.SolveGeetestCaptchaRequest
+	5,  // 6: captcha.ClickService.GetCS:input_type -> captcha.GetCSRequest
+	7,  // 7: captcha.ClickService.GetType:input_type -> captcha.GetTypeRequest
+	9,  // 8: captcha.ClickService.GetNewCSArgs:input_type -> captcha.GetNewCSArgsRequest
+	11, // 9: captcha.ClickService.CalculateKey:input_type -> captcha.CalculateKeyRequest
+	13, // 10: captcha.ClickService.GenerateW:input_type -> captcha.GenerateWRequest
+	15, // 11: captcha.ClickService.Verify:input_type -> captcha.VerifyRequest
+	17, // 12: captcha.ClickService.Version:input_type -> captcha.VersionRequest
+	3,  // 13: captcha.SlideService.Solve:input_type -> captcha.SolveGeetestCaptchaRequest
+	5,  // 14: captcha.SlideService.GetCS:input_type -> captcha.GetCSRequest
+	7,  // 15: captcha.SlideService.GetType:input_type -> captcha.GetTypeRequest
+	9,  // 16: captcha.SlideService.GetNewCSArgs:input_type -> captcha.GetNewCSArgsRequest
+	11, // 17: captcha.SlideService.CalculateKey:input_type -> captcha.CalculateKeyRequest
+	13, // 18: captcha.SlideService.GenerateW:input_type -> captcha.GenerateWRequest
+	15, // 19: captcha.SlideService.Verify:input_type -> captcha.VerifyRequest
+	17, // 20: captcha.SlideService.Version:input_type -> captcha.VersionRequest
+	4,  // 21: captcha.ClickService.Solve:output_type -> captcha.SolveGeetestCaptchaResponse
+	6,  // 22: captcha.ClickService.GetCS:output_type -> captcha.GetCSResponse
+	8,  // 23: captcha.ClickService.GetType:output_type -> captcha.GetTypeResponse
+	10, // 24: captcha.ClickService.GetNewCSArgs:output_type -> captcha.GetNewCSArgsResponse
+	12, // 25: captcha.ClickService.CalculateKey:output_type -> captcha.CalculateKeyResponse
+	14, // 26: captcha.ClickService.GenerateW:output_type -> captcha.GenerateWResponse
+	16, // 27: captcha.ClickService.Verify:output_type -> captcha.VerifyResponse
+	18, // 28: captcha.ClickService.Version:output_type -> captcha.VersionResponse
+	4,  // 29: captcha.SlideService.Solve:output_type -> captcha.SolveGeetestCaptchaResponse
+	6,  // 30: captcha.SlideService.GetCS:output_type -> captcha.GetCSResponse
+	8,  // 31: captcha.SlideService.GetType:output_type -> captcha.GetTypeResponse
+	10, // 32: captcha.SlideService.GetNewCSArgs:output_type -> captcha.GetNewCSArgsResponse
+	12, // 33: captcha.SlideService.CalculateKey:output_type -> captcha.CalculateKeyResponse
+	14, // 34: captcha.SlideService.GenerateW:output_type -> captcha.GenerateWResponse
+	16, // 35: captcha.SlideService.Verify:output_type -> captcha.VerifyResponse
+	18, // 36: captcha.SlideService.Version:output_type -> captcha.VersionResponse
+	21, // [21:37] is the sub-list for method output_type
+	5,  // [5:21] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
 }
 
-func init() { file_plugins_proto_captcha_proto_init() }
-func file_plugins_proto_captcha_proto_init() {
-	if File_plugins_proto_captcha_proto != nil {
+func init() { file_captcha_proto_init() }
+func file_captcha_proto_init() {
+	if File_captcha_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plugins_proto_captcha_proto_rawDesc), len(file_plugins_proto_captcha_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_captcha_proto_rawDesc), len(file_captcha_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   16,
+			NumMessages:   18,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
-		GoTypes:           file_plugins_proto_captcha_proto_goTypes,
-		DependencyIndexes: file_plugins_proto_captcha_proto_depIdxs,
-		EnumInfos:         file_plugins_proto_captcha_proto_enumTypes,
-		MessageInfos:      file_plugins_proto_captcha_proto_msgTypes,
+		GoTypes:           file_captcha_proto_goTypes,
+		DependencyIndexes: file_captcha_proto_depIdxs,
+		EnumInfos:         file_captcha_proto_enumTypes,
+		MessageInfos:      file_captcha_proto_msgTypes,
 	}.Build()
-	File_plugins_proto_captcha_proto = out.File
-	file_plugins_proto_captcha_proto_goTypes = nil
-	file_plugins_proto_captcha_proto_depIdxs = nil
+	File_captcha_proto = out.File
+	file_captcha_proto_goTypes = nil
+	file_captcha_proto_depIdxs = nil
 }

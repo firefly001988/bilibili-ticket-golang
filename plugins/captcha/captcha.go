@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"sync"
 
+	"bilibili-ticket-golang/plugins/pcommon"
+
 	"github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 )
@@ -26,7 +28,6 @@ var Handshake = plugin.HandshakeConfig{
 // =============================================================================
 
 // CaptchaSolver is the interface that the captcha plugin must implement.
-// It mirrors the Click / Slide API from old/captcha/geetest.go.
 type CaptchaSolver interface {
 	// Create initialises a solver instance for the given gt+challenge.
 	// Returns the instance ID for subsequent calls.
@@ -61,19 +62,22 @@ type CaptchaSolver interface {
 // gRPC client wrapper – bridges CaptchaSolver over the gRPC proto client
 // =============================================================================
 
-// grpcSolver implements CaptchaSolver by delegating to a CaptchaServiceClient.
-// It maintains a map of instance IDs → (gt, challenge) so that the stateless
-// gRPC service can be used with the instance-based CaptchaSolver interface.
+// grpcSolver implements CaptchaSolver by delegating to ClickServiceClient
+// and SlideServiceClient. It maintains a map of instance IDs → state so
+// that the stateless gRPC services can be used with the instance-based
+// CaptchaSolver interface.
 type grpcSolver struct {
-	client    CaptchaServiceClient
-	mu        sync.Mutex
-	nextID    int
-	instances map[string]*instanceState
+	clickClient ClickServiceClient
+	slideClient SlideServiceClient
+	mu          sync.Mutex
+	nextID      int
+	instances   map[string]*instanceState
 }
 
 type instanceState struct {
-	gt        string
-	challenge string
+	gt          string
+	challenge   string
+	captchaType CaptchaType // set after GetType; defaults to UNKNOWN
 }
 
 func (g *grpcSolver) getState(id string) (*instanceState, error) {
@@ -92,27 +96,54 @@ func (g *grpcSolver) Create(gt, challenge string) (string, error) {
 	defer g.mu.Unlock()
 	g.nextID++
 	id := fmt.Sprintf("inst-%d", g.nextID)
-	g.instances[id] = &instanceState{gt: gt, challenge: challenge}
+	g.instances[id] = &instanceState{
+		gt:          gt,
+		challenge:   challenge,
+		captchaType: CaptchaType_UNKNOWN,
+	}
 	return id, nil
 }
 
-// Solve runs the full pipeline via the gRPC Solve RPC.
+// Solve runs the full pipeline via the appropriate gRPC Solve RPC.
+// If the captcha type is not yet known, GetType is called first to
+// auto-detect whether to use ClickService or SlideService.
 func (g *grpcSolver) Solve(instanceID string) (string, error) {
 	st, err := g.getState(instanceID)
 	if err != nil {
 		return "", err
 	}
-	resp, err := g.client.Solve(context.Background(), &SolveGeetestCaptchaRequest{
-		Gt:        st.gt,
-		Challenge: st.challenge,
-	})
-	if err != nil {
-		return "", err
+	// Auto-detect type if not yet known.
+	if st.captchaType == CaptchaType_UNKNOWN {
+		if _, err := g.GetType(instanceID, ""); err != nil {
+			return "", err
+		}
+		// Re-read state after GetType updated it.
+		st, err = g.getState(instanceID)
+		if err != nil {
+			return "", err
+		}
 	}
-	if !resp.Success {
-		return "", fmt.Errorf("captcha: %s", resp.Error)
+	req := &SolveGeetestCaptchaRequest{Gt: st.gt, Challenge: st.challenge}
+	switch st.captchaType {
+	case CaptchaType_SLIDE:
+		resp, err := g.slideClient.Solve(context.Background(), req)
+		if err != nil {
+			return "", err
+		}
+		if !resp.Success {
+			return "", fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.Validate, nil
+	default: // CLICK (or still UNKNOWN — fall back to Click)
+		resp, err := g.clickClient.Solve(context.Background(), req)
+		if err != nil {
+			return "", err
+		}
+		if !resp.Success {
+			return "", fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.Validate, nil
 	}
-	return resp.Validate, nil
 }
 
 // GetCS calls the gRPC GetCS RPC.
@@ -121,37 +152,47 @@ func (g *grpcSolver) GetCS(instanceID, w string) (*GeetestCS, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := g.client.GetCS(context.Background(), &GetCSRequest{
-		Gt:        st.gt,
-		Challenge: st.challenge,
-		W:         w,
-	})
-	if err != nil {
-		return nil, err
+	req := &GetCSRequest{Gt: st.gt, Challenge: st.challenge, W: w}
+	switch st.captchaType {
+	case CaptchaType_SLIDE:
+		resp, err := g.slideClient.GetCS(context.Background(), req)
+		if err != nil {
+			return nil, err
+		}
+		if !resp.Success {
+			return nil, fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.Cs, nil
+	default:
+		resp, err := g.clickClient.GetCS(context.Background(), req)
+		if err != nil {
+			return nil, err
+		}
+		if !resp.Success {
+			return nil, fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.Cs, nil
 	}
-	if !resp.Success {
-		return nil, fmt.Errorf("captcha: %s", resp.Error)
-	}
-	return resp.Cs, nil
 }
 
-// GetType calls the gRPC GetType RPC.
+// GetType calls the gRPC GetType RPC and caches the result on the instance.
 func (g *grpcSolver) GetType(instanceID, w string) (CaptchaType, error) {
 	st, err := g.getState(instanceID)
 	if err != nil {
 		return CaptchaType_UNKNOWN, err
 	}
-	resp, err := g.client.GetType(context.Background(), &GetTypeRequest{
-		Gt:        st.gt,
-		Challenge: st.challenge,
-		W:         w,
-	})
+	req := &GetTypeRequest{Gt: st.gt, Challenge: st.challenge, W: w}
+	// Always use ClickService for type detection.
+	resp, err := g.clickClient.GetType(context.Background(), req)
 	if err != nil {
 		return CaptchaType_UNKNOWN, err
 	}
 	if !resp.Success {
 		return CaptchaType_UNKNOWN, fmt.Errorf("captcha: %s", resp.Error)
 	}
+	g.mu.Lock()
+	st.captchaType = resp.Type
+	g.mu.Unlock()
 	return resp.Type, nil
 }
 
@@ -161,17 +202,27 @@ func (g *grpcSolver) GetNewCSArgs(instanceID string) (*NewCSArgs, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := g.client.GetNewCSArgs(context.Background(), &GetNewCSArgsRequest{
-		Gt:        st.gt,
-		Challenge: st.challenge,
-	})
-	if err != nil {
-		return nil, err
+	req := &GetNewCSArgsRequest{Gt: st.gt, Challenge: st.challenge}
+	switch st.captchaType {
+	case CaptchaType_SLIDE:
+		resp, err := g.slideClient.GetNewCSArgs(context.Background(), req)
+		if err != nil {
+			return nil, err
+		}
+		if !resp.Success {
+			return nil, fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.Args, nil
+	default:
+		resp, err := g.clickClient.GetNewCSArgs(context.Background(), req)
+		if err != nil {
+			return nil, err
+		}
+		if !resp.Success {
+			return nil, fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.Args, nil
 	}
-	if !resp.Success {
-		return nil, fmt.Errorf("captcha: %s", resp.Error)
-	}
-	return resp.Args, nil
 }
 
 // CalculateKey calls the gRPC CalculateKey RPC.
@@ -180,18 +231,27 @@ func (g *grpcSolver) CalculateKey(instanceID string, args *NewCSArgs) (string, e
 	if err != nil {
 		return "", err
 	}
-	resp, err := g.client.CalculateKey(context.Background(), &CalculateKeyRequest{
-		Gt:        st.gt,
-		Challenge: st.challenge,
-		Args:      args,
-	})
-	if err != nil {
-		return "", err
+	req := &CalculateKeyRequest{Gt: st.gt, Challenge: st.challenge, Args: args}
+	switch st.captchaType {
+	case CaptchaType_SLIDE:
+		resp, err := g.slideClient.CalculateKey(context.Background(), req)
+		if err != nil {
+			return "", err
+		}
+		if !resp.Success {
+			return "", fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.Key, nil
+	default:
+		resp, err := g.clickClient.CalculateKey(context.Background(), req)
+		if err != nil {
+			return "", err
+		}
+		if !resp.Success {
+			return "", fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.Key, nil
 	}
-	if !resp.Success {
-		return "", fmt.Errorf("captcha: %s", resp.Error)
-	}
-	return resp.Key, nil
 }
 
 // GenerateW calls the gRPC GenerateW RPC.
@@ -200,19 +260,27 @@ func (g *grpcSolver) GenerateW(instanceID string, key string, args *NewCSArgs) (
 	if err != nil {
 		return "", err
 	}
-	resp, err := g.client.GenerateW(context.Background(), &GenerateWRequest{
-		Gt:        st.gt,
-		Challenge: st.challenge,
-		Key:       key,
-		Args:      args,
-	})
-	if err != nil {
-		return "", err
+	req := &GenerateWRequest{Gt: st.gt, Challenge: st.challenge, Key: key, Args: args}
+	switch st.captchaType {
+	case CaptchaType_SLIDE:
+		resp, err := g.slideClient.GenerateW(context.Background(), req)
+		if err != nil {
+			return "", err
+		}
+		if !resp.Success {
+			return "", fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.W, nil
+	default:
+		resp, err := g.clickClient.GenerateW(context.Background(), req)
+		if err != nil {
+			return "", err
+		}
+		if !resp.Success {
+			return "", fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.W, nil
 	}
-	if !resp.Success {
-		return "", fmt.Errorf("captcha: %s", resp.Error)
-	}
-	return resp.W, nil
 }
 
 // Verify calls the gRPC Verify RPC.
@@ -221,18 +289,27 @@ func (g *grpcSolver) Verify(instanceID, w string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	resp, err := g.client.Verify(context.Background(), &VerifyRequest{
-		Gt:        st.gt,
-		Challenge: st.challenge,
-		W:         w,
-	})
-	if err != nil {
-		return "", err
+	req := &VerifyRequest{Gt: st.gt, Challenge: st.challenge, W: w}
+	switch st.captchaType {
+	case CaptchaType_SLIDE:
+		resp, err := g.slideClient.Verify(context.Background(), req)
+		if err != nil {
+			return "", err
+		}
+		if !resp.Success {
+			return "", fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.Validate, nil
+	default:
+		resp, err := g.clickClient.Verify(context.Background(), req)
+		if err != nil {
+			return "", err
+		}
+		if !resp.Success {
+			return "", fmt.Errorf("captcha: %s", resp.Error)
+		}
+		return resp.Validate, nil
 	}
-	if !resp.Success {
-		return "", fmt.Errorf("captcha: %s", resp.Error)
-	}
-	return resp.Validate, nil
 }
 
 // Destroy removes the instance state.
@@ -241,6 +318,19 @@ func (g *grpcSolver) Destroy(instanceID string) error {
 	defer g.mu.Unlock()
 	delete(g.instances, instanceID)
 	return nil
+}
+
+// Version returns the plugin version information (uses ClickService).
+func (g *grpcSolver) Version() (pcommon.VersionInfo, error) {
+	resp, err := g.clickClient.Version(context.Background(), &VersionRequest{})
+	if err != nil {
+		return pcommon.VersionInfo{}, err
+	}
+	return pcommon.VersionInfo{
+		Name:      "captcha-plugin",
+		GitCommit: resp.GitCommit,
+		Version:   resp.Version,
+	}, nil
 }
 
 // =============================================================================
@@ -269,11 +359,12 @@ func (p *CaptchaPlugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) er
 	return nil
 }
 
-// GRPCClient creates a CaptchaSolver backed by the gRPC client connection.
+// GRPCClient creates a CaptchaSolver backed by both ClickService and SlideService clients.
 func (p *CaptchaPlugin) GRPCClient(ctx context.Context, broker *plugin.GRPCBroker, conn *grpc.ClientConn) (interface{}, error) {
 	return &grpcSolver{
-		client:    NewCaptchaServiceClient(conn),
-		instances: make(map[string]*instanceState),
+		clickClient: NewClickServiceClient(conn),
+		slideClient: NewSlideServiceClient(conn),
+		instances:   make(map[string]*instanceState),
 	}, nil
 }
 
@@ -295,7 +386,7 @@ func NewClient(pluginPath string) *plugin.Client {
 	return plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig: Handshake,
 		Plugins: map[string]plugin.Plugin{
-			"captcha": &CaptchaPlugin{},
+			"captcha-plugin": &CaptchaPlugin{},
 		},
 		Cmd:              exec.Command(pluginPath),
 		AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
@@ -308,7 +399,7 @@ func Dispense(client *plugin.Client) (CaptchaSolver, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := rpcClient.Dispense("captcha")
+	raw, err := rpcClient.Dispense("captcha-plugin")
 	if err != nil {
 		return nil, err
 	}

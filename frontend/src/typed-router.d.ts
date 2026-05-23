@@ -51,9 +51,16 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    '/plugins': RouteRecordInfo<
-      '/plugins',
-      '/plugins',
+    '/plugin-management': RouteRecordInfo<
+      '/plugin-management',
+      '/plugin-management',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/plugins-download': RouteRecordInfo<
+      '/plugins-download',
+      '/plugins-download',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -117,9 +124,15 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
-    'src/pages/plugins.vue': {
+    'src/pages/plugin-management.vue': {
       routes:
-        | '/plugins'
+        | '/plugin-management'
+      views:
+        | never
+    }
+    'src/pages/plugins-download.vue': {
+      routes:
+        | '/plugins-download'
       views:
         | never
     }

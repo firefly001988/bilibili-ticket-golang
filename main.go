@@ -2,14 +2,17 @@ package main
 
 import (
 	"bilibili-ticket-golang/biliutils"
-	notify2 "bilibili-ticket-golang/biliutils/notify"
+	"bilibili-ticket-golang/biliutils/notify"
 	"bilibili-ticket-golang/biliutils/scheduler"
 	"bilibili-ticket-golang/global"
+	"bilibili-ticket-golang/plugins"
+	"bilibili-ticket-golang/plugins/captcha"
 	"bilibili-ticket-golang/store/configuration"
 	"bilibili-ticket-golang/store/cookiejar"
 	"bytes"
 	"context"
 	"embed"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -65,7 +68,7 @@ func main() {
 		store.Cookies = jar.AllPersistentEntries()
 		store.RefreshToken = c.GetRefreshToken()
 		if saveErr := store.Save(); saveErr != nil {
-			println("Failed to persist cookies:", saveErr.Error())
+			log.Printf("[main] Failed to persist cookies: %v", saveErr)
 		}
 	})
 
@@ -75,12 +78,13 @@ func main() {
 	// Log broker for real-time task log streaming to the frontend
 	logStorage := scheduler.NewLogStorage()
 	if err := logStorage.Load(); err != nil {
-		println("Failed to load persisted logs:", err.Error())
+		log.Printf("[main] Failed to load persisted logs: %v", err)
 	}
+
 	logBroker := scheduler.NewLogBroker(logStorage)
 
 	// Build MultiNotifier from persisted notification channels
-	notifier := notify2.NewMultiNotifier()
+	notifier := notify.NewMultiNotifier()
 	for _, ch := range store.NotifyChData.GetAll() {
 		n, err := ch.ToNotifier()
 		if err == nil {
@@ -109,9 +113,57 @@ func main() {
 	// Keep tickets persisted on change
 	store.TicketData.SetChangeCallback(func(_ *configuration.TicketData, _ configuration.TicketEntry) {
 		if saveErr := store.Save(); saveErr != nil {
-			println("Failed to persist tickets:", saveErr.Error())
+			log.Printf("[main] Failed to persist tickets: %v", saveErr)
 		}
 	})
+
+	var solverFunc = func(gt string, challenge string) (string, error) {
+		// Placeholder solver that always fails. Will be replaced if captcha plugin loads successfully.
+		return "", fmt.Errorf("captcha solver not available")
+	}
+
+	pluginManager := plugins.NewPluginManager("plugins")
+
+	defer pluginManager.UnloadAll()
+
+	err = pluginManager.LoadPlugin("captcha-plugin")
+	if err != nil {
+		log.Printf("[main] Failed to load captcha plugin: %v", err)
+	} else {
+		//Captcha Solver Plugin
+		solver, err := captcha.Dispense(pluginManager.GetClient("captcha-plugin"))
+		if err != nil {
+			log.Printf("[main] Failed to dispense captcha plugin: %v", err)
+		} else {
+			solverFunc = func(gt string, challenge string) (string, error) {
+				id, _ := solver.Create(gt, challenge)
+				_, err = solver.GetCS(id, "")
+				if err != nil {
+					return "", fmt.Errorf("GetCS error: %w", err)
+				}
+				_, err := solver.GetType(id, "")
+				if err != nil {
+					return "", fmt.Errorf("GetType error: %w", err)
+				}
+				args, err := solver.GetNewCSArgs(id)
+				if err != nil {
+					return "", fmt.Errorf("GetNewCSArgs error: %w", err)
+				}
+				key, err := solver.CalculateKey(id, args)
+				if err != nil {
+					return "", fmt.Errorf("CalculateKey error: %w", err)
+				}
+				w, err := solver.GenerateW(id, key, args)
+				if err != nil {
+					return "", fmt.Errorf("GenerateW error: %w", err)
+				}
+				return solver.Verify(id, w)
+			}
+			// Wire the solver into BiliClient so voucher errors are auto-resolved.
+			c.SetCaptchaSolver(solverFunc)
+			log.Printf("[main] Captcha solver installed — vouchers will be auto-resolved")
+		}
+	}
 
 	// Create application with options
 	err = wails.Run(&options.App{
@@ -130,11 +182,12 @@ func main() {
 			c,
 			logBroker,
 			schedSvc,
+			pluginManager,
 		},
 	})
 
 	if err != nil {
-		println("Error:", err.Error())
+		log.Printf("[main] Error: %v", err)
 	}
 }
 

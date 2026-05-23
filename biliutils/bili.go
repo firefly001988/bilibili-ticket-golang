@@ -26,6 +26,10 @@ type Fingerprint struct {
 	Canvasfp   string
 }
 
+// CaptchaSolverFn is a function that solves a geetest captcha given gt+challenge.
+// It returns the validate string on success.
+type CaptchaSolverFn func(gt, challenge string) (validate string, err error)
+
 // BiliClient is the main Bilibili API client with device impersonation.
 type BiliClient struct {
 	client       *req.Client
@@ -35,8 +39,9 @@ type BiliClient struct {
 	fingerprint  *Fingerprint
 	wbi          *wbiKey
 	cookieJar    http.CookieJar
-	saveCookies  func() // callback to persist cookies to disk
-	refreshToken string // Bilibili refresh_token for cookie refresh
+	saveCookies  func()          // callback to persist cookies to disk
+	refreshToken string          // Bilibili refresh_token for cookie refresh
+	solver       CaptchaSolverFn // captcha solving function (plugin-based)
 }
 
 // NewBiliClient creates a new BiliClient with random device fingerprint.
@@ -133,7 +138,8 @@ func NewBiliClientWithCookiejar(jar http.CookieJar) (*BiliClient, error) {
 
 			resp, err = rt.RoundTrip(req)
 
-			// Handle voucher response (风控凭证)
+			// When a captcha solver is installed, the voucher is resolved
+			// automatically and the request is retried once.
 			if err == nil {
 				voucher := resp.Header.Get("x-bili-gaia-vvoucher")
 				if voucher == "" {
@@ -145,6 +151,23 @@ func NewBiliClientWithCookiejar(jar http.CookieJar) (*BiliClient, error) {
 					}
 				}
 				if voucher != "" {
+					if biliClient.solver != nil {
+						// Close the original voucher response body to avoid resource leak.
+						resp.Body.Close()
+
+						// Auto-resolve voucher with captcha solver, then retry.
+						resolved, resolveErr := biliClient.resolveVoucher(voucher)
+						if resolveErr != nil {
+							return resp, fmt.Errorf("voucher resolve failed: %w", resolveErr)
+						}
+						// Retry: add voucher to query params and cookie, then re-send.
+						// Directly rewrite URL RawQuery to avoid nil QueryParams panic.
+						q := req.RawRequest.URL.Query()
+						q.Set("gaia_vtoken", resolved)
+						req.RawRequest.URL.RawQuery = q.Encode()
+						req.Cookies = append(req.Cookies, &http.Cookie{Name: "x-bili-gaia-vtoken", Value: resolved})
+						return rt.RoundTrip(req)
+					}
 					return resp, errors.NewBilibiliAPIVoucherError(voucher)
 				}
 			}
@@ -303,6 +326,11 @@ func (c *BiliClient) GetAvailablePlugins() []plugins.PluginDefinition {
 // platform-specific download URLs.
 func (c *BiliClient) FetchPluginList() *plugins.PluginListResult {
 	return plugins.FetchPluginList()
+}
+
+// FetchPluginListByName fetches releases for a single plugin by its name.
+func (c *BiliClient) FetchPluginListByName(name string) *plugins.PluginListResult {
+	return plugins.FetchPluginListByName(name)
 }
 
 // getBuvid34AndBnut fetches buvid3 and buvid4 cookies from Bilibili after login.

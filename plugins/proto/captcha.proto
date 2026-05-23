@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package captcha;
 
-option go_package = "./plugins/captcha";
+option go_package = "./captcha";
 
 // =============================================================================
 // Enums
@@ -149,13 +149,23 @@ message VerifyResponse {
 }
 
 // =============================================================================
-// gRPC Service
+// Version
 // =============================================================================
 
-// CaptchaService exposes both the high-level Solve pipeline and each
-// fine-grained step, matching the Click / Slide API from old/captcha/geetest.go.
-service CaptchaService {
-  // Solve runs the full pipeline: GetCS → GetType → GetNewCSArgs → CalculateKey → GenerateW → Verify.
+message VersionRequest {}
+
+message VersionResponse {
+  string git_commit = 1;
+  string version = 2;
+}
+
+// =============================================================================
+// gRPC Services – Click and Slide are separate so each implementation
+// can be optimised independently.
+// =============================================================================
+
+service ClickService {
+  // Solve runs the full click pipeline.
   rpc Solve(SolveGeetestCaptchaRequest) returns (SolveGeetestCaptchaResponse);
 
   // Individual steps for callers that need fine-grained control.
@@ -165,4 +175,19 @@ service CaptchaService {
   rpc CalculateKey(CalculateKeyRequest) returns (CalculateKeyResponse);
   rpc GenerateW(GenerateWRequest) returns (GenerateWResponse);
   rpc Verify(VerifyRequest) returns (VerifyResponse);
+  rpc Version(VersionRequest) returns (VersionResponse);
+}
+
+service SlideService {
+  // Solve runs the full slide pipeline.
+  rpc Solve(SolveGeetestCaptchaRequest) returns (SolveGeetestCaptchaResponse);
+
+  // Individual steps for callers that need fine-grained control.
+  rpc GetCS(GetCSRequest) returns (GetCSResponse);
+  rpc GetType(GetTypeRequest) returns (GetTypeResponse);
+  rpc GetNewCSArgs(GetNewCSArgsRequest) returns (GetNewCSArgsResponse);
+  rpc CalculateKey(CalculateKeyRequest) returns (CalculateKeyResponse);
+  rpc GenerateW(GenerateWRequest) returns (GenerateWResponse);
+  rpc Verify(VerifyRequest) returns (VerifyResponse);
+  rpc Version(VersionRequest) returns (VersionResponse);
 }
