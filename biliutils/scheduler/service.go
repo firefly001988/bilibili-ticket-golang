@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -78,6 +79,11 @@ type SchedulerService struct {
 
 	calibCtx    context.Context
 	calibCancel context.CancelFunc
+
+	// Last measured clock offsets (server − local); positive = local is behind.
+	biliOffset time.Duration
+	ntpOffset  time.Duration
+	offsetMu   sync.RWMutex
 }
 
 // NewSchedulerService creates a new SchedulerService.
@@ -493,23 +499,44 @@ func (svc *SchedulerService) StopClockCalibration() {
 // calibrateOnce performs a single clock offset measurement and updates
 // the scheduler. Skips the update if no tasks are present.
 func (svc *SchedulerService) calibrateOnce() {
-	// Only calibrate when there are tasks to avoid unnecessary API calls
+	// Always measure both Bilibili and NTP for display purposes.
+	// Bilibili is preferred for the scheduler; fall back to NTP if it fails.
+
+	// 1. Bilibili API
+	biliOff, biliErr := clock.GetBilibiliClockOffset()
+	if biliErr == nil {
+		svc.offsetMu.Lock()
+		svc.biliOffset = biliOff
+		svc.offsetMu.Unlock()
+		println("[clock] Bilibili offset:", biliOff)
+	} else {
+		println("[clock] Bilibili offset failed:", biliErr.Error())
+	}
+
+	// 2. NTP (always fetch independently)
+	ntpOff, ntpErr := clock.GetNTPClockOffset("ntp.aliyun.com")
+	if ntpErr == nil {
+		svc.offsetMu.Lock()
+		svc.ntpOffset = ntpOff
+		svc.offsetMu.Unlock()
+		println("[clock] NTP offset:", ntpOff)
+	} else {
+		println("[clock] NTP offset failed:", ntpErr.Error())
+	}
+
+	// 3. Update scheduler offset (Bilibili preferred, NTP fallback)
 	if svc.scheduler.GetTaskCount() == 0 {
 		return
 	}
 
-	// Try Bilibili live API first (most accurate for ticket timing)
-	offset, err := clock.GetBilibiliClockOffset()
-	if err != nil {
-		// Fallback to NTP (ntp.aliyun.com)
-		offset, err = clock.GetNTPClockOffset("ntp.aliyun.com")
-		if err != nil {
-			println("[clock] calibration failed:", err.Error())
-			return
-		}
-		println("[clock] NTP offset:", offset)
+	var offset time.Duration
+	if biliErr == nil {
+		offset = biliOff
+	} else if ntpErr == nil {
+		offset = ntpOff
 	} else {
-		println("[clock] Bilibili offset:", offset)
+		println("[clock] both sources failed, skipping calibration")
+		return
 	}
 
 	oldOffset := svc.scheduler.GetGlobalOffset()
@@ -518,4 +545,67 @@ func (svc *SchedulerService) calibrateOnce() {
 	if global.Debug {
 		fmt.Printf("[clock] offset updated: %v → %v (Δ%v)\n", oldOffset, offset, offset-oldOffset)
 	}
+}
+
+// ── Retry interval settings ─────────────────────────────────────────────
+
+// GetRetryInterval returns the global retry interval in milliseconds.
+func (svc *SchedulerService) GetRetryInterval() int {
+	return svc.store.RetryIntervalMs
+}
+
+// SetRetryInterval updates the global retry interval (ms), persists it,
+// and broadcasts the change to all currently running tasks.
+func (svc *SchedulerService) SetRetryInterval(ms int) {
+	if ms < 50 {
+		ms = 50 // minimum 50ms to avoid excessive requests
+	}
+	svc.store.RetryIntervalMs = ms
+	if err := svc.store.Save(); err != nil {
+		println("Failed to persist retry interval:", err.Error())
+	}
+	// Propagate to all running tasks immediately
+	svc.scheduler.BroadcastInterval(time.Duration(ms) * time.Millisecond)
+}
+
+// GetStartDelay returns the global start delay (one-time initial delay) in milliseconds.
+func (svc *SchedulerService) GetStartDelay() int {
+	return svc.store.StartDelayMs
+}
+
+// SetStartDelay updates the global start delay (ms, 0-500), persists it,
+// and broadcasts the change to all currently running tasks.
+func (svc *SchedulerService) SetStartDelay(ms int) {
+	if ms < 0 {
+		ms = 0
+	}
+	if ms > 500 {
+		ms = 500
+	}
+	svc.store.StartDelayMs = ms
+	if err := svc.store.Save(); err != nil {
+		println("Failed to persist start delay:", err.Error())
+	}
+	// Propagate to all running tasks immediately
+	svc.scheduler.BroadcastStartDelay(time.Duration(ms) * time.Millisecond)
+}
+
+// GetGlobalOffset returns the current clock offset (server time − local time) in milliseconds.
+// Positive means local clock is behind the server.
+func (svc *SchedulerService) GetGlobalOffset() int64 {
+	return svc.scheduler.GetGlobalOffset().Milliseconds()
+}
+
+// GetBilibiliOffset returns the last measured Bilibili API clock offset in milliseconds.
+func (svc *SchedulerService) GetBilibiliOffset() int64 {
+	svc.offsetMu.RLock()
+	defer svc.offsetMu.RUnlock()
+	return svc.biliOffset.Milliseconds()
+}
+
+// GetNTPOffset returns the last measured NTP clock offset in milliseconds.
+func (svc *SchedulerService) GetNTPOffset() int64 {
+	svc.offsetMu.RLock()
+	defer svc.offsetMu.RUnlock()
+	return svc.ntpOffset.Milliseconds()
 }

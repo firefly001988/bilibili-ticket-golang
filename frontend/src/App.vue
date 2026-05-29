@@ -68,6 +68,7 @@ onMounted(async () => {
           Settings Area
         </v-list-subheader>
         <v-list-item title="Notify" value="notify" @click="router.push('/notify')" prepend-icon="mdi-bell-ring" />
+        <v-list-item title="Settings" value="settings" @click="router.push('/settings')" prepend-icon="mdi-cog" />
         <v-list-item title="Update" value="update" @click="router.push('/update')" prepend-icon="mdi-update" />
       </v-list>
     </v-navigation-drawer>
@@ -76,8 +77,8 @@ onMounted(async () => {
         <router-view />
       </v-container>
     </v-main>
-    <v-snackbar-queue v-model="messages.queue" closable :total-visible="3" collapsed contained
-      display-strategy="overflow" location="bottom center">
+    <v-snackbar-queue v-model="messages.queue" closable :total-visible="3" collapsed display-strategy="overflow"
+      location="bottom center">
       <template v-slot:actions="{ props }">
         <v-icon-btn aria-label="Close" icon="mdi-close" size="small" variant="text" v-bind="props"></v-icon-btn>
       </template>

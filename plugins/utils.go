@@ -275,5 +275,11 @@ func (f *Fetcher) fetchReleases() ([]ghRelease, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return nil, fmt.Errorf("decode releases: %w", err)
 	}
+
+	// Sort by PublishedAt in descending order (newest first).
+	sort.Slice(releases, func(i, j int) bool {
+		return releases[i].PublishedAt.After(releases[j].PublishedAt)
+	})
+
 	return releases, nil
 }

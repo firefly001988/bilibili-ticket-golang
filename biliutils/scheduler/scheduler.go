@@ -38,7 +38,7 @@ func (ds *DynamicScheduler) SetGlobalOffset(offset time.Duration) {
 	ds.globalOffset = offset
 
 	for _, task := range ds.tasks {
-		if task.GetStat() == StatWaiting {
+		if task.GetStat() == StatWaiting && task.GetTargetTime().Add(oldOffset).Before(time.Now().Add(10*time.Second)) {
 			task.rescheduleWithNewOffset(offset - oldOffset)
 		}
 	}
@@ -103,6 +103,24 @@ func (ds *DynamicScheduler) ForceStartTask(id string) {
 	ds.mutex.RUnlock()
 	if exists {
 		task.ForceStart()
+	}
+}
+
+// BroadcastInterval updates the retry interval for all running tasks.
+func (ds *DynamicScheduler) BroadcastInterval(newInterval time.Duration) {
+	ds.mutex.RLock()
+	defer ds.mutex.RUnlock()
+	for _, task := range ds.tasks {
+		task.UpdateInterval(newInterval)
+	}
+}
+
+// BroadcastStartDelay updates the start delay (random jitter) for all running tasks.
+func (ds *DynamicScheduler) BroadcastStartDelay(newDelay time.Duration) {
+	ds.mutex.RLock()
+	defer ds.mutex.RUnlock()
+	for _, task := range ds.tasks {
+		task.UpdateStartDelay(newDelay)
 	}
 }
 

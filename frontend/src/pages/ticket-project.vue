@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref, computed } from 'vue';
 import { GetProjectInformation, GetTicketSkuIDsByProjectID } from '../../wailsjs/go/biliutils/BiliClient';
-import { AddTicket, AddTicketTask, FetchRealNameBuyers } from '../../wailsjs/go/scheduler/SchedulerService';
+import { AddTicket, AddTicketTask, FetchRealNameBuyers, GetRetryInterval } from '../../wailsjs/go/scheduler/SchedulerService';
 import type { _return } from '../../wailsjs/go/models';
 import { useMessagesStore } from '@/stores/snackbar';
 import { useRouter } from 'vue-router';
@@ -124,6 +124,11 @@ function openCreateDialog(ticket: _return.TicketSkuScreenID) {
     buyerList.value = [];
     selectedBuyerId.value = null;
     showCreateDialog.value = true;
+
+    // Fetch the global retry interval as default
+    GetRetryInterval().then(ms => {
+        if (ms > 0) buyerForm.value.intervalMs = ms;
+    }).catch(() => { /* use default */ });
 }
 
 async function fetchBuyers() {

@@ -11,10 +11,11 @@ import {
     RemoveTask,
     ForceStartTask,
     GetTaskStatuses,
+    GetRetryInterval,
 } from '../../wailsjs/go/scheduler/SchedulerService'
 import type { FrontendTicket, FrontendTaskStatus } from '@/composables/schedulerTypes'
 import { statColor, statLabel, StatWaiting, StatPending } from '@/composables/schedulerTypes'
-import { DEFAULT_INTERVAL_MS, DEFAULT_EXPIRE_DAYS, SECONDS_PER_DAY } from '@/composables/defaults'
+import { DEFAULT_EXPIRE_DAYS, SECONDS_PER_DAY } from '@/composables/defaults'
 import { useDebug } from '@/composables/useDebug'
 
 const auth = useAuthStore()
@@ -116,8 +117,9 @@ async function refresh() {
 async function startTask(hash: string) {
     loading.value = true
     try {
-        debugLog('[startTask] calling AddTicketTask with hash:', hash, 'intervalMs:', DEFAULT_INTERVAL_MS)
-        await AddTicketTask(hash, DEFAULT_INTERVAL_MS)
+        const intervalMs = await GetRetryInterval()
+        debugLog('[startTask] calling AddTicketTask with hash:', hash, 'intervalMs:', intervalMs)
+        await AddTicketTask(hash, intervalMs)
         debugLog('[startTask] AddTicketTask returned successfully for hash:', hash)
         messages.add({ text: '任务已启动', color: 'success', timeout: 2000 })
         await refresh()
@@ -368,7 +370,7 @@ onUnmounted(() => {
                         <div v-if="selectedTicket.start">
                             <span class="text-grey">开售:</span>
                             <strong>{{ formatTime(new Date(selectedTicket.start * 1000).toLocaleString('zh-CN'))
-                            }}</strong>
+                                }}</strong>
                         </div>
                         <div v-if="selectedStatus && selectedStatus.error" class="w-100">
                             <span class="text-grey">错误:</span>

@@ -4,7 +4,6 @@ import (
 	"bilibili-ticket-golang/biliutils"
 	"bilibili-ticket-golang/biliutils/notify"
 	"bilibili-ticket-golang/biliutils/scheduler"
-	"bilibili-ticket-golang/global"
 	"bilibili-ticket-golang/plugins"
 	"bilibili-ticket-golang/plugins/captcha"
 	"bilibili-ticket-golang/store/configuration"
@@ -104,8 +103,8 @@ func main() {
 		logBroker.FlushLogs()
 	}()
 
-	// Auto-restart persisted tasks on launch (DefaultIntervalMs)
-	schedSvc.ReloadTickets(global.DefaultIntervalMs)
+	// Auto-restart persisted tasks on launch (using stored retry interval)
+	schedSvc.ReloadTickets(store.RetryIntervalMs)
 
 	// Start periodic clock calibration against Bilibili server (every 10s)
 	schedSvc.StartClockCalibration()

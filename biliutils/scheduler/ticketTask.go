@@ -35,6 +35,7 @@ type TicketTask struct {
 	username    string
 	userid      int64
 	interval    time.Duration
+	startDelay  time.Duration
 	ctx         context.Context
 	cancelFunc  context.CancelFunc
 	onComplete  func(stat RunningStat) // called when task terminates (persist hook)
@@ -89,6 +90,7 @@ func (tt *TicketTask) Start(globalOffset time.Duration) {
 	if tt.GetStat() == StatPending {
 		return
 	}
+
 	go tt.run(globalOffset)
 }
 
@@ -165,6 +167,19 @@ func (tt *TicketTask) setStat(stat RunningStat) {
 // Caller must hold tt.statLock.
 func (tt *TicketTask) getStatNoLock() RunningStat {
 	return tt.stat
+}
+
+func (tt *TicketTask) UpdateInterval(newInterval time.Duration) {
+	tt.mutex.Lock()
+	defer tt.mutex.Unlock()
+	tt.interval = newInterval
+}
+
+// UpdateStartDelay updates the one-time initial delay applied before the first submit attempt.
+func (tt *TicketTask) UpdateStartDelay(newDelay time.Duration) {
+	tt.mutex.Lock()
+	defer tt.mutex.Unlock()
+	tt.startDelay = newDelay
 }
 
 // setStatNoLock sets the stat without acquiring the lock.
@@ -302,8 +317,9 @@ func (tt *TicketTask) executeAndStop() {
 //  2. Choose token generator (CTokenGenerator for hot projects)
 //  3. Fetch all SKU/screen pairs, match the target
 //  4. Obtain RequestToken/PToken via prepare endpoint
-//  5. Prepare buyer info (ordinary: name+tel; real-name: ID from confirmInfo)
-//  6. Enter submit loop:
+//  5. Apply one-time start delay (if configured, wait before first submit)
+//  6. Prepare buyer info (ordinary: name+tel; real-name: ID from confirmInfo)
+//  7. Enter submit loop:
 //     → SubmitOrder every interval
 //     → Refresh tokens every 61 attempts
 //     → On success (OrderId != 0): notify + mark StatSuccess
@@ -365,7 +381,18 @@ func (tt *TicketTask) ticketFunc() {
 
 	tt.sendLog(LogInfo, "下单 Token 已获取")
 
-	// 5. Prepare buyer info based on buyer type
+	// 5. Apply one-time start delay before the first submit attempt
+	if tt.startDelay > 0 {
+		tt.sendLog(LogInfo, fmt.Sprintf("启动延时 %v...", tt.startDelay))
+		select {
+		case <-tt.ctx.Done():
+			tt.sendLog(LogInfo, "任务在启动延时期间被取消")
+			return
+		case <-time.After(tt.startDelay):
+		}
+	}
+
+	// 6. Prepare buyer info based on buyer type
 	var buyerData interface{}
 	switch tt.ticket.Buyer.BuyerType {
 	case r.Ordinary:

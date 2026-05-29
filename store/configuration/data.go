@@ -14,17 +14,21 @@ import (
 const dataFileName = "data/store.bin"
 
 type DataStorage struct {
-	Cookies      []cookiejar.CookieEntries `json:"cookies"`
-	TicketData   *TicketData               `json:"ticketData"`
-	NotifyChData *NotifyChannelData        `json:"notifyChannelData"`
-	RefreshToken string                    `json:"refreshToken"`
+	Cookies         []cookiejar.CookieEntries `json:"cookies"`
+	TicketData      *TicketData               `json:"ticketData"`
+	NotifyChData    *NotifyChannelData        `json:"notifyChannelData"`
+	RefreshToken    string                    `json:"refreshToken"`
+	RetryIntervalMs int                       `json:"retryIntervalMs"`
+	StartDelayMs    int                       `json:"startDelayMs"`
 }
 
 func NewDataStorage() *DataStorage {
 	return &DataStorage{
-		Cookies:      []cookiejar.CookieEntries{},
-		TicketData:   NewTicketData(),
-		NotifyChData: NewNotifyChannelData(),
+		Cookies:         []cookiejar.CookieEntries{},
+		TicketData:      NewTicketData(),
+		NotifyChData:    NewNotifyChannelData(),
+		RetryIntervalMs: 500, // default 500ms
+		StartDelayMs:    50,  // default 50ms
 	}
 }
 

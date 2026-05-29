@@ -14,6 +14,7 @@ const routes = [
   { path: '/ticket-project', component: () => import('@/pages/ticket-project.vue'), id: 'ticket-project' },
   { path: '/scheduler', component: () => import('@/pages/scheduler.vue'), id: 'scheduler' },
   { path: '/notify', component: () => import('@/pages/notify.vue'), id: 'notify' },
+  { path: '/settings', component: () => import('@/pages/settings.vue'), id: 'settings' },
   { path: '/update', component: () => import('@/pages/update.vue'), id: 'update' },
   { path: '/plugin-download', component: () => import('@/pages/plugins-download.vue'), id: 'plugins' },
   { path: '/plugin-management', component: () => import('@/pages/plugin-management.vue'), id: 'plugin-management' },

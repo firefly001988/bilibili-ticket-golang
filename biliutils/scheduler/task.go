@@ -22,5 +22,7 @@ type ITask interface {
 	Stop()
 	GetStat() RunningStat
 	GetError() error
+	UpdateInterval(newInterval time.Duration)
+	UpdateStartDelay(newDelay time.Duration)
 	rescheduleWithNewOffset(offsetDelta time.Duration)
 }
