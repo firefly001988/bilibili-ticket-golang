@@ -92,7 +92,7 @@ func main() {
 	}
 
 	// Scheduler service — orchestrates tasks, BiliClient, LogBroker and ticket storage
-	schedSvc := scheduler.NewSchedulerService(c, logBroker, store.TicketData, notifier, store.NotifyChData, store)
+	schedSvc := scheduler.NewSchedulerService(c, logBroker, store.TicketData, store.BWSData, notifier, store.NotifyChData, store)
 
 	// App instance for frontend verification & misc utilities
 	app := NewAppWithClient(c)
@@ -105,6 +105,7 @@ func main() {
 
 	// Auto-restart persisted tasks on launch (using stored retry interval)
 	schedSvc.ReloadTickets(store.RetryIntervalMs)
+	schedSvc.ReloadBWSTasks()
 
 	// Start periodic clock calibration against Bilibili server (every 10s)
 	schedSvc.StartClockCalibration()

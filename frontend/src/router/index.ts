@@ -16,6 +16,7 @@ const routes = [
   { path: '/notify', component: () => import('@/pages/notify.vue'), id: 'notify' },
   { path: '/settings', component: () => import('@/pages/settings.vue'), id: 'settings' },
   { path: '/update', component: () => import('@/pages/update.vue'), id: 'update' },
+  { path: '/bws-reservation', component: () => import('@/pages/bws-reservation.vue'), id: 'bws-reservation' },
   { path: '/plugin-download', component: () => import('@/pages/plugins-download.vue'), id: 'plugins' },
   { path: '/plugin-management', component: () => import('@/pages/plugin-management.vue'), id: 'plugin-management' },
 ]

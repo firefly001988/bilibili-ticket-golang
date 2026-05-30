@@ -11,6 +11,20 @@ const messages = useMessagesStore();
 
 const verified = ref(false)
 
+// BWS 仅在 7月8日 00:00 ~ 7月11日 24:00 期间可用；dev 环境始终可用
+const bwsAvailable = computed(() => {
+  if (import.meta.env.DEV) return true;
+  const now = new Date();
+  const year = now.getFullYear();
+  const start = new Date(year, 6, 8, 0, 0, 0);  // July 8 00:00
+  const end = new Date(year, 6, 12, 0, 0, 0);  // July 12 00:00 = July 11 24:00
+  return now >= start && now < end;
+});
+
+const bwsTooltip = computed(() =>
+  bwsAvailable.value ? 'BWS 活动抢票' : 'BWS 仅在 7月8日 至 7月11日 期间开放'
+);
+
 const calculatedPath = computed(() => {
   console.log('Current route path:', router.currentRoute.value.path.replace('/', ''));
   return router.currentRoute.value.path.replace('/', '') || 'home';
@@ -53,6 +67,12 @@ onMounted(async () => {
           @click="router.push('/ticket-overview')" prepend-icon="mdi-eye" />
         <v-list-item title="Project Lookup" value="ticket-project" :disabled="!auth.isLogin"
           @click="router.push('/ticket-project')" prepend-icon="mdi-magnify" />
+        <v-list-item title="BWS Reservation" value="bws-reservation" :disabled="!auth.isLogin || !bwsAvailable"
+          @click="router.push('/bws-reservation')" prepend-icon="mdi-ticket-confirmation">
+          <v-tooltip v-if="auth.isLogin && !bwsAvailable" activator="parent" location="right">
+            {{ bwsTooltip }}
+          </v-tooltip>
+        </v-list-item>
         <v-list-item title="Scheduler" value="scheduler" :disabled="!auth.isLogin" @click="router.push('/scheduler')"
           prepend-icon="mdi-calendar-clock" />
         <v-divider class="mt-1" />

@@ -1,0 +1,492 @@
+<script lang="ts" setup>
+import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+import { useMessagesStore } from '@/stores/snackbar'
+import TaskLogViewer from '@/components/TaskLogViewer.vue'
+import {
+    GetBWSEntries,
+    AddBWSEntry,
+    RemoveBWSEntry,
+    AddBWSTask,
+    GetTaskStatuses,
+} from '../../wailsjs/go/scheduler/SchedulerService'
+import {
+    GetBWSReservationInfo,
+} from '../../wailsjs/go/biliutils/BiliClient'
+import type { FrontendBWSEntry, FrontendTaskStatus } from '@/composables/schedulerTypes'
+import { statColor, statLabel, StatWaiting, StatPending } from '@/composables/schedulerTypes'
+import { useDebug } from '@/composables/useDebug'
+
+const auth = useAuthStore()
+const { debugLog } = useDebug()
+const messages = useMessagesStore()
+
+// BWS 仅在 7月8日 00:00 ~ 7月11日 24:00 期间可用；dev 环境始终可用
+const bwsAvailable = computed(() => {
+    if (import.meta.env.DEV) return true
+    const now = new Date()
+    const year = now.getFullYear()
+    const start = new Date(year, 6, 8, 0, 0, 0)
+    const end = new Date(year, 6, 12, 0, 0, 0)
+    return now >= start && now < end
+})
+
+// ── State ──────────────────────────────────────────────
+const entries = ref<FrontendBWSEntry[]>([])
+const taskStatuses = ref<FrontendTaskStatus[]>([])
+const selectedHash = ref('')
+const loading = ref(false)
+const showFetchDialog = ref(false)
+const showAddDialog = ref(false)
+const pollInterval = 3000
+
+// ── Fetch BWS info form ─────────────────────────────────
+const reserveDates = ref('')
+const fetchingInfo = ref(false)
+const bwsData = ref<any>(null) // raw BWSReservationData
+
+// ── Add entry form (from selected activity) ─────────────
+const selectedActivity = ref<any>(null)
+const formStartDelayMs = ref(0)
+const formLoopDelayMs = ref(50)
+
+// ── Computed ───────────────────────────────────────────
+const selectedEntry = computed(() =>
+    entries.value.find(e => e.hash === selectedHash.value)
+)
+
+const selectedStatus = computed(() => {
+    const live = taskStatuses.value.find(s => s.taskID === selectedHash.value)
+    if (live) return live
+    const entry = entries.value.find(e => e.hash === selectedHash.value)
+    if (entry) {
+        return {
+            taskID: entry.hash,
+            targetTime: '',
+            adjustedTime: '',
+            remainingMs: 0,
+            stat: entry.stat ?? 0,
+            statName: statLabel(entry.stat ?? 0),
+            error: '',
+            projectName: entry.activityTitle,
+            screenName: entry.reserveDate,
+            skuName: `票号: ${entry.ticketNo}`,
+            buyerName: '',
+        } as FrontendTaskStatus
+    }
+    return undefined
+})
+
+// Merge entries with task statuses
+const mergedList = computed(() => {
+    const statusMap = new Map(taskStatuses.value.map(s => [s.taskID, s]))
+    return entries.value.map(e => {
+        const liveStatus = statusMap.get(e.hash)
+        const stat = liveStatus ? liveStatus.stat : (e.stat ?? 0)
+        return {
+            ...e,
+            displayStat: stat,
+            displayError: liveStatus?.error || null,
+            remainingMs: liveStatus?.remainingMs ?? 0,
+        }
+    })
+})
+
+function isTaskActive(hash: string): boolean {
+    const s = taskStatuses.value.find(x => x.taskID === hash)
+    return s ? (s.stat === StatWaiting || s.stat === StatPending) : false
+}
+
+// ── Actions ────────────────────────────────────────────
+async function refresh() {
+    try {
+        const [ents, sts] = await Promise.all([
+            GetBWSEntries(),
+            GetTaskStatuses(),
+        ])
+        debugLog('[BWS refresh] GetBWSEntries:', ents)
+        debugLog('[BWS refresh] GetTaskStatuses:', sts)
+        entries.value = ents || []
+        taskStatuses.value = sts || []
+    } catch (e: any) {
+        console.error('BWS refresh failed:', e)
+    }
+}
+
+// ── Fetch BWS info ─────────────────────────────────────
+async function fetchBWSInfo() {
+    if (!reserveDates.value.trim()) {
+        messages.add({ text: '请输入日期，如 20250711,20250712', color: 'warning', timeout: 2000 })
+        return
+    }
+    fetchingInfo.value = true
+    try {
+        const data = await GetBWSReservationInfo(reserveDates.value.trim())
+        debugLog('[BWS] parsed data:', data)
+        bwsData.value = data
+        messages.add({ text: 'BWS 活动信息已加载', color: 'success', timeout: 2000 })
+    } catch (e: any) {
+        messages.add({ text: `获取失败: ${e}`, color: 'error', timeout: 4000 })
+    } finally {
+        fetchingInfo.value = false
+    }
+}
+
+// ── Add entry ──────────────────────────────────────────
+function openAddDialog(activity: any) {
+    selectedActivity.value = activity
+    formStartDelayMs.value = 0
+    formLoopDelayMs.value = 50
+    showAddDialog.value = true
+}
+
+async function submitAddEntry() {
+    if (!selectedActivity.value) return
+    const act = selectedActivity.value
+
+    // Find ticket for this activity's date
+    const ticket = bwsData.value?.TicketMapping?.[act.ReserveDate]
+    if (!ticket) {
+        messages.add({ text: `未找到日期 ${act.ReserveDate} 的票号`, color: 'error', timeout: 4000 })
+        return
+    }
+
+    try {
+        const hash = await AddBWSEntry({
+            hash: '',
+            activityId: act.ReserveID,
+            ticketNo: ticket,
+            activityTitle: act.ActTitle,
+            reserveTime: act.ReserveBeginTime,
+            reserveDate: act.ReserveDate,
+            expire: Math.floor(Date.now() / 1000) + 86400 * 30, // 30 days
+            startDelayMs: formStartDelayMs.value,
+            loopDelayMs: formLoopDelayMs.value,
+            stat: 0,
+        })
+
+        debugLog('[BWS] AddBWSEntry hash:', hash)
+        messages.add({ text: `BWS 活动已添加 (${hash.slice(0, 8)}...)`, color: 'success', timeout: 2000 })
+        showAddDialog.value = false
+        await refresh()
+    } catch (e: any) {
+        messages.add({ text: `添加失败: ${e}`, color: 'error', timeout: 4000 })
+    }
+}
+
+// ── Task management ────────────────────────────────────
+async function startTask(hash: string) {
+    loading.value = true
+    try {
+        await AddBWSTask(hash)
+        messages.add({ text: 'BWS 任务已启动', color: 'success', timeout: 2000 })
+        await refresh()
+        selectedHash.value = hash
+    } catch (e: any) {
+        messages.add({ text: `启动失败: ${e}`, color: 'error', timeout: 4000 })
+    } finally {
+        loading.value = false
+    }
+}
+
+async function deleteEntry(hash: string) {
+    try {
+        await RemoveBWSEntry(hash)
+        if (selectedHash.value === hash) selectedHash.value = ''
+        messages.add({ text: 'BWS 活动已删除', color: 'info', timeout: 2000 })
+        await refresh()
+    } catch (e: any) {
+        messages.add({ text: `删除失败: ${e}`, color: 'error', timeout: 4000 })
+    }
+}
+
+// ── Helpers ────────────────────────────────────────────
+function formatTime(ts: number): string {
+    if (!ts) return '—'
+    const d = new Date(ts * 1000)
+    if (isNaN(d.getTime())) return String(ts)
+    return d.toLocaleString('zh-CN')
+}
+
+function formatRemaining(ms: number): string {
+    if (ms <= 0) return '已到期'
+    const h = Math.floor(ms / 3600000)
+    const m = Math.floor((ms % 3600000) / 60000)
+    const s = Math.floor((ms % 60000) / 1000)
+    if (h > 0) return `${h}h ${m}m ${s}s`
+    if (m > 0) return `${m}m ${s}s`
+    return `${s}s`
+}
+
+function getTicketForDate(date: string): string {
+    return bwsData.value?.TicketMapping?.[date] || '—'
+}
+
+function getTicketInfo(date: string): any {
+    return bwsData.value?.TicketInfo?.[date]
+}
+
+// ── Lifecycle ──────────────────────────────────────────
+let timer: ReturnType<typeof setInterval> | null = null
+
+onMounted(async () => {
+    await auth.checkLoginStatus()
+    if (auth.isLogin) {
+        await refresh()
+        timer = setInterval(refresh, pollInterval)
+    }
+})
+
+onUnmounted(() => {
+    if (timer) { clearInterval(timer); timer = null }
+})
+</script>
+
+<template>
+    <div>
+        <div class="d-flex align-center">
+            <h1 class="text-h5">BWS 预约抢票</h1>
+            <v-spacer />
+            <v-btn v-if="auth.isLogin" prepend-icon="mdi-cloud-download" color="info" variant="tonal" size="small"
+                @click="showFetchDialog = true">
+                获取活动
+            </v-btn>
+        </div>
+        <v-divider thickness="3" class="mb-4" />
+
+        <v-card v-if="!auth.isLogin" color="warning" variant="tonal" class="pa-4">
+            <v-card-text>
+                请先 <router-link to="/account">登录</router-link> 后才能使用 BWS 抢票。
+            </v-card-text>
+        </v-card>
+
+        <v-card v-else-if="!bwsAvailable" color="grey" variant="tonal" class="pa-4">
+            <v-card-title class="text-h6">⏳ BWS 活动尚未开始</v-card-title>
+            <v-card-text>
+                BWS（Bilibili World 乐园）预定功能仅在 <strong>7月8日 00:00 至 7月12日 20:00</strong> 期间开放。
+            </v-card-text>
+        </v-card>
+
+        <template v-else>
+            <!-- Ticket info summary -->
+            <v-card v-if="bwsData?.TicketInfo" variant="outlined" class="mb-4 pa-3">
+                <div class="text-subtitle-2 mb-2">我的票务信息</div>
+                <div class="d-flex flex-wrap ga-3">
+                    <v-chip v-for="(info, date) in bwsData.TicketInfo" :key="date" color="info" variant="tonal"
+                        size="small">
+                        {{ date }}: {{ info.ScreenName }} — {{ info.SkuName }}
+                        <v-tooltip activator="parent" location="top">{{ info.Ticket }}</v-tooltip>
+                    </v-chip>
+                </div>
+            </v-card>
+
+            <!-- Entry list -->
+            <v-card variant="outlined" class="mb-4">
+                <v-card-title class="d-flex align-center py-2 px-3">
+                    <span class="text-body-medium">预约列表 ({{ mergedList.length }})</span>
+                    <v-spacer />
+                    <v-btn icon="mdi-refresh" size="x-small" variant="text" :loading="loading" @click="refresh" />
+                </v-card-title>
+                <v-divider />
+                <v-card-text class="pa-0" style="max-height: 600px; overflow-y: auto;">
+                    <div v-if="mergedList.length === 0" class="text-label-medium text-grey pa-6 text-center">
+                        暂无 BWS 预约活动 — 点击「获取活动」加载
+                    </div>
+                    <v-list v-else density="compact" lines="two">
+                        <v-list-item v-for="e in mergedList" :key="e.hash" :active="selectedHash === e.hash"
+                            @click="selectedHash = e.hash">
+                            <template #prepend>
+                                <v-icon :color="statColor(e.displayStat)" size="18">
+                                    {{ e.displayStat === 0 ? 'mdi-clock-outline' :
+                                        e.displayStat === 1 ? 'mdi-progress-clock' :
+                                            e.displayStat === 2 ? 'mdi-check-circle' :
+                                                e.displayStat === 3 ? 'mdi-close-circle' : 'mdi-alert-circle' }}
+                                </v-icon>
+                            </template>
+                            <template #title>
+                                <span class="text-body-2">{{ e.activityTitle }}</span>
+                                <v-chip :color="statColor(e.displayStat)" size="x-small" variant="tonal" class="ml-1">
+                                    {{ statLabel(e.displayStat) }}
+                                </v-chip>
+                            </template>
+                            <template #subtitle>
+                                <span class="text-caption text-grey">
+                                    ID: {{ e.activityId }} · {{ e.reserveDate }} · 票号: {{ e.ticketNo.slice(0, 8) }}...
+                                    <template v-if="e.displayStat === StatWaiting && e.remainingMs > 0">
+                                        · 剩余 {{ formatRemaining(e.remainingMs) }}
+                                    </template>
+                                </span>
+                            </template>
+                            <template #append>
+                                <div class="d-flex ga-0">
+                                    <v-btn v-if="!isTaskActive(e.hash)" icon="mdi-play" size="x-small" variant="text"
+                                        color="success" @click.stop="startTask(e.hash)" />
+                                    <v-btn v-else icon="mdi-stop" size="x-small" variant="text" color="error"
+                                        @click.stop="deleteEntry(e.hash)" />
+                                    <v-btn icon="mdi-delete-outline" size="x-small" variant="text" color="grey"
+                                        @click.stop="deleteEntry(e.hash)" />
+                                </div>
+                            </template>
+                        </v-list-item>
+                    </v-list>
+                </v-card-text>
+            </v-card>
+
+            <!-- Detail + log -->
+            <template v-if="selectedHash && selectedEntry">
+                <v-card variant="outlined" class="mb-2 pa-3">
+                    <div class="d-flex flex-wrap ga-3 text-caption">
+                        <div>
+                            <span class="text-grey">活动:</span>
+                            <strong>{{ selectedEntry.activityTitle }}</strong>
+                            (ID: {{ selectedEntry.activityId }})
+                        </div>
+                        <div>
+                            <span class="text-grey">日期:</span>
+                            <strong>{{ selectedEntry.reserveDate }}</strong>
+                        </div>
+                        <div>
+                            <span class="text-grey">票号:</span>
+                            <strong>{{ selectedEntry.ticketNo }}</strong>
+                        </div>
+                        <div v-if="selectedEntry.reserveTime">
+                            <span class="text-grey">开抢:</span>
+                            <strong>{{ formatTime(selectedEntry.reserveTime) }}</strong>
+                        </div>
+                        <div>
+                            <span class="text-grey">延迟:</span>
+                            <strong>{{ selectedEntry.startDelayMs }}ms</strong>
+                        </div>
+                        <div>
+                            <span class="text-grey">间隔:</span>
+                            <strong>{{ selectedEntry.loopDelayMs }}ms</strong>
+                        </div>
+                        <div v-if="selectedStatus && selectedStatus.error" class="w-100">
+                            <span class="text-grey">错误:</span>
+                            <span class="text-red">{{ selectedStatus.error }}</span>
+                        </div>
+                    </div>
+                </v-card>
+                <TaskLogViewer :task-id="selectedHash" :key="selectedHash" />
+            </template>
+
+            <v-card v-else variant="outlined" class="pa-6 text-center">
+                <v-icon size="48" color="grey">mdi-console-line</v-icon>
+                <p class="text-grey mt-2 mb-0">选择上方预约活动查看日志</p>
+            </v-card>
+        </template>
+
+        <!-- ── Fetch BWS Info Dialog ─────────────────────────── -->
+        <v-dialog v-model="showFetchDialog" max-width="800" scrollable>
+            <v-card title="获取 BWS 活动">
+                <v-card-text>
+                    <div class="d-flex ga-2 mb-4 mt-2 align-center">
+                        <v-text-field v-model="reserveDates" label="日期 (逗号分隔)" placeholder="20250711,20250712,20250713"
+                            variant="outlined" density="compact" hide-details="auto" style="max-width: 360px;"
+                            @keyup.enter="fetchBWSInfo" />
+                        <v-btn :loading="fetchingInfo" color="primary" @click="fetchBWSInfo">查询</v-btn>
+                    </div>
+
+                    <div v-if="bwsData?.ActivityMapping">
+                        <div class="text-subtitle-2 mb-2">
+                            活动列表 ({{ Object.keys(bwsData.ActivityMapping).length }} 个)
+                        </div>
+                        <v-table density="compact">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>活动名称</th>
+                                    <th>日期</th>
+                                    <th>票号</th>
+                                    <th>开抢时间</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(act, id) in bwsData.ActivityMapping" :key="id"
+                                    :class="{ 'text-grey': bwsData.ReservedIDs?.[id] || act.State === 3 }">
+                                    <td>{{ id }}</td>
+                                    <td>
+                                        {{ act.ActTitle }}
+                                        <v-chip v-if="bwsData.ReservedIDs?.[id]" color="green" size="x-small"
+                                            variant="tonal">已预约</v-chip>
+                                        <v-chip v-else-if="act.State === 3" color="grey" size="x-small"
+                                            variant="tonal">已结束</v-chip>
+                                    </td>
+                                    <td>{{ act.ReserveDate }}</td>
+                                    <td>
+                                        <code>{{ (getTicketForDate(act.ReserveDate) || '—').slice(0, 8) }}...</code>
+                                    </td>
+                                    <td>{{ formatTime(act.ReserveBeginTime) }}</td>
+                                    <td>
+                                        <v-btn v-if="!bwsData.ReservedIDs?.[id] && act.State !== 3"
+                                            icon="mdi-plus-circle-outline" size="x-small" variant="text" color="primary"
+                                            :disabled="!getTicketForDate(act.ReserveDate)"
+                                            :title="!getTicketForDate(act.ReserveDate) ? '该日期无票号' : '添加活动'"
+                                            @click="openAddDialog(act)" />
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </v-table>
+                    </div>
+                    <div v-else-if="!fetchingInfo" class="text-grey text-center pa-4">
+                        输入日期后点击「查询」加载 BWS 活动列表
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showFetchDialog = false">关闭</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <!-- ── Add Entry Dialog ──────────────────────────────── -->
+        <v-dialog v-model="showAddDialog" max-width="480">
+            <v-card :title="'添加 BWS 预约'">
+                <v-card-text v-if="selectedActivity">
+                    <v-alert density="compact" variant="tonal" color="info" class="mb-3">
+                        <strong>{{ selectedActivity.ActTitle }}</strong>
+                        <br />
+                        日期: {{ selectedActivity.ReserveDate }} | ID: {{ selectedActivity.ReserveID }}
+                        <br />
+                        开抢: {{ formatTime(selectedActivity.ReserveBeginTime) }}
+                        <br />
+                        票号: {{ getTicketForDate(selectedActivity.ReserveDate) || '未找到' }}
+                    </v-alert>
+
+                    <v-row dense>
+                        <v-col cols="6">
+                            <v-text-field v-model="formStartDelayMs" label="开抢延迟 (ms)" type="number" variant="outlined"
+                                density="compact" hide-details="auto" hint="正数=延迟, 负数=提前" persistent-hint />
+                        </v-col>
+                        <v-col cols="6">
+                            <v-text-field v-model="formLoopDelayMs" label="请求间隔 (ms)" type="number" variant="outlined"
+                                density="compact" hide-details="auto" hint="0=最快, 推荐 ≥50ms" persistent-hint />
+                        </v-col>
+                    </v-row>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showAddDialog = false">取消</v-btn>
+                    <v-btn color="primary" variant="tonal" @click="submitAddEntry"
+                        :disabled="!selectedActivity || !getTicketForDate(selectedActivity?.ReserveDate)">
+                        添加
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+    </div>
+</template>
+
+<style scoped>
+.v-list-item {
+    cursor: pointer;
+}
+
+code {
+    font-size: 0.8em;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+</style>

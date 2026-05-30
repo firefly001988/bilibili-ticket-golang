@@ -16,6 +16,7 @@ const dataFileName = "data/store.bin"
 type DataStorage struct {
 	Cookies         []cookiejar.CookieEntries `json:"cookies"`
 	TicketData      *TicketData               `json:"ticketData"`
+	BWSData         *BWSData                  `json:"bwsData"`
 	NotifyChData    *NotifyChannelData        `json:"notifyChannelData"`
 	RefreshToken    string                    `json:"refreshToken"`
 	RetryIntervalMs int                       `json:"retryIntervalMs"`
@@ -26,6 +27,7 @@ func NewDataStorage() *DataStorage {
 	return &DataStorage{
 		Cookies:         []cookiejar.CookieEntries{},
 		TicketData:      NewTicketData(),
+		BWSData:         NewBWSData(),
 		NotifyChData:    NewNotifyChannelData(),
 		RetryIntervalMs: 500, // default 500ms
 		StartDelayMs:    50,  // default 50ms

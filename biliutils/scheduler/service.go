@@ -48,6 +48,20 @@ type FrontendTicket struct {
 	Stat int `json:"stat"`
 }
 
+// FrontendBWSEntry mirrors BWSEntry for Wails serialization.
+type FrontendBWSEntry struct {
+	Hash          string `json:"hash"`
+	ActivityID    int    `json:"activityId"`
+	TicketNo      string `json:"ticketNo"`
+	ActivityTitle string `json:"activityTitle"`
+	ReserveTime   int64  `json:"reserveTime"`
+	ReserveDate   string `json:"reserveDate"`
+	Expire        int64  `json:"expire"`
+	StartDelayMs  int    `json:"startDelayMs"`
+	LoopDelayMs   int    `json:"loopDelayMs"`
+	Stat          int    `json:"stat"`
+}
+
 // FrontendBuyer is a simplified buyer struct for the frontend real-name picker.
 type FrontendBuyer struct {
 	ID         int64  `json:"id"`
@@ -73,6 +87,7 @@ type SchedulerService struct {
 	client       *biliutils.BiliClient
 	logBroker    *LogBroker
 	tickets      *configuration.TicketData
+	bwsData      *configuration.BWSData
 	notifier     *notify.MultiNotifier
 	notifyChData *configuration.NotifyChannelData
 	store        *configuration.DataStorage // for persisting notify channel changes
@@ -87,12 +102,13 @@ type SchedulerService struct {
 }
 
 // NewSchedulerService creates a new SchedulerService.
-func NewSchedulerService(client *biliutils.BiliClient, logBroker *LogBroker, tickets *configuration.TicketData, notifier *notify.MultiNotifier, notifyChData *configuration.NotifyChannelData, store *configuration.DataStorage) *SchedulerService {
+func NewSchedulerService(client *biliutils.BiliClient, logBroker *LogBroker, tickets *configuration.TicketData, bwsData *configuration.BWSData, notifier *notify.MultiNotifier, notifyChData *configuration.NotifyChannelData, store *configuration.DataStorage) *SchedulerService {
 	return &SchedulerService{
 		scheduler:    NewDynamicScheduler(),
 		client:       client,
 		logBroker:    logBroker,
 		tickets:      tickets,
+		bwsData:      bwsData,
 		notifier:     notifier,
 		notifyChData: notifyChData,
 		store:        store,
@@ -608,4 +624,140 @@ func (svc *SchedulerService) GetNTPOffset() int64 {
 	svc.offsetMu.RLock()
 	defer svc.offsetMu.RUnlock()
 	return svc.ntpOffset.Milliseconds()
+}
+
+// ── BWS (Bilibili World) reservation management ─────────────────────────
+
+// AddBWSEntry persists a BWS entry and returns its hash.
+func (svc *SchedulerService) AddBWSEntry(entry FrontendBWSEntry) (string, error) {
+	e := configuration.BWSEntry{
+		ActivityID:    entry.ActivityID,
+		TicketNo:      entry.TicketNo,
+		ActivityTitle: entry.ActivityTitle,
+		ReserveTime:   entry.ReserveTime,
+		ReserveDate:   entry.ReserveDate,
+		Expire:        entry.Expire,
+		StartDelayMs:  entry.StartDelayMs,
+		LoopDelayMs:   entry.LoopDelayMs,
+	}
+	hash := e.Hash()
+
+	if !e.Valid() {
+		return "", fmt.Errorf("BWS entry is invalid or expired")
+	}
+
+	if !svc.bwsData.AddEntry(e) {
+		return "", fmt.Errorf("重复BWS活动: 相同的活动+日期已存在")
+	}
+
+	if svc.store != nil {
+		if err := svc.store.Save(); err != nil {
+			println("Failed to persist BWS entry:", err.Error())
+		}
+	}
+
+	return hash, nil
+}
+
+// AddBWSTask creates a BWSTask from a persisted BWS entry hash and starts it.
+func (svc *SchedulerService) AddBWSTask(hash string) error {
+	entries := svc.bwsData.GetEntriesNoMutate()
+
+	var entry *configuration.BWSEntry
+	for i := range entries {
+		if entries[i].Hash() == hash {
+			entry = &entries[i]
+			break
+		}
+	}
+	if entry == nil {
+		return fmt.Errorf("BWS entry not found: %s", hash)
+	}
+
+	if !entry.Valid() {
+		return fmt.Errorf("BWS entry is expired or invalid")
+	}
+
+	// Check not already scheduled
+	existing := svc.scheduler.GetTaskStatus()
+	if _, exists := existing[hash]; exists {
+		return fmt.Errorf("BWS task already exists")
+	}
+
+	targetTime := time.Unix(entry.ReserveTime, 0)
+	logCh := svc.logBroker.CreateStream(hash)
+
+	// Wire up notification
+	var notifyFn func(string)
+	if svc.notifier != nil && svc.notifier.Count() > 0 {
+		notifyFn = func(msg string) {
+			svc.notifier.Notify(msg)
+		}
+	}
+
+	task, err := NewBWSTask(svc.client, *entry, notifyFn, logCh, func(stat RunningStat) {
+		svc.bwsData.UpdateEntryStat(hash, int(stat))
+	})
+	if err != nil {
+		return fmt.Errorf("create BWS task: %w", err)
+	}
+	task.ID = hash
+	task.TargetTime = targetTime
+
+	svc.scheduler.AddTask(task)
+	return nil
+}
+
+// RemoveBWSEntry removes a BWS entry from storage and its associated task.
+func (svc *SchedulerService) RemoveBWSEntry(hash string) {
+	svc.scheduler.RemoveTask(hash)
+	svc.bwsData.RemoveEntryByHash(hash)
+	if svc.store != nil {
+		if err := svc.store.Save(); err != nil {
+			println("Failed to persist BWS entry removal:", err.Error())
+		}
+	}
+}
+
+// GetBWSEntries returns all saved BWS entries.
+func (svc *SchedulerService) GetBWSEntries() []FrontendBWSEntry {
+	entries := svc.bwsData.GetEntriesNoMutate()
+	result := make([]FrontendBWSEntry, len(entries))
+	for i, e := range entries {
+		result[i] = FrontendBWSEntry{
+			Hash:          e.Hash(),
+			ActivityID:    e.ActivityID,
+			TicketNo:      e.TicketNo,
+			ActivityTitle: e.ActivityTitle,
+			ReserveTime:   e.ReserveTime,
+			ReserveDate:   e.ReserveDate,
+			Expire:        e.Expire,
+			StartDelayMs:  e.StartDelayMs,
+			LoopDelayMs:   e.LoopDelayMs,
+			Stat:          e.Stat,
+		}
+	}
+	return result
+}
+
+// ReloadBWSTasks starts tasks for all valid BWS entries that are not yet
+// scheduled. Call this on startup to recover persisted entries.
+// Completed tasks (StatSuccess/StatFailed/StatError) are not re-scheduled.
+func (svc *SchedulerService) ReloadBWSTasks() {
+	entries := svc.bwsData.GetEntriesNoMutate()
+	existingMap := svc.scheduler.GetTaskStatus()
+
+	for i := range entries {
+		hash := entries[i].Hash()
+		if _, exists := existingMap[hash]; exists {
+			continue
+		}
+		if !entries[i].Valid() {
+			continue
+		}
+		if entries[i].Stat == int(StatSuccess) || entries[i].Stat == int(StatFailed) || entries[i].Stat == int(StatError) {
+			continue
+		}
+		_ = svc.AddBWSTask(hash)
+	}
 }

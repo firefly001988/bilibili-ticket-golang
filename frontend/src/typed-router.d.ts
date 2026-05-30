@@ -44,6 +44,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/bws-reservation': RouteRecordInfo<
+      '/bws-reservation',
+      '/bws-reservation',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/notify': RouteRecordInfo<
       '/notify',
       '/notify',
@@ -122,6 +129,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/account.vue': {
       routes:
         | '/account'
+      views:
+        | never
+    }
+    'src/pages/bws-reservation.vue': {
+      routes:
+        | '/bws-reservation'
       views:
         | never
     }

@@ -6,6 +6,7 @@ import type { scheduler, notify } from '../../wailsjs/go/models'
 // Re-export for convenience	
 export type FrontendTaskStatus = scheduler.FrontendTaskStatus
 export type FrontendTicket = scheduler.FrontendTicket
+export type FrontendBWSEntry = scheduler.FrontendBWSEntry
 export type LogEntry = scheduler.LogEntry
 export type FrontendNotifyChannel = scheduler.FrontendNotifyChannel
 export type NotifyChannelFieldMeta = notify.NotifyChannelFieldMeta
