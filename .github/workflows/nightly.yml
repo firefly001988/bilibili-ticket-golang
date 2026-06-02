@@ -139,6 +139,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Set commit hash
         id: set_commit
         shell: bash
@@ -161,12 +166,38 @@ jobs:
           cd release-assets
           sha256sum *.tar.gz > "checksums_${COMMIT}.txt"
 
+      - name: Generate release.md
+        shell: bash
+        run: |
+          COMMIT="${{ steps.set_commit.outputs.short }}"
+
+          # 获取上一个 release 的 tag
+          preTag=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
+            sed -nE 's/.*"tag_name": "([^"]+)".*/\1/p')
+
+          out="release.md"
+          > "$out"
+
+          if [ -n "$preTag" ] && git rev-parse "$preTag" >/dev/null 2>&1; then
+            echo "上一版本: $preTag → 当前: $COMMIT"
+            git log --no-merges --pretty=format:"- %s" "$preTag..HEAD" >> "$out"
+          else
+            echo "首个发布版本" >> "$out"
+            git log --no-merges --pretty=format:"- %s" >> "$out"
+          fi
+
+      - name: Patch release.md
+        shell: bash
+        run: |
+          sed "s|VERSION|${{ steps.set_commit.outputs.short }}|g" .github/release_template.md >> release.md
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           token: "${{ secrets.GITHUB_TOKEN }}"
           tag_name: "${{ steps.set_commit.outputs.short }}"
           name: "Build ${{ steps.set_commit.outputs.short }}"
+          body_path: "./release.md"
           draft: false
           prerelease: false
           files: |
