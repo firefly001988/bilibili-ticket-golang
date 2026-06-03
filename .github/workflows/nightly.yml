@@ -166,6 +166,11 @@ jobs:
           cd release-assets
           sha256sum *.tar.gz > "checksums_${COMMIT}.txt"
 
+      - name: Patch release.md
+        shell: bash
+        run: |
+          sed "s|VERSION|${{ steps.set_commit.outputs.short }}|g" .github/release_template.md > release.md
+
       - name: Generate release.md
         shell: bash
         run: |
@@ -175,21 +180,13 @@ jobs:
           preTag=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
             sed -nE 's/.*"tag_name": "([^"]+)".*/\1/p')
 
-          out="release.md"
-          > "$out"
-
           if [ -n "$preTag" ] && git rev-parse "$preTag" >/dev/null 2>&1; then
             echo "上一版本: $preTag → 当前: $COMMIT"
-            git log --no-merges --pretty=format:"- %s" "$preTag..HEAD" >> "$out"
+            git log --no-merges --pretty=format:"- %s" "$preTag..HEAD" >> release.md
           else
-            echo "首个发布版本" >> "$out"
-            git log --no-merges --pretty=format:"- %s" >> "$out"
+            echo "首个发布版本" >> release.md
+            git log --no-merges --pretty=format:"- %s" >> release.md
           fi
-
-      - name: Patch release.md
-        shell: bash
-        run: |
-          sed "s|VERSION|${{ steps.set_commit.outputs.short }}|g" .github/release_template.md >> release.md
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
