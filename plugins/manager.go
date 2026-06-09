@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -49,9 +50,18 @@ func (t *timestampWriter) Write(p []byte) (int, error) {
 type PluginManager struct {
 	// Map of plugin name to plugin instance.
 	plugins          map[string]*plugin.Client
+	testResults      map[string]string
 	mainPluginFolder string
 	pluginLogFile    *os.File
 	pluginLogWriter  io.Writer
+	mu               sync.Mutex
+}
+
+// SetTestResult saves a test result string for the plugin.
+func (pm *PluginManager) SetTestResult(name, result string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.testResults[name] = result
 }
 
 func NewPluginManager(mainPluginFolder string) *PluginManager {
@@ -75,6 +85,7 @@ func NewPluginManager(mainPluginFolder string) *PluginManager {
 
 	return &PluginManager{
 		plugins:          make(map[string]*plugin.Client),
+		testResults:      make(map[string]string),
 		mainPluginFolder: mainPluginFolder,
 		pluginLogFile:    logFile,
 		pluginLogWriter:  pluginLogWriter,
@@ -178,21 +189,37 @@ func (pm *PluginManager) GetVersion(name string) (pcommon.VersionInfo, error) {
 	return vp.Version()
 }
 
+type LoadedPluginInfo struct {
+	Name       string
+	GitCommit  string
+	Version    string
+	TestResult string
+}
+
 // GetAllVersions returns version information for all currently loaded plugins.
 // Plugins that don't support versioning are skipped silently.
-func (pm *PluginManager) GetAllVersions() []pcommon.VersionInfo {
-	result := make([]pcommon.VersionInfo, 0)
+func (pm *PluginManager) GetAllVersions() []LoadedPluginInfo {
+	result := make([]LoadedPluginInfo, 0)
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	for name := range pm.plugins {
 		info, err := pm.GetVersion(name)
+		testRes := pm.testResults[name]
 		if err != nil {
-			result = append(result, pcommon.VersionInfo{
-				Name:      name,
-				Version:   "unknown",
-				GitCommit: "unknown",
+			result = append(result, LoadedPluginInfo{
+				Name:       name,
+				Version:    "unknown",
+				GitCommit:  "unknown",
+				TestResult: testRes,
 			})
 			continue
 		}
-		result = append(result, info)
+		result = append(result, LoadedPluginInfo{
+			Name:       info.Name,
+			Version:    info.Version,
+			GitCommit:  info.GitCommit,
+			TestResult: testRes,
+		})
 	}
 	return result
 }

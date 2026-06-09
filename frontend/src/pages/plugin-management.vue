@@ -1,18 +1,23 @@
 <script lang="ts" setup>
 import { onMounted, ref } from 'vue'
 import { GetAllVersions } from '../../wailsjs/go/plugins/PluginManager'
-import type { pcommon } from '../../wailsjs/go/models'
+import type { plugins } from '../../wailsjs/go/models'
 
-const plugins = ref<pcommon.VersionInfo[]>([])
+const pluginsInfo = ref<plugins.LoadedPluginInfo[]>([])
 const loading = ref(false)
 const error = ref('')
+const expanded = ref<Record<string, boolean>>({})
+
+function toggle(name: string) {
+    expanded.value[name] = !expanded.value[name]
+}
 
 async function refresh() {
     loading.value = true
     error.value = ''
     try {
         const data = await GetAllVersions()
-        plugins.value = Array.isArray(data) ? data : []
+        pluginsInfo.value = Array.isArray(data) ? data : []
     } catch (e: any) {
         error.value = e?.message || String(e)
     } finally {
@@ -42,31 +47,88 @@ onMounted(refresh)
         </v-alert>
 
         <!-- Loading -->
-        <v-row v-if="loading && plugins.length === 0">
-            <v-col cols="12" sm="6" lg="4">
-                <v-skeleton-loader type="list-item-three-line" />
+        <v-row v-if="loading && pluginsInfo.length === 0">
+            <v-col v-for="n in 3" :key="n" cols="12">
+                <v-skeleton-loader type="card" />
             </v-col>
         </v-row>
 
         <!-- Empty -->
-        <v-card v-if="!loading && !error && plugins.length === 0" variant="outlined" class="pa-8 text-center"
+        <v-card v-if="!loading && !error && pluginsInfo.length === 0" variant="outlined" class="pa-8 text-center"
             rounded="lg">
             <v-icon icon="mdi-puzzle-outline" size="48" class="mb-3" color="medium-emphasis" />
             <p class="text-body-1 text-medium-emphasis">没有已加载的插件</p>
         </v-card>
 
-        <!-- Plugin list -->
-        <v-list v-if="plugins.length > 0" lines="two" rounded="lg" class="border">
-            <v-list-item v-for="p in plugins" :key="p.Name" :title="p.Name" :subtitle="`版本 ${p.Version}`">
-                <template #prepend>
-                    <v-icon icon="mdi-puzzle" color="primary" />
-                </template>
-                <template #append>
-                    <v-chip size="small" variant="tonal" color="info" class="font-mono">
-                        {{ p.GitCommit }}
-                    </v-chip>
-                </template>
-            </v-list-item>
-        </v-list>
+        <!-- Plugin cards: 每个占一整行，可伸缩 -->
+        <div v-if="pluginsInfo.length > 0" class="d-flex flex-column ga-3">
+            <v-card v-for="p in pluginsInfo" :key="p.Name" :elevation="2" rounded="lg" border hover>
+                <!-- 折叠头部：点击展开/收起 -->
+                <div class="d-flex align-center pa-4 cursor-pointer" @click="toggle(p.Name)">
+                    <v-icon icon="mdi-puzzle" color="primary" size="28" class="flex-shrink-0" />
+
+                    <div class="ml-3 overflow-hidden flex-grow-1">
+                        <div class="d-flex align-center flex-wrap ga-2">
+                            <span class="text-subtitle-2 font-weight-bold text-truncate">
+                                {{ p.Name }}
+                            </span>
+                        </div>
+                        <div class="d-flex align-center mt-1 flex-wrap ga-1">
+                            <span class="text-caption text-medium-emphasis">
+                                版本 {{ p.Version }}
+                            </span>
+                            <v-chip size="x-small" class="font-mono text-medium-emphasis">
+                                {{ p.GitCommit }}
+                            </v-chip>
+                        </div>
+                    </div>
+
+                    <!-- 展开/收起按钮 -->
+                    <v-btn :icon="expanded[p.Name] ? 'mdi-chevron-up' : 'mdi-chevron-down'" variant="text" size="small"
+                        density="compact" class="flex-shrink-0" @click.stop="toggle(p.Name)" />
+                </div>
+
+                <!-- 可伸缩正文 -->
+                <div class="plugin-body" :class="{ 'plugin-body--expanded': expanded[p.Name] }">
+                    <div class="plugin-body-inner">
+                        <v-divider />
+
+                        <v-card-text>
+                            <div v-if="p.TestResult" class="text-body-2 font-mono plugin-test-result">
+                                {{ p.TestResult }}
+                            </div>
+                            <div v-else class="text-body-2 text-medium-emphasis font-italic">
+                                未进行测试或无测试结果
+                            </div>
+                        </v-card-text>
+                    </div>
+                </div>
+            </v-card>
+        </div>
     </div>
 </template>
+
+<style scoped>
+.cursor-pointer {
+    cursor: pointer;
+}
+
+.plugin-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.3s ease;
+}
+
+.plugin-body--expanded {
+    grid-template-rows: 1fr;
+}
+
+.plugin-body-inner {
+    overflow: hidden;
+}
+
+.plugin-test-result {
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+</style>

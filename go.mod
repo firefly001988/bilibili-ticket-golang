@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/beevik/ntp v1.5.0
+	github.com/go-resty/resty/v2 v2.17.2
 	github.com/hashicorp/go-plugin v1.8.0
 	github.com/ugorji/go/codec v1.3.1
 	github.com/wailsapp/wails/v2 v2.12.0

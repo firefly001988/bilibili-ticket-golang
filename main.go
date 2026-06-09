@@ -4,6 +4,8 @@ import (
 	"bilibili-ticket-golang/biliutils"
 	"bilibili-ticket-golang/biliutils/notify"
 	"bilibili-ticket-golang/biliutils/scheduler"
+	"bilibili-ticket-golang/models/bili/api"
+	gcaptcha "bilibili-ticket-golang/models/bili/captcha"
 	"bilibili-ticket-golang/plugins"
 	"bilibili-ticket-golang/plugins/captcha"
 	"bilibili-ticket-golang/store/configuration"
@@ -11,12 +13,14 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"time"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -24,6 +28,44 @@ import (
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+func testCaptchaPlugin(solverFunc func(gt string, challenge string) (string, error), pm *plugins.PluginManager, pluginName string) {
+	go func() {
+		client := resty.New()
+		res, err := client.R().
+			SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36").
+			Get("https://passport.bilibili.com/x/passport-login/captcha?source=main_web")
+		if err != nil {
+			pm.SetTestResult(pluginName, fmt.Sprintf("获取验证码失败: %v", err))
+			return
+		}
+
+		var r api.MainApiDataRoot[gcaptcha.RegisterVoucherResponse]
+		err = json.Unmarshal(res.Body(), &r)
+		if err != nil {
+			pm.SetTestResult(pluginName, fmt.Sprintf("解析验证码响应失败: %v\nResp: %s", err, string(res.Body())))
+			return
+		}
+
+		if r.Code != 0 {
+			pm.SetTestResult(pluginName, fmt.Sprintf("获取验证码返回错误: %s", string(res.Body())))
+			return
+		}
+
+		gt := r.Data.Geetest.Gt
+		challenge := r.Data.Geetest.Challenge
+
+		start := time.Now()
+		_, err = solverFunc(gt, challenge)
+		elapsed := time.Since(start)
+
+		if err != nil {
+			pm.SetTestResult(pluginName, fmt.Sprintf("测试失败 (耗时 %v):\n%v", elapsed, err))
+		} else {
+			pm.SetTestResult(pluginName, fmt.Sprintf("测试成功 (耗时 %v)", elapsed))
+		}
+	}()
+}
 
 func main() {
 	// Pipe stdout + stderr to main.log for post-mortem debugging.
@@ -141,7 +183,7 @@ func main() {
 				if err != nil {
 					return "", fmt.Errorf("GetCS error: %w", err)
 				}
-				_, err := solver.GetType(id, "")
+				t, err := solver.GetType(id, "")
 				if err != nil {
 					return "", fmt.Errorf("GetType error: %w", err)
 				}
@@ -149,6 +191,7 @@ func main() {
 				if err != nil {
 					return "", fmt.Errorf("GetNewCSArgs error: %w", err)
 				}
+				before := time.Now()
 				key, err := solver.CalculateKey(id, args)
 				if err != nil {
 					return "", fmt.Errorf("CalculateKey error: %w", err)
@@ -157,11 +200,20 @@ func main() {
 				if err != nil {
 					return "", fmt.Errorf("GenerateW error: %w", err)
 				}
+				if t == captcha.CaptchaType_CLICK {
+					use := time.Since(before)
+					if use < 2*time.Second {
+						time.Sleep(2*time.Second - use)
+					}
+				}
 				return solver.Verify(id, w)
 			}
 			// Wire the solver into BiliClient so voucher errors are auto-resolved.
 			c.SetCaptchaSolver(solverFunc)
 			log.Printf("[main] Captcha solver installed — vouchers will be auto-resolved")
+
+			// Test the captcha plugin with a generic web captcha
+			testCaptchaPlugin(solverFunc, pluginManager, "captcha-plugin")
 		}
 	}
 
