@@ -31,8 +31,8 @@ func (c *BiliClient) GetProjectInformation(projectID string) (*r.ProjectInformat
 	idBind := apiResp.Data.IdBind != 0
 	return &r.ProjectInformation{
 		ProjectID:       projectID,
-		StartTime:       time.Unix(apiResp.Data.End, 0),
-		EndTime:         time.Unix(apiResp.Data.Start, 0),
+		StartTime:       time.Unix(apiResp.Data.Start, 0),
+		EndTime:         time.Unix(apiResp.Data.End, 0),
 		IsHotProject:    apiResp.Data.HotProject,
 		IsNeedContact:   apiResp.Data.NeedContact,
 		IsForceRealName: idBind,
