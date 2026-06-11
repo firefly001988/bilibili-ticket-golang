@@ -15,7 +15,7 @@ import (
 // GetProjectInformation fetches project info from the ticket mall.
 // Returns project name, sale time range, hot/real-name flags, etc.
 func (c *BiliClient) GetProjectInformation(projectID string) (*r.ProjectInformation, error) {
-	requestURL := fmt.Sprintf("https://show.bilibili.com/api/ticket/project/getV2?version=%s&id=%s&project_id=%s&requestSource=pc-new", global.FrontVersion, projectID, projectID)
+	requestURL := fmt.Sprintf("https://show.bilibili.com/api/ticket/project/getV2?version=%s&id=%s&project_id=%s&requestSource=neul-next", global.FrontVersion, projectID, projectID)
 	resp, err := c.client.R().Get(requestURL)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func (c *BiliClient) GetProjectInformation(projectID string) (*r.ProjectInformat
 
 // GetTicketSkuIDsByProjectID returns all ticket SKU/screen pairs for a project.
 func (c *BiliClient) GetTicketSkuIDsByProjectID(projectID string) ([]r.TicketSkuScreenID, error) {
-	requestURL := fmt.Sprintf("https://show.bilibili.com/api/ticket/project/getV2?version=%s&id=%s&project_id=%s&requestSource=pc-new", global.FrontVersion, projectID, projectID)
+	requestURL := fmt.Sprintf("https://show.bilibili.com/api/ticket/project/getV2?version=%s&id=%s&project_id=%s&requestSource=neul-next", global.FrontVersion, projectID, projectID)
 	resp, err := c.client.R().Get(requestURL)
 	if err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (c *BiliClient) GetRequestTokenAndPToken(tokenGen token.Generator, projectI
 		"order_type":         1,
 		"count":              1,
 		"sku_id":             ticket.SkuID,
-		"requestSource":      "pc-new",
+		"requestSource":      "neul-next",
 		"newRisk":            true,
 		"ignoreRequestLimit": true,
 		"ticket_agent":       "",
@@ -125,7 +125,7 @@ func (c *BiliClient) GetConfirmInformation(tokens *r.RequestTokenAndPToken, proj
 		"ptoken":        tokens.PToken,
 		"project_id":    projectID,
 		"projectId":     projectID,
-		"requestSource": "pc-new",
+		"requestSource": "neul-next",
 		"voucher":       "",
 	}).Get("https://show.bilibili.com/api/ticket/order/confirmInfo")
 	if err != nil {
@@ -164,7 +164,7 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 		"timestamp":     strconv.FormatInt(whenGenPToken.Unix(), 10),
 		"deviceId":      c.fingerprint.Buvidfp,
 		"sku_id":        strconv.FormatInt(ticket.SkuID, 10),
-		"requestSource": "pc-new",
+		"requestSource": "neul-next",
 		"token":         tokens.RequestToken,
 	}
 

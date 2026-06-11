@@ -194,6 +194,13 @@ func GetBilibiliAppVersion() (*api.BiliAppVersionStruct, error) {
 	return data.Data[0], nil
 }
 
+func (c *BiliClient) GetBrowserUA() string {
+	return fmt.Sprintf(
+		`Mozilla/5.0 (Linux; Android 12; %s; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36 BiliApp/%d mobi_app/android isNotchWindow/0 NotchHeight=24 mallVersion/%d mVersion/312 disable_rcmd/0 magent/BILI_H5_ANDROID_12_%s_%d`,
+		model, c.appVersion.Build, c.appVersion.Build, c.appVersion.Version, c.appVersion.Build,
+	)
+}
+
 // GetQRCodeUrlAndKey fetches a QR code URL and key for Bilibili login.
 // Returns the QR code image URL and the poll key for status checking.
 func (c *BiliClient) GetQRCodeUrlAndKey() (*api.QRLoginKeyStruct, error) {

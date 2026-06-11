@@ -343,7 +343,8 @@ func (tt *TicketTask) ticketFunc() {
 	// 2. Choose token generator based on project type
 	var tokenGen token.Generator
 	if projectInfo.IsHotProject {
-		tokenGen = token.NewCTokenGenerator()
+		ec := token.NewEncodeData(tt.client.GetBrowserUA(), fmt.Sprintf("https://mall.bilibili.com/neul-next/ticket-renovation/detail.html?id=%d&outsideMall=no&outsideMall=no#themeType=2", tt.ticket.ProjectID))
+		tokenGen = token.NewCToken2026Generator(ec)
 		tt.sendLog(LogInfo, "使用 CToken 生成器 (热门项目)")
 	} else {
 		tokenGen = token.NewNormalTokenGenerator()

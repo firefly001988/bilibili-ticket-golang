@@ -6,16 +6,16 @@ import (
 	"time"
 )
 
-// CTokenGenerator generates tokens for hot projects (热门项目).
+// CToken2025Generator generates tokens for hot projects (热门项目).
 // It simulates browser window statistics encoded in binary format.
-type CTokenGenerator struct {
+type CToken2025Generator struct {
 	begin          time.Time
 	generateCounts int
 }
 
-// NewCTokenGenerator creates a new CTokenGenerator.
-func NewCTokenGenerator() *CTokenGenerator {
-	return &CTokenGenerator{
+// NewCToken2025Generator creates a new CToken2025Generator.
+func NewCToken2025Generator() *CToken2025Generator {
+	return &CToken2025Generator{
 		begin: time.Now().Add(-2 * time.Second),
 	}
 }
@@ -78,13 +78,13 @@ func makeToken(stats *windowStats) string {
 					buf[offset] = byte(field.data)
 				}
 			} else {
-				// Two-byte field (Uint16 little-endian): clamp to 65535
+				// Two-byte field (Uint16 big-endian, matching JS DataView.setUint16 default): clamp to 65535
 				val := field.data
 				if val > 65535 {
 					val = 65535
 				}
-				buf[offset] = byte(val & 0xFF)
-				buf[offset+1] = byte((val >> 8) & 0xFF)
+				buf[offset] = byte((val >> 8) & 0xFF)
+				buf[offset+1] = byte(val & 0xFF)
 				offset++ // skip the next byte since it's been filled
 			}
 		} else {
@@ -109,7 +109,7 @@ func makeToken(stats *windowStats) string {
 
 // GenerateTokenPrepareStage generates the CToken for the order prepare stage.
 // It simulates a fresh page view with minimal interactions.
-func (gen *CTokenGenerator) GenerateTokenPrepareStage() string {
+func (gen *CToken2025Generator) GenerateTokenPrepareStage() string {
 	token := makeToken(&windowStats{
 		TouchCount:   uint16(rand.IntN(7) + 3),
 		VisibleCount: uint16(rand.IntN(2) + 3),
@@ -134,7 +134,7 @@ func (gen *CTokenGenerator) GenerateTokenPrepareStage() string {
 
 // GenerateTokenCreateStage generates the CToken for the order create stage.
 // It simulates a page that has been open for a while with more interactions.
-func (gen *CTokenGenerator) GenerateTokenCreateStage(whenGenPToken time.Time) string {
+func (gen *CToken2025Generator) GenerateTokenCreateStage(whenGenPToken time.Time) string {
 	token := makeToken(&windowStats{
 		TouchCount:   uint16(rand.IntN(7) + 3),
 		VisibleCount: uint16(rand.IntN(13) + 3),
@@ -158,6 +158,6 @@ func (gen *CTokenGenerator) GenerateTokenCreateStage(whenGenPToken time.Time) st
 }
 
 // IsHotProject returns true for CTokenGenerator (always a hot project).
-func (gen *CTokenGenerator) IsHotProject() bool {
+func (gen *CToken2025Generator) IsHotProject() bool {
 	return true
 }
