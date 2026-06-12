@@ -97,11 +97,11 @@ func makeToken(stats *windowStats) string {
 		}
 	}
 
-	// Expand 16 bytes → 32 bytes (simulating JS Uint16Array little-endian layout)
+	// Expand 16 bytes → 32 bytes (simulating JS Uint16Array big-endian layout)
 	result := make([]byte, 32)
 	for i := 0; i < 16; i++ {
-		result[i*2] = buf[i] // low byte
-		result[i*2+1] = 0x00 // high byte (zero)
+		result[i*2] = 0x00     // high byte (zero)
+		result[i*2+1] = buf[i] // low byte
 	}
 
 	return base64.StdEncoding.EncodeToString(result)

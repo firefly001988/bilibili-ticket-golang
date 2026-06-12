@@ -25,11 +25,13 @@ func TestCToken2026Generator(t *testing.T) {
 		HistoryLength:    2,
 	}
 	generator := token.NewCToken2026Generator(ecdata)
-	tokenStr := generator.GenerateTokenPrepareStage()
-	if tokenStr == "" {
-		t.Errorf("Expected token string, got empty string")
-	}
 	if generator == nil {
-		t.Errorf("Failed to create CToken2026Generator")
+		t.Fatal("Failed to create CToken2026Generator")
 	}
+
+	tokenStr := generator.GenerateTokenPrepareStage()
+	if len(tokenStr) == 0 {
+		t.Error("GenerateTokenPrepareStage returned empty token")
+	}
+	t.Logf("PrepareStage token: %s", tokenStr)
 }
