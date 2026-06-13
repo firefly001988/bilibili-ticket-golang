@@ -75,6 +75,7 @@ type grpcSolver struct {
 }
 
 type instanceState struct {
+	mu          sync.Mutex
 	gt          string
 	challenge   string
 	captchaType CaptchaType // set after GetType; defaults to UNKNOWN
@@ -88,6 +89,20 @@ func (g *grpcSolver) getState(id string) (*instanceState, error) {
 		return nil, fmt.Errorf("captcha: unknown instance %q", id)
 	}
 	return st, nil
+}
+
+func (g *grpcSolver) getTypeLocked(id string) (CaptchaType, error) {
+	st, err := g.getState(id)
+	if err != nil {
+		return CaptchaType_UNKNOWN, err
+	}
+	st.mu.Lock()
+	t := st.captchaType
+	st.mu.Unlock()
+	if t != CaptchaType_UNKNOWN {
+		return t, nil
+	}
+	return g.GetType(id, "")
 }
 
 // Create stores the gt+challenge pair and returns an instance ID.
@@ -108,23 +123,16 @@ func (g *grpcSolver) Create(gt, challenge string) (string, error) {
 // If the captcha type is not yet known, GetType is called first to
 // auto-detect whether to use ClickService or SlideService.
 func (g *grpcSolver) Solve(instanceID string) (string, error) {
+	t, err := g.getTypeLocked(instanceID)
+	if err != nil {
+		return "", err
+	}
 	st, err := g.getState(instanceID)
 	if err != nil {
 		return "", err
 	}
-	// Auto-detect type if not yet known.
-	if st.captchaType == CaptchaType_UNKNOWN {
-		if _, err := g.GetType(instanceID, ""); err != nil {
-			return "", err
-		}
-		// Re-read state after GetType updated it.
-		st, err = g.getState(instanceID)
-		if err != nil {
-			return "", err
-		}
-	}
 	req := &SolveGeetestCaptchaRequest{Gt: st.gt, Challenge: st.challenge}
-	switch st.captchaType {
+	switch t {
 	case CaptchaType_SLIDE:
 		resp, err := g.slideClient.Solve(context.Background(), req)
 		if err != nil {
@@ -134,7 +142,7 @@ func (g *grpcSolver) Solve(instanceID string) (string, error) {
 			return "", fmt.Errorf("captcha: %s", resp.Error)
 		}
 		return resp.Validate, nil
-	default: // CLICK (or still UNKNOWN — fall back to Click)
+	default: // CLICK
 		resp, err := g.clickClient.Solve(context.Background(), req)
 		if err != nil {
 			return "", err
@@ -146,14 +154,20 @@ func (g *grpcSolver) Solve(instanceID string) (string, error) {
 	}
 }
 
-// GetCS calls the gRPC GetCS RPC.
+// GetCS calls the gRPC GetCS RPC. If the captcha type is not yet known,
+// it is auto-detected first so that the request is dispatched to the
+// correct service (ClickService vs SlideService).
 func (g *grpcSolver) GetCS(instanceID, w string) (*GeetestCS, error) {
+	t, err := g.getTypeLocked(instanceID)
+	if err != nil {
+		return nil, err
+	}
 	st, err := g.getState(instanceID)
 	if err != nil {
 		return nil, err
 	}
 	req := &GetCSRequest{Gt: st.gt, Challenge: st.challenge, W: w}
-	switch st.captchaType {
+	switch t {
 	case CaptchaType_SLIDE:
 		resp, err := g.slideClient.GetCS(context.Background(), req)
 		if err != nil {
@@ -182,7 +196,6 @@ func (g *grpcSolver) GetType(instanceID, w string) (CaptchaType, error) {
 		return CaptchaType_UNKNOWN, err
 	}
 	req := &GetTypeRequest{Gt: st.gt, Challenge: st.challenge, W: w}
-	// Always use ClickService for type detection.
 	resp, err := g.clickClient.GetType(context.Background(), req)
 	if err != nil {
 		return CaptchaType_UNKNOWN, err
@@ -190,20 +203,24 @@ func (g *grpcSolver) GetType(instanceID, w string) (CaptchaType, error) {
 	if !resp.Success {
 		return CaptchaType_UNKNOWN, fmt.Errorf("captcha: %s", resp.Error)
 	}
-	g.mu.Lock()
+	st.mu.Lock()
 	st.captchaType = resp.Type
-	g.mu.Unlock()
+	st.mu.Unlock()
 	return resp.Type, nil
 }
 
 // GetNewCSArgs calls the gRPC GetNewCSArgs RPC.
 func (g *grpcSolver) GetNewCSArgs(instanceID string) (*NewCSArgs, error) {
+	t, err := g.getTypeLocked(instanceID)
+	if err != nil {
+		return nil, err
+	}
 	st, err := g.getState(instanceID)
 	if err != nil {
 		return nil, err
 	}
 	req := &GetNewCSArgsRequest{Gt: st.gt, Challenge: st.challenge}
-	switch st.captchaType {
+	switch t {
 	case CaptchaType_SLIDE:
 		resp, err := g.slideClient.GetNewCSArgs(context.Background(), req)
 		if err != nil {
@@ -227,12 +244,16 @@ func (g *grpcSolver) GetNewCSArgs(instanceID string) (*NewCSArgs, error) {
 
 // CalculateKey calls the gRPC CalculateKey RPC.
 func (g *grpcSolver) CalculateKey(instanceID string, args *NewCSArgs) (string, error) {
+	t, err := g.getTypeLocked(instanceID)
+	if err != nil {
+		return "", err
+	}
 	st, err := g.getState(instanceID)
 	if err != nil {
 		return "", err
 	}
 	req := &CalculateKeyRequest{Gt: st.gt, Challenge: st.challenge, Args: args}
-	switch st.captchaType {
+	switch t {
 	case CaptchaType_SLIDE:
 		resp, err := g.slideClient.CalculateKey(context.Background(), req)
 		if err != nil {
@@ -256,12 +277,16 @@ func (g *grpcSolver) CalculateKey(instanceID string, args *NewCSArgs) (string, e
 
 // GenerateW calls the gRPC GenerateW RPC.
 func (g *grpcSolver) GenerateW(instanceID string, key string, args *NewCSArgs) (string, error) {
+	t, err := g.getTypeLocked(instanceID)
+	if err != nil {
+		return "", err
+	}
 	st, err := g.getState(instanceID)
 	if err != nil {
 		return "", err
 	}
 	req := &GenerateWRequest{Gt: st.gt, Challenge: st.challenge, Key: key, Args: args}
-	switch st.captchaType {
+	switch t {
 	case CaptchaType_SLIDE:
 		resp, err := g.slideClient.GenerateW(context.Background(), req)
 		if err != nil {
@@ -285,12 +310,16 @@ func (g *grpcSolver) GenerateW(instanceID string, key string, args *NewCSArgs) (
 
 // Verify calls the gRPC Verify RPC.
 func (g *grpcSolver) Verify(instanceID, w string) (string, error) {
+	t, err := g.getTypeLocked(instanceID)
+	if err != nil {
+		return "", err
+	}
 	st, err := g.getState(instanceID)
 	if err != nil {
 		return "", err
 	}
 	req := &VerifyRequest{Gt: st.gt, Challenge: st.challenge, W: w}
-	switch st.captchaType {
+	switch t {
 	case CaptchaType_SLIDE:
 		resp, err := g.slideClient.Verify(context.Background(), req)
 		if err != nil {
@@ -316,6 +345,9 @@ func (g *grpcSolver) Verify(instanceID, w string) (string, error) {
 func (g *grpcSolver) Destroy(instanceID string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if _, ok := g.instances[instanceID]; !ok {
+		return fmt.Errorf("captcha: unknown instance %q", instanceID)
+	}
 	delete(g.instances, instanceID)
 	return nil
 }

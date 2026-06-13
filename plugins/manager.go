@@ -20,6 +20,7 @@ import (
 // timestampWriter prepends a timestamp to each line written.
 type timestampWriter struct {
 	w   io.Writer
+	mu  sync.Mutex
 	buf bytes.Buffer
 }
 
@@ -27,6 +28,8 @@ const logFilePath = "logs/plugins.log"
 const timeLayout = "2006-01-02 15:04:05 "
 
 func (t *timestampWriter) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	written := len(p)
 	for _, b := range p {
 		if b == '\n' {
@@ -40,9 +43,6 @@ func (t *timestampWriter) Write(p []byte) (int, error) {
 			t.buf.WriteByte(b)
 		}
 	}
-	if _, ok := t.w.(*os.File); ok {
-		//f.Sync()
-	}
 	return written, nil
 }
 
@@ -54,7 +54,7 @@ type PluginManager struct {
 	mainPluginFolder string
 	pluginLogFile    *os.File
 	pluginLogWriter  io.Writer
-	mu               sync.Mutex
+	mu               sync.RWMutex
 }
 
 // SetTestResult saves a test result string for the plugin.
@@ -99,8 +99,15 @@ func (pm *PluginManager) LoadPlugin(name string) error {
 		ext = ".exe"
 	}
 	pluginPath := name + ext
-	if _, err := os.Stat(filepath.Join(pm.mainPluginFolder, pluginPath)); os.IsNotExist(err) {
-		return fmt.Errorf("plugin not found: %s", name)
+	pluginInfo, statErr := os.Stat(filepath.Join(pm.mainPluginFolder, pluginPath))
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return fmt.Errorf("plugin not found: %s", name)
+		}
+		return fmt.Errorf("plugin stat failed: %w", statErr)
+	}
+	if !pluginInfo.Mode().IsRegular() {
+		return fmt.Errorf("plugin path is not a regular file: %s", name)
 	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -128,7 +135,13 @@ func (pm *PluginManager) LoadPlugin(name string) error {
 				DisableTime: true,
 			}),
 		})
+		pm.mu.Lock()
+		if old, exists := pm.plugins[name]; exists {
+			// Kill the previous client so we don't leak the plugin process.
+			old.Kill()
+		}
 		pm.plugins[name] = client
+		pm.mu.Unlock()
 		return nil
 	} else {
 		return fmt.Errorf("unknown plugin name: %s", name)
@@ -136,16 +149,27 @@ func (pm *PluginManager) LoadPlugin(name string) error {
 }
 
 func (pm *PluginManager) UnloadPlugin(name string) {
-	if client, exists := pm.plugins[name]; exists {
-		client.Kill()
+	pm.mu.Lock()
+	client, exists := pm.plugins[name]
+	if exists {
 		delete(pm.plugins, name)
+	}
+	pm.mu.Unlock()
+	if exists {
+		client.Kill()
 	}
 }
 
 func (pm *PluginManager) UnloadAll() {
+	pm.mu.Lock()
+	clients := make([]*plugin.Client, 0, len(pm.plugins))
 	for name, client := range pm.plugins {
-		client.Kill()
+		clients = append(clients, client)
 		delete(pm.plugins, name)
+	}
+	pm.mu.Unlock()
+	for _, client := range clients {
+		client.Kill()
 	}
 	if pm.pluginLogFile != nil {
 		pm.pluginLogFile.Close()
@@ -153,20 +177,25 @@ func (pm *PluginManager) UnloadAll() {
 }
 
 func (pm *PluginManager) IsLoaded(name string) bool {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
 	_, exists := pm.plugins[name]
 	return exists
 }
 
 func (pm *PluginManager) GetClient(name string) *plugin.Client {
-	client, _ := pm.plugins[name]
-	return client
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	return pm.plugins[name]
 }
 
 // GetVersion retrieves version information from any loaded plugin.
 // The plugin must implement the VersionedPlugin interface.
 // Returns an error if the plugin is not loaded or doesn't support versioning.
 func (pm *PluginManager) GetVersion(name string) (pcommon.VersionInfo, error) {
+	pm.mu.RLock()
 	client, exists := pm.plugins[name]
+	pm.mu.RUnlock()
 	if !exists {
 		return pcommon.VersionInfo{}, fmt.Errorf("plugin not loaded: %s", name)
 	}
@@ -199,12 +228,19 @@ type LoadedPluginInfo struct {
 // GetAllVersions returns version information for all currently loaded plugins.
 // Plugins that don't support versioning are skipped silently.
 func (pm *PluginManager) GetAllVersions() []LoadedPluginInfo {
-	result := make([]LoadedPluginInfo, 0)
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
+	pm.mu.RLock()
+	names := make([]string, 0, len(pm.plugins))
 	for name := range pm.plugins {
+		names = append(names, name)
+	}
+	pm.mu.RUnlock()
+
+	result := make([]LoadedPluginInfo, 0, len(names))
+	for _, name := range names {
 		info, err := pm.GetVersion(name)
+		pm.mu.RLock()
 		testRes := pm.testResults[name]
+		pm.mu.RUnlock()
 		if err != nil {
 			result = append(result, LoadedPluginInfo{
 				Name:       name,

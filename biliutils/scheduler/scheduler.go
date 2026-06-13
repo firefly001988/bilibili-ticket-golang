@@ -52,11 +52,25 @@ func (ds *DynamicScheduler) GetGlobalOffset() time.Duration {
 }
 
 // AddTask adds a one-shot scheduled task.
-func (ds *DynamicScheduler) AddTask(task ITask) {
+// Returns true if the task was added, false if a task with the same ID is
+// already registered.
+func (ds *DynamicScheduler) AddTask(task ITask) bool {
 	ds.mutex.Lock()
 	defer ds.mutex.Unlock()
+	if _, exists := ds.tasks[task.GetID()]; exists {
+		return false
+	}
 	ds.tasks[task.GetID()] = task
 	task.Start(ds.globalOffset)
+	return true
+}
+
+// HasTask reports whether a task with the given ID is currently registered.
+func (ds *DynamicScheduler) HasTask(id string) bool {
+	ds.mutex.RLock()
+	defer ds.mutex.RUnlock()
+	_, exists := ds.tasks[id]
+	return exists
 }
 
 // RemoveTask removes a task by ID.
@@ -67,6 +81,22 @@ func (ds *DynamicScheduler) RemoveTask(taskID string) {
 	if task, exists := ds.tasks[taskID]; exists {
 		task.Stop()
 		delete(ds.tasks, taskID)
+	}
+}
+
+// RemoveTaskAndStream removes a task by ID and invokes onRemove after deletion
+// while still holding the scheduler lock — useful for closing associated
+// resources (log streams, etc.) without racing with a re-add.
+func (ds *DynamicScheduler) RemoveTaskAndStream(taskID string, onRemove func()) {
+	ds.mutex.Lock()
+	defer ds.mutex.Unlock()
+
+	if task, exists := ds.tasks[taskID]; exists {
+		task.Stop()
+		delete(ds.tasks, taskID)
+	}
+	if onRemove != nil {
+		onRemove()
 	}
 }
 

@@ -73,7 +73,6 @@ func (bd *BWSData) SetChangeCallback(cb func(data *BWSData, entry BWSEntry)) {
 // Returns true if the entry was actually added.
 func (bd *BWSData) AddEntry(entry BWSEntry) bool {
 	bd.mutex.Lock()
-	defer bd.mutex.Unlock()
 
 	now := time.Now()
 
@@ -84,6 +83,7 @@ func (bd *BWSData) AddEntry(entry BWSEntry) bool {
 			continue // drop expired
 		}
 		if e.ActivityID == entry.ActivityID && e.ReserveDate == entry.ReserveDate {
+			bd.mutex.Unlock()
 			return false // active duplicate
 		}
 		bd.Entries[n] = e
@@ -92,8 +92,10 @@ func (bd *BWSData) AddEntry(entry BWSEntry) bool {
 	bd.Entries = bd.Entries[:n]
 
 	bd.Entries = append(bd.Entries, entry)
-	if bd.bwsChangeCallback != nil {
-		go (*bd.bwsChangeCallback)(bd, entry)
+	cb := bd.bwsChangeCallback
+	bd.mutex.Unlock()
+	if cb != nil {
+		go (*cb)(bd, entry)
 	}
 	return true
 }
@@ -132,7 +134,6 @@ func (bd *BWSData) GetEntriesNoMutate() []BWSEntry {
 // RemoveEntryByHash removes an entry by its SHA256 hash.
 func (bd *BWSData) RemoveEntryByHash(hash string) bool {
 	bd.mutex.Lock()
-	defer bd.mutex.Unlock()
 
 	now := time.Now()
 	n := 0
@@ -152,8 +153,10 @@ func (bd *BWSData) RemoveEntryByHash(hash string) bool {
 	}
 	bd.Entries = bd.Entries[:n]
 
-	if found && bd.bwsChangeCallback != nil {
-		go (*bd.bwsChangeCallback)(bd, removed)
+	cb := bd.bwsChangeCallback
+	bd.mutex.Unlock()
+	if found && cb != nil {
+		go (*cb)(bd, removed)
 	}
 	return found
 }

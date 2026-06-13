@@ -12,6 +12,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
+	"sync/atomic"
 
 	"github.com/imroc/req/v3"
 )
@@ -37,11 +39,13 @@ type BiliClient struct {
 	buvid        string
 	infocUUID    string
 	fingerprint  *Fingerprint
-	wbi          *wbiKey
+	wbi          atomic.Pointer[wbiKey]
 	cookieJar    http.CookieJar
-	saveCookies  func()          // callback to persist cookies to disk
-	refreshToken string          // Bilibili refresh_token for cookie refresh
-	solver       CaptchaSolverFn // captcha solving function (plugin-based)
+	saveCookies  atomic.Pointer[func()]
+	refreshToken atomic.Pointer[string]
+	solver       atomic.Pointer[CaptchaSolverFn]
+
+	mu sync.RWMutex
 }
 
 // NewBiliClient creates a new BiliClient with random device fingerprint.
@@ -59,8 +63,6 @@ func NewBiliClient() (*BiliClient, error) {
 //   - Injects show.bilibili.com-specific cookies (_uuid, buvid, feSign, screenInfo, etc.)
 //   - Handles voucher (x-bili-gaia-vvoucher) responses transparently
 func NewBiliClientWithCookiejar(jar http.CookieJar) (*BiliClient, error) {
-	httpClient := req.C()
-
 	ver, err := GetBilibiliAppVersion()
 	if err != nil {
 		return nil, err
@@ -77,22 +79,26 @@ func NewBiliClientWithCookiejar(jar http.CookieJar) (*BiliClient, error) {
 	}
 
 	biliClient := &BiliClient{
-		client:      httpClient,
 		appVersion:  ver,
 		buvid:       buvid,
 		infocUUID:   infocUUID,
 		fingerprint: fp,
 		cookieJar:   jar,
-		wbi:         &wbiKey{},
 	}
+	emptyKey := &wbiKey{}
+	biliClient.wbi.Store(emptyKey)
+	emptySolver := CaptchaSolverFn(nil)
+	biliClient.solver.Store(&emptySolver)
 
-	// Setup HTTP client with Android TLS fingerprint
+	// Per-instance req.Client to avoid leaking TLS fingerprint, common cookies,
+	// and cookie jar across multiple BiliClient instances.
+	httpClient := req.NewClient()
 	httpClient.SetTLSFingerprintAndroid().ImpersonateChrome()
 	httpClient.SetCommonCookies()
-
 	if jar != nil {
 		httpClient.SetCookieJar(jar)
 	}
+	biliClient.client = httpClient
 
 	// Wrap round trip for per-request header injection
 	httpClient.WrapRoundTripFunc(func(rt req.RoundTripper) req.RoundTripFunc {
@@ -118,6 +124,8 @@ func NewBiliClientWithCookiejar(jar http.CookieJar) (*BiliClient, error) {
 					&http.Cookie{Name: "feSign", Value: getFeSign(ua, biliClient.fingerprint.Canvasfp, biliClient.fingerprint.Webglfp)},
 					&http.Cookie{Name: "screenInfo", Value: screenInfo},
 				)
+			} else if req.URL.Host == "passport.bilibili.com" {
+				ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.56 Safari/537.36"
 			} else {
 				// BiliDroid UA for other endpoints
 				ua = fmt.Sprintf(
@@ -151,14 +159,14 @@ func NewBiliClientWithCookiejar(jar http.CookieJar) (*BiliClient, error) {
 					}
 				}
 				if voucher != "" {
-					if biliClient.solver != nil {
-						// Close the original voucher response body to avoid resource leak.
-						resp.Body.Close()
-
+					solverPtr := biliClient.solver.Load()
+					if solverPtr != nil && *solverPtr != nil {
 						// Auto-resolve voucher with captcha solver, then retry.
 						resolved, resolveErr := biliClient.resolveVoucher(voucher)
+						// Close the original voucher response body to avoid resource leak.
+						resp.Body.Close()
 						if resolveErr != nil {
-							return resp, fmt.Errorf("voucher resolve failed: %w", resolveErr)
+							return nil, fmt.Errorf("voucher resolve failed: %w", resolveErr)
 						}
 						// Retry: add voucher to query params and cookie, then re-send.
 						// Directly rewrite URL RawQuery to avoid nil QueryParams panic.
@@ -168,7 +176,8 @@ func NewBiliClientWithCookiejar(jar http.CookieJar) (*BiliClient, error) {
 						req.Cookies = append(req.Cookies, &http.Cookie{Name: "x-bili-gaia-vtoken", Value: resolved})
 						return rt.RoundTrip(req)
 					}
-					return resp, errors.NewBilibiliAPIVoucherError(voucher)
+					_ = resp.Body.Close()
+					return nil, errors.NewBilibiliAPIVoucherError(voucher)
 				}
 			}
 			return resp, err
@@ -279,26 +288,31 @@ func (c *BiliClient) GetAppVersion() *api.BiliAppVersionStruct {
 // SetCookieSaveCallback sets a callback that is invoked whenever PersistCookies is called.
 // The callback should dump all cookies from the jar and write them to persistent storage.
 func (c *BiliClient) SetCookieSaveCallback(cb func()) {
-	c.saveCookies = cb
+	c.saveCookies.Store(&cb)
 }
 
 // PersistCookies triggers an immediate save of all cookies to persistent storage.
 // It must be called after SetCookieSaveCallback has been called.
 func (c *BiliClient) PersistCookies() {
-	if c.saveCookies != nil {
-		c.saveCookies()
+	cbPtr := c.saveCookies.Load()
+	if cbPtr != nil && *cbPtr != nil {
+		(*cbPtr)()
 	}
 }
 
 // SetRefreshToken stores the Bilibili refresh_token for cookie refresh operations.
 // Call this after QR login succeeds (the token is in the QR login response).
 func (c *BiliClient) SetRefreshToken(token string) {
-	c.refreshToken = token
+	c.refreshToken.Store(&token)
 }
 
 // GetRefreshToken returns the stored refresh_token.
 func (c *BiliClient) GetRefreshToken() string {
-	return c.refreshToken
+	tokPtr := c.refreshToken.Load()
+	if tokPtr == nil {
+		return ""
+	}
+	return *tokPtr
 }
 
 // GetCookieJar returns the underlying cookie jar.

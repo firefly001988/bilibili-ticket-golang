@@ -54,7 +54,7 @@ func NewCToken2026Generator(ecdata *EncodeData) *CToken2026Generator {
 			ee:     ecdata.encode(11),
 		},
 		whenGen:    time.Now(),
-		lastSubmit: time.Time{},
+		lastSubmit: time.Now(),
 	}
 }
 

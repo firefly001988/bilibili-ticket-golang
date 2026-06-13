@@ -87,7 +87,7 @@ func (tt *TicketTask) Start(globalOffset time.Duration) {
 	tt.mutex.Lock()
 	defer tt.mutex.Unlock()
 
-	if tt.GetStat() == StatPending {
+	if tt.GetStat() != StatWaiting {
 		return
 	}
 
@@ -108,6 +108,12 @@ func (tt *TicketTask) ForceStart() {
 	if tt.GetStat() != StatWaiting {
 		return
 	}
+	select {
+	case <-tt.stopChan:
+		// already closed
+	default:
+		close(tt.stopChan)
+	}
 	go tt.executeAndStop()
 }
 
@@ -115,13 +121,12 @@ func (tt *TicketTask) ForceStart() {
 func (tt *TicketTask) Stop() {
 	tt.mutex.Lock()
 
-	stat := tt.getStatNoLock()
+	stat := tt.GetStat()
 	if stat != StatWaiting && stat != StatPending {
 		tt.mutex.Unlock()
 		return
 	}
 
-	// Signal the timer/execution goroutines to stop
 	select {
 	case <-tt.stopChan:
 		// already closed
@@ -135,11 +140,7 @@ func (tt *TicketTask) Stop() {
 
 	tt.mutex.Unlock()
 
-	// Cancel the context (interrupts time.Sleep in the main loop via ctx.Done)
-	tt.cancelFunc()
-
-	// Set terminal state (must NOT hold mutex during setStat to avoid deadlock with executeAndStop)
-	tt.setStatNoLock(StatFailed)
+	tt.setStat(StatFailed)
 }
 
 // GetStat returns the current task status.
@@ -151,27 +152,21 @@ func (tt *TicketTask) GetStat() RunningStat {
 
 func (tt *TicketTask) setStat(stat RunningStat) {
 	tt.statLock.Lock()
-	wasTerminal := tt.stat > 1
+	wasTerminal := tt.stat > StatPending
 	tt.stat = stat
-	if stat > 2 {
+	if stat > StatPending {
 		tt.cancelFunc()
 	}
 	tt.statLock.Unlock()
-	// Fire completion callback on first transition to terminal state
-	if !wasTerminal && stat > 1 && tt.onComplete != nil {
+	if !wasTerminal && stat > StatPending && tt.onComplete != nil {
 		tt.onComplete(stat)
 	}
-}
-
-// getStatNoLock returns the current stat without acquiring the lock.
-// Caller must hold tt.statLock.
-func (tt *TicketTask) getStatNoLock() RunningStat {
-	return tt.stat
 }
 
 func (tt *TicketTask) UpdateInterval(newInterval time.Duration) {
 	tt.mutex.Lock()
 	defer tt.mutex.Unlock()
+	tt.sendLog(LogInfo, fmt.Sprintf("更新请求间隔: %v → %v", tt.interval, newInterval))
 	tt.interval = newInterval
 }
 
@@ -179,22 +174,8 @@ func (tt *TicketTask) UpdateInterval(newInterval time.Duration) {
 func (tt *TicketTask) UpdateStartDelay(newDelay time.Duration) {
 	tt.mutex.Lock()
 	defer tt.mutex.Unlock()
+	tt.sendLog(LogInfo, fmt.Sprintf("更新启动延迟: %v → %v", tt.startDelay, newDelay))
 	tt.startDelay = newDelay
-}
-
-// setStatNoLock sets the stat without acquiring the lock.
-// Caller must hold tt.statLock.
-func (tt *TicketTask) setStatNoLock(stat RunningStat) {
-	tt.statLock.Lock()
-	wasTerminal := tt.stat > 1
-	tt.stat = stat
-	if stat > 2 {
-		tt.cancelFunc()
-	}
-	tt.statLock.Unlock()
-	if !wasTerminal && stat > 1 && tt.onComplete != nil {
-		tt.onComplete(stat)
-	}
 }
 
 // GetError returns the task's error.
@@ -206,7 +187,7 @@ func (tt *TicketTask) GetError() error {
 
 func (tt *TicketTask) setError(err error) {
 	tt.statLock.Lock()
-	wasTerminal := tt.stat > 1
+	wasTerminal := tt.stat > StatPending
 	tt.stat = StatError
 	tt.taskErr = err
 	tt.statLock.Unlock()
@@ -241,7 +222,7 @@ func (tt *TicketTask) rescheduleWithNewOffset(offsetDelta time.Duration) {
 	if tt.GetStat() != StatWaiting || tt.timer == nil {
 		return
 	}
-	if tt.timer != nil && !tt.timer.Stop() {
+	if !tt.timer.Stop() {
 		select {
 		case <-tt.timer.C:
 		default:
@@ -250,11 +231,25 @@ func (tt *TicketTask) rescheduleWithNewOffset(offsetDelta time.Duration) {
 	adjustedTime := tt.TargetTime.Add(offsetDelta)
 	waitDuration := time.Until(adjustedTime)
 	if waitDuration <= 0 {
+		// Clean up old goroutine before starting immediate execution.
+		select {
+		case <-tt.stopChan:
+		default:
+			close(tt.stopChan)
+		}
+		tt.stopChan = make(chan struct{})
 		go tt.executeAndStop()
 		return
 	}
 	tt.timer = time.NewTimer(waitDuration)
-	go tt.waitForExecution()
+	timerC := tt.timer.C // captured under mutex — no data race
+	select {
+	case <-tt.stopChan:
+	default:
+		close(tt.stopChan)
+	}
+	tt.stopChan = make(chan struct{})
+	go tt.waitForExecution(timerC)
 }
 
 func (tt *TicketTask) run(globalOffset time.Duration) {
@@ -272,12 +267,15 @@ func (tt *TicketTask) run(globalOffset time.Duration) {
 		return
 	}
 	tt.timer = time.NewTimer(waitDuration)
-	go tt.waitForExecution()
+	timerC := tt.timer.C // captured under mutex — no data race
+	go tt.waitForExecution(timerC)
 }
 
-func (tt *TicketTask) waitForExecution() {
+// waitForExecution waits for the timer to fire or the task to be stopped.
+// timerC is captured under lock by the caller to avoid data races on tt.timer.
+func (tt *TicketTask) waitForExecution(timerC <-chan time.Time) {
 	select {
-	case <-tt.timer.C:
+	case <-timerC:
 		tt.executeAndStop()
 	case <-tt.stopChan:
 	}
@@ -326,6 +324,12 @@ func (tt *TicketTask) executeAndStop() {
 //     → On code 100034: update price and retry
 //     → On code 100017: mark StatFailed (not for sale)
 func (tt *TicketTask) ticketFunc() {
+	// Snapshot mutable fields under lock to avoid data races with UpdateInterval/UpdateStartDelay.
+	tt.mutex.RLock()
+	interval := tt.interval
+	startDelay := tt.startDelay
+	tt.mutex.RUnlock()
+
 	pidString := strconv.FormatInt(tt.ticket.ProjectID, 10)
 
 	tt.sendLog(LogInfo, fmt.Sprintf("任务开始 — 项目:%s 场次:%s 票种:%s 购票人:%s",
@@ -383,13 +387,13 @@ func (tt *TicketTask) ticketFunc() {
 	tt.sendLog(LogInfo, "下单 Token 已获取")
 
 	// 5. Apply one-time start delay before the first submit attempt
-	if tt.startDelay > 0 {
-		tt.sendLog(LogInfo, fmt.Sprintf("启动延时 %v...", tt.startDelay))
+	if startDelay > 0 {
+		tt.sendLog(LogInfo, fmt.Sprintf("启动延时 %v...", startDelay))
 		select {
 		case <-tt.ctx.Done():
 			tt.sendLog(LogInfo, "任务在启动延时期间被取消")
 			return
-		case <-time.After(tt.startDelay):
+		case <-time.After(startDelay):
 		}
 	}
 
@@ -435,6 +439,19 @@ func (tt *TicketTask) ticketFunc() {
 			tt.sendLog(LogInfo, "任务被取消")
 			return
 		default:
+		}
+
+		// Refresh token every N attempts to avoid rate limiting
+		if submitCount >= global.MaxTokenRefreshCount {
+			whenGenPtoken = time.Now()
+			orderTokens, err = tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku)
+			if err != nil {
+				tt.sendLog(LogWarn, fmt.Sprintf("刷新 Token 失败: %v", err))
+			} else {
+				tt.sendLog(LogDebug, "Token 已刷新")
+			}
+			submitCount = 0
+		} else {
 			var (
 				err         error
 				code        int
@@ -442,59 +459,46 @@ func (tt *TicketTask) ticketFunc() {
 				orderResult api.TicketOrderStruct
 			)
 
-			// Refresh token every N attempts to avoid rate limiting
-			if submitCount >= global.MaxTokenRefreshCount {
-				whenGenPtoken = time.Now()
-				orderTokens, err = tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku)
-				if err != nil {
-					tt.sendLog(LogWarn, fmt.Sprintf("刷新 Token 失败: %v", err))
-				} else {
-					tt.sendLog(LogDebug, "Token 已刷新")
-				}
-				submitCount = 0
-				goto SLEEP
-			}
-
 			err, code, msg, orderResult = tt.client.SubmitOrder(tokenGen, whenGenPtoken, orderTokens, pidString, *targetSku, buyerData, tt.ticket.Buyer.BuyerType)
 			if err != nil {
 				tt.sendLog(LogWarn, fmt.Sprintf("提交订单失败: %v", err))
-				goto SLEEP
-			}
+			} else {
 
-			// Success: OrderId is non-zero and code is 0, 100048, or 100079
-			if (code == 0 || code == 100048 || code == 100079) && orderResult.OrderId != 0 {
-				successMsg := fmt.Sprintf("🎉 抢票成功！订单号: %d", orderResult.OrderId)
-				if tt.notifyFn != nil {
-					tt.notifyFn(fmt.Sprintf("抢票成功！\n项目：%s\n场次：%s\n票种：%s\n购票人：%s\n购票用户：%s(%d)",
-						tt.ticket.ProjectName, tt.ticket.ScreenName, tt.ticket.SkuName,
-						tt.ticket.Buyer.String(), tt.username, tt.userid))
+				// Success: OrderId is non-zero and code is 0, 100048, or 100079
+				if (code == 0 || code == 100048 || code == 100079) && orderResult.OrderId != 0 {
+					successMsg := fmt.Sprintf("🎉 抢票成功！订单号: %d", orderResult.OrderId)
+					if tt.notifyFn != nil {
+						tt.notifyFn(fmt.Sprintf("抢票成功！\n项目：%s\n场次：%s\n票种：%s\n购票人：%s\n购票用户：%s(%d)",
+							tt.ticket.ProjectName, tt.ticket.ScreenName, tt.ticket.SkuName,
+							tt.ticket.Buyer.String(), tt.username, tt.userid))
+					}
+					tt.sendLog(LogSuccess, successMsg)
+					tt.setStat(StatSuccess)
+					return
 				}
-				tt.sendLog(LogSuccess, successMsg)
-				tt.setStat(StatSuccess)
-				return
-			}
 
-			// Handle specific error codes
-			switch code {
-			case 100034:
-				oldPrice := targetSku.Price
-				targetSku.Price = orderResult.PayMoney
-				tt.sendLog(LogInfo, fmt.Sprintf("价格变更: ¥%.2f → ¥%.2f", float64(oldPrice)/100.0, float64(targetSku.Price)/100.0))
-			case 100017:
-				tt.sendLog(LogError, fmt.Sprintf("不可售 — %s (%d)", msg, code))
-				tt.setStat(StatFailed)
-				return
-			}
+				// Handle specific error codes
+				switch code {
+				case 100034:
+					oldPrice := targetSku.Price
+					targetSku.Price = orderResult.PayMoney
+					tt.sendLog(LogInfo, fmt.Sprintf("价格变更: ¥%.2f → ¥%.2f", float64(oldPrice)/100.0, float64(targetSku.Price)/100.0))
+				case 100017:
+					tt.sendLog(LogError, fmt.Sprintf("不可售 — %s (%d)", msg, code))
+					tt.setStat(StatFailed)
+					return
+				}
 
-			tt.sendLog(LogDebug, fmt.Sprintf("#%d: %s (%d)", submitCount+1, msg, code))
-		SLEEP:
-			submitCount++
-			// Cancellable sleep — respects context cancellation from Stop()
-			select {
-			case <-tt.ctx.Done():
-				return
-			case <-time.After(tt.interval):
+				tt.sendLog(LogDebug, fmt.Sprintf("#%d: %s (%d)", submitCount+1, msg, code))
 			}
+		}
+
+		submitCount++
+		// Cancellable sleep — respects context cancellation from Stop()
+		select {
+		case <-tt.ctx.Done():
+			return
+		case <-time.After(interval):
 		}
 	}
 }

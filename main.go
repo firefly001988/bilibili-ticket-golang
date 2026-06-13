@@ -18,6 +18,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -79,12 +80,31 @@ func main() {
 		// Redirect os.Stdout / os.Stderr through pipes so that println and
 		// third-party libraries writing to stdout/stderr are captured.
 		// (In Wails desktop builds stdout/stderr are discarded by default.)
-		rOut, wOut, _ := os.Pipe()
-		rErr, wErr, _ := os.Pipe()
-		os.Stdout = wOut
-		os.Stderr = wErr
-		go io.Copy(tw, rOut)
-		go io.Copy(tw, rErr)
+		rOut, wOut, pipeOutErr := os.Pipe()
+		rErr, wErr, pipeErrErr := os.Pipe()
+		if pipeOutErr != nil || pipeErrErr != nil {
+			log.Printf("[main] failed to create stdout/stderr pipes: out=%v err=%v", pipeOutErr, pipeErrErr)
+		} else {
+			os.Stdout = wOut
+			os.Stderr = wErr
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				_, _ = io.Copy(tw, rOut)
+			}()
+			go func() {
+				defer wg.Done()
+				_, _ = io.Copy(tw, rErr)
+			}()
+			// On exit, close writers (so the io.Copy goroutines can drain
+			// remaining buffered data) and wait for them to finish.
+			defer func() {
+				_ = wOut.Close()
+				_ = wErr.Close()
+				wg.Wait()
+			}()
+		}
 	} else {
 		log.SetOutput(os.Stderr)
 	}
@@ -145,8 +165,8 @@ func main() {
 		logBroker.FlushLogs()
 	}()
 
-	// Auto-restart persisted tasks on launch (using stored retry interval)
-	schedSvc.ReloadTickets(store.RetryIntervalMs)
+	// Auto-restart persisted tasks on launch
+	schedSvc.ReloadTickets()
 	schedSvc.ReloadBWSTasks()
 
 	// Start periodic clock calibration against Bilibili server (every 10s)
@@ -173,16 +193,23 @@ func main() {
 		log.Printf("[main] Failed to load captcha plugin: %v", err)
 	} else {
 		//Captcha Solver Plugin
-		solver, err := captcha.Dispense(pluginManager.GetClient("captcha-plugin"))
-		if err != nil {
-			log.Printf("[main] Failed to dispense captcha plugin: %v", err)
+		solver, dispenseErr := captcha.Dispense(pluginManager.GetClient("captcha-plugin"))
+		if dispenseErr != nil {
+			log.Printf("[main] Failed to dispense captcha plugin: %v", dispenseErr)
 		} else {
 			solverFunc = func(gt string, challenge string) (string, error) {
-				id, _ := solver.Create(gt, challenge)
-				_, err = solver.GetCS(id, "")
+				id, err := solver.Create(gt, challenge)
+				if err != nil {
+					return "", fmt.Errorf("Create error: %w", err)
+				}
+				defer func() { _ = solver.Destroy(id) }()
+
+				cs, err := solver.GetCS(id, "")
 				if err != nil {
 					return "", fmt.Errorf("GetCS error: %w", err)
 				}
+				_ = cs
+
 				t, err := solver.GetType(id, "")
 				if err != nil {
 					return "", fmt.Errorf("GetType error: %w", err)
@@ -245,15 +272,18 @@ func main() {
 
 // timestampWriter writes output to an io.Writer, prepending a timestamp
 // to each line and syncing (if the underlying writer is an *os.File) after
-// every write so that crash logs are never lost.
+// every newline so that crash logs are never lost.
 type timestampWriter struct {
 	w   io.Writer
+	mu  sync.Mutex
 	buf bytes.Buffer
 }
 
 const timeLayout = "2006-01-02 15:04:05 "
 
 func (t *timestampWriter) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	written := len(p)
 	for _, b := range p {
 		if b == '\n' {
@@ -263,13 +293,26 @@ func (t *timestampWriter) Write(p []byte) (int, error) {
 				return 0, err
 			}
 			t.buf.Reset()
+			if f, ok := t.w.(*os.File); ok {
+				f.Sync()
+			}
 		} else {
 			t.buf.WriteByte(b)
 		}
 	}
-	// Sync if possible
-	if f, ok := t.w.(*os.File); ok {
-		f.Sync()
-	}
 	return written, nil
+}
+
+// Flush writes any remaining buffered partial line to the underlying writer.
+func (t *timestampWriter) Flush() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.buf.Len() == 0 {
+		return nil
+	}
+	line := append([]byte(time.Now().Format(timeLayout)), t.buf.Bytes()...)
+	line = append(line, '\n')
+	_, err := t.w.Write(line)
+	t.buf.Reset()
+	return err
 }

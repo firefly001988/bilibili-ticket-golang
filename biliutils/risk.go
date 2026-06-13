@@ -72,8 +72,11 @@ func (c *BiliClient) CheckAndUpdateCookie() (bool, error) {
 		log.Printf("[cookie] refreshCookie failed: %v", err)
 		return false, err
 	}
+	if newRefreshToken == "" {
+		return false, errors.New("refreshCookie returned empty token")
+	}
 	log.Printf("[cookie] refreshCookie success, new refresh_token=%s", maskToken(newRefreshToken))
-	c.refreshToken = newRefreshToken
+	c.SetRefreshToken(newRefreshToken)
 
 	newCSRF := c.getCSRFFromCookie()
 	if err = c.setPreviousCookieInvalid(newCSRF, oldRefreshToken); err != nil {
@@ -178,7 +181,7 @@ func (c *BiliClient) getCSRFFromCookie() string {
 // It is set via SetRefreshToken (called from frontend after QR login succeeds)
 // and updated automatically after each successful cookie refresh.
 func (c *BiliClient) getJarRefreshToken() string {
-	return c.refreshToken
+	return c.GetRefreshToken()
 }
 
 // TryToRefreshNewBiliTicket checks the bili_ticket cookie and refreshes it if
@@ -187,12 +190,27 @@ func (c *BiliClient) getJarRefreshToken() string {
 func (c *BiliClient) TryToRefreshNewBiliTicket() (bool, error) {
 	if c.cookieJar != nil {
 		bilibiliURL, _ := url.Parse("https://www.bilibili.com/")
+		// Find the bili_ticket cookie with the latest expiry. If that one
+		// still has >= 1 hour left, we don't need to refresh. Otherwise we
+		// must refresh even if other cookies look healthy.
+		var latest time.Time
+		found := false
 		for _, cookie := range c.cookieJar.Cookies(bilibiliURL) {
-			if cookie.Name == "bili_ticket" {
-				if time.Until(cookie.Expires) >= 1*time.Hour {
-					return false, nil
-				}
+			if cookie.Name != "bili_ticket" {
+				continue
 			}
+			// Session cookies have a zero Expires; treat them as expired
+			// so we still refresh and store a real one.
+			if cookie.Expires.IsZero() {
+				continue
+			}
+			if !found || cookie.Expires.After(latest) {
+				latest = cookie.Expires
+				found = true
+			}
+		}
+		if found && time.Until(latest) >= 1*time.Hour {
+			return false, nil
 		}
 	}
 

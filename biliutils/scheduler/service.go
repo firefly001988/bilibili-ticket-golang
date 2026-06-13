@@ -92,8 +92,11 @@ type SchedulerService struct {
 	notifyChData *configuration.NotifyChannelData
 	store        *configuration.DataStorage // for persisting notify channel changes
 
+	calibMu     sync.Mutex
 	calibCtx    context.Context
 	calibCancel context.CancelFunc
+
+	notifyOpsMu sync.Mutex
 
 	// Last measured clock offsets (server − local); positive = local is behind.
 	biliOffset time.Duration
@@ -116,8 +119,8 @@ func NewSchedulerService(client *biliutils.BiliClient, logBroker *LogBroker, tic
 }
 
 // AddTicketTask creates a TicketTask from the given ticket hash and starts it.
-// intervalMs is the polling interval in milliseconds (e.g. 200 = 200ms between retries).
-func (svc *SchedulerService) AddTicketTask(hash string, intervalMs int) error {
+// The retry interval is taken from the global setting (DataStorage.RetryIntervalMs).
+func (svc *SchedulerService) AddTicketTask(hash string) error {
 	// Find the ticket by hash (non-mutating read to avoid side effects)
 	tickets := svc.tickets.GetTicketsNoMutate()
 
@@ -146,15 +149,12 @@ func (svc *SchedulerService) AddTicketTask(hash string, intervalMs int) error {
 	}
 
 	// Check not already scheduled
-	existing := svc.scheduler.GetTaskStatus()
-	for id := range existing {
-		if id == hash {
-			return errors.New("task already exists")
-		}
+	if svc.scheduler.HasTask(hash) {
+		return errors.New("task already exists")
 	}
 
 	targetTime := time.Unix(ticket.Start, 0)
-	interval := time.Duration(intervalMs) * time.Millisecond
+	interval := time.Duration(svc.store.RetryIntervalMs) * time.Millisecond
 
 	logCh := svc.logBroker.CreateStream(hash)
 
@@ -175,7 +175,9 @@ func (svc *SchedulerService) AddTicketTask(hash string, intervalMs int) error {
 	task.ID = hash
 	task.TargetTime = targetTime
 
-	svc.scheduler.AddTask(task)
+	if !svc.scheduler.AddTask(task) {
+		return errors.New("task already exists")
+	}
 	return nil
 }
 
@@ -289,14 +291,16 @@ func (svc *SchedulerService) AddTicket(ticket FrontendTicket) (string, error) {
 
 // RemoveTicket removes a ticket from storage and its associated task (if any).
 func (svc *SchedulerService) RemoveTicket(hash string) {
-	svc.scheduler.RemoveTask(hash)
+	svc.scheduler.RemoveTaskAndStream(hash, func() {
+		svc.logBroker.CloseStream(hash)
+	})
 	svc.tickets.RemoveTicketByHash(hash)
 }
 
 // ReloadTickets starts tasks for all valid tickets that are not yet scheduled.
 // Call this on startup to recover persisted tickets.
 // Completed tasks (StatSuccess/StatFailed/StatError) are not re-scheduled.
-func (svc *SchedulerService) ReloadTickets(intervalMs int) {
+func (svc *SchedulerService) ReloadTickets() {
 	tickets := svc.tickets.GetTicketsNoMutate()
 	existingMap := svc.scheduler.GetTaskStatus()
 
@@ -312,7 +316,7 @@ func (svc *SchedulerService) ReloadTickets(intervalMs int) {
 		if tickets[i].Stat == int(StatSuccess) || tickets[i].Stat == int(StatFailed) || tickets[i].Stat == int(StatError) {
 			continue
 		}
-		_ = svc.AddTicketTask(hash, intervalMs)
+		_ = svc.AddTicketTask(hash)
 	}
 }
 
@@ -375,6 +379,9 @@ func (svc *SchedulerService) GetNotifyChannels() []FrontendNotifyChannel {
 
 // AddNotifyChannel adds a new notification channel and rebuilds the MultiNotifier.
 func (svc *SchedulerService) AddNotifyChannel(ch FrontendNotifyChannel) (int, error) {
+	svc.notifyOpsMu.Lock()
+	defer svc.notifyOpsMu.Unlock()
+
 	nc := configuration.NotifyChannel{
 		Type:    ch.Type,
 		Name:    ch.Name,
@@ -395,10 +402,12 @@ func (svc *SchedulerService) AddNotifyChannel(ch FrontendNotifyChannel) (int, er
 
 // RemoveNotifyChannel removes a notification channel at the given index.
 func (svc *SchedulerService) RemoveNotifyChannel(index int) error {
+	svc.notifyOpsMu.Lock()
+	defer svc.notifyOpsMu.Unlock()
+
 	if !svc.notifyChData.Remove(index) {
 		return fmt.Errorf("通知渠道索引 %d 不存在", index)
 	}
-	// Rebuild MultiNotifier from remaining channels
 	svc.rebuildNotifier()
 	svc.persistNotify()
 	return nil
@@ -406,6 +415,9 @@ func (svc *SchedulerService) RemoveNotifyChannel(index int) error {
 
 // UpdateNotifyChannel updates a notification channel at the given index.
 func (svc *SchedulerService) UpdateNotifyChannel(index int, ch FrontendNotifyChannel) error {
+	svc.notifyOpsMu.Lock()
+	defer svc.notifyOpsMu.Unlock()
+
 	nc := configuration.NotifyChannel{
 		Type:    ch.Type,
 		Name:    ch.Name,
@@ -413,8 +425,7 @@ func (svc *SchedulerService) UpdateNotifyChannel(index int, ch FrontendNotifyCha
 		Params:  ch.Params,
 	}
 
-	n, err := nc.ToNotifier()
-	if err != nil {
+	if _, err := nc.ToNotifier(); err != nil {
 		return fmt.Errorf("更新通知渠道失败: %w", err)
 	}
 
@@ -422,7 +433,6 @@ func (svc *SchedulerService) UpdateNotifyChannel(index int, ch FrontendNotifyCha
 		return fmt.Errorf("通知渠道索引 %d 不存在", index)
 	}
 	svc.rebuildNotifier()
-	_ = n // n is used to validate; notifier is rebuilt from all channels
 	svc.persistNotify()
 	return nil
 }
@@ -482,10 +492,17 @@ const clockCalibrationInterval = 120 * time.Second
 
 // StartClockCalibration begins a background goroutine that periodically
 // calibrates the scheduler's global time offset against Bilibili's server
-// clock (with NTP fallback). Calibration runs every 10 seconds while there
-// are active tasks.
+// clock (with NTP fallback). Calibration runs every clockCalibrationInterval
+// (default 120s).
 func (svc *SchedulerService) StartClockCalibration() {
+	svc.calibMu.Lock()
+	if svc.calibCancel != nil {
+		// Stop any previous loop before starting a new one.
+		svc.calibCancel()
+	}
 	svc.calibCtx, svc.calibCancel = context.WithCancel(context.Background())
+	ctx := svc.calibCtx
+	svc.calibMu.Unlock()
 
 	// Calibrate immediately at startup
 	svc.calibrateOnce()
@@ -496,7 +513,7 @@ func (svc *SchedulerService) StartClockCalibration() {
 
 		for {
 			select {
-			case <-svc.calibCtx.Done():
+			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				svc.calibrateOnce()
@@ -507,8 +524,13 @@ func (svc *SchedulerService) StartClockCalibration() {
 
 // StopClockCalibration stops the background clock calibration goroutine.
 func (svc *SchedulerService) StopClockCalibration() {
-	if svc.calibCancel != nil {
-		svc.calibCancel()
+	svc.calibMu.Lock()
+	cancel := svc.calibCancel
+	svc.calibCancel = nil
+	svc.calibCtx = nil
+	svc.calibMu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 
@@ -679,8 +701,7 @@ func (svc *SchedulerService) AddBWSTask(hash string) error {
 	}
 
 	// Check not already scheduled
-	existing := svc.scheduler.GetTaskStatus()
-	if _, exists := existing[hash]; exists {
+	if svc.scheduler.HasTask(hash) {
 		return fmt.Errorf("BWS task already exists")
 	}
 
@@ -704,13 +725,17 @@ func (svc *SchedulerService) AddBWSTask(hash string) error {
 	task.ID = hash
 	task.TargetTime = targetTime
 
-	svc.scheduler.AddTask(task)
+	if !svc.scheduler.AddTask(task) {
+		return fmt.Errorf("BWS task already exists")
+	}
 	return nil
 }
 
 // RemoveBWSEntry removes a BWS entry from storage and its associated task.
 func (svc *SchedulerService) RemoveBWSEntry(hash string) {
-	svc.scheduler.RemoveTask(hash)
+	svc.scheduler.RemoveTaskAndStream(hash, func() {
+		svc.logBroker.CloseStream(hash)
+	})
 	svc.bwsData.RemoveEntryByHash(hash)
 	if svc.store != nil {
 		if err := svc.store.Save(); err != nil {

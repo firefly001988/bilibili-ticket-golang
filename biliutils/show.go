@@ -169,10 +169,16 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 	}
 
 	if buyerType == r.ForceRealName {
-		bs, _ := json.Marshal(buyer)
+		bs, err := json.Marshal(buyer)
+		if err != nil {
+			return fmt.Errorf("marshal buyer info: %w", err), -1, "", api.TicketOrderStruct{}
+		}
 		form["buyer_info"] = string(bs)
 	} else if buyerType == r.Ordinary {
-		b := buyer.(map[string]string)
+		b, ok := buyer.(map[string]string)
+		if !ok {
+			return fmt.Errorf("invalid buyer type for Ordinary buyer: %T", buyer), -1, "", api.TicketOrderStruct{}
+		}
 		form["tel"] = b["tel"]
 		form["buyer"] = b["name"]
 	} else {

@@ -11,7 +11,6 @@ import {
     RemoveTask,
     ForceStartTask,
     GetTaskStatuses,
-    GetRetryInterval,
 } from '../../wailsjs/go/scheduler/SchedulerService'
 import type { FrontendTicket, FrontendTaskStatus } from '@/composables/schedulerTypes'
 import { statColor, statLabel, StatWaiting, StatPending } from '@/composables/schedulerTypes'
@@ -117,9 +116,8 @@ async function refresh() {
 async function startTask(hash: string) {
     loading.value = true
     try {
-        const intervalMs = await GetRetryInterval()
-        debugLog('[startTask] calling AddTicketTask with hash:', hash, 'intervalMs:', intervalMs)
-        await AddTicketTask(hash, intervalMs)
+        debugLog('[startTask] calling AddTicketTask for hash:', hash)
+        await AddTicketTask(hash)
         debugLog('[startTask] AddTicketTask returned successfully for hash:', hash)
         messages.add({ text: '任务已启动', color: 'success', timeout: 2000 })
         await refresh()

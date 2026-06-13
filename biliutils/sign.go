@@ -61,6 +61,9 @@ func (c *BiliClient) refreshWbiToken() error {
 	// Combine and permute file names from img_url and sub_url
 	combinedNames := utils.GetFileNameWithoutExt(navResp.Data.WbiImg.ImgUrl) +
 		utils.GetFileNameWithoutExt(navResp.Data.WbiImg.SubUrl)
+	if len(combinedNames) < len(mixinKeyEncTab) {
+		return fmt.Errorf("WBI key: combined names too short (got %d, need %d)", len(combinedNames), len(mixinKeyEncTab))
+	}
 	var builder strings.Builder
 	for _, index := range mixinKeyEncTab {
 		builder.WriteByte(combinedNames[index])
@@ -74,10 +77,10 @@ func (c *BiliClient) refreshWbiToken() error {
 		expired = tomorrow
 	}
 
-	c.wbi = &wbiKey{
+	c.wbi.Store(&wbiKey{
 		mixin:  key,
 		expire: expired,
-	}
+	})
 	return nil
 }
 
@@ -87,15 +90,20 @@ func (c *BiliClient) refreshWbiToken() error {
 // parameters to the URL. If the WBI key is expired or forceUpdate is true,
 // a new key is fetched automatically.
 func (c *BiliClient) SignWithWbi(forceUpdate bool, targetURL *url.URL) error {
-	if c.wbi == nil || c.wbi.isExpired() || forceUpdate {
+	keyPtr := c.wbi.Load()
+	if keyPtr == nil || keyPtr.isExpired() || forceUpdate {
 		if err := c.refreshWbiToken(); err != nil {
 			return err
+		}
+		keyPtr = c.wbi.Load()
+		if keyPtr == nil {
+			return fmt.Errorf("WBI key unavailable after refresh")
 		}
 	}
 	values := targetURL.Query()
 	values.Del("w_rid")
 	values.Set("wts", fmt.Sprintf("%d", time.Now().Unix()))
-	wbiHash := md5.Sum([]byte(values.Encode() + c.wbi.mixin))
+	wbiHash := md5.Sum([]byte(values.Encode() + keyPtr.mixin))
 	values.Set("w_rid", hex.EncodeToString(wbiHash[:]))
 	targetURL.RawQuery = values.Encode()
 	return nil

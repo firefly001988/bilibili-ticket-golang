@@ -86,6 +86,7 @@ type LogBroker struct {
 	ctx     context.Context
 	mu      sync.RWMutex
 	rings   map[string]*ringBuffer
+	streams map[string]chan LogEntry
 	maxCap  int
 	storage *LogStorage
 }
@@ -95,6 +96,7 @@ type LogBroker struct {
 func NewLogBroker(storage *LogStorage) *LogBroker {
 	return &LogBroker{
 		rings:   make(map[string]*ringBuffer),
+		streams: make(map[string]chan LogEntry),
 		maxCap:  global.DefaultRingCapacity,
 		storage: storage,
 	}
@@ -110,18 +112,41 @@ func (lb *LogBroker) SetContext(ctx context.Context) {
 
 // CreateStream returns a send-only channel that the task uses to emit logs.
 // A background goroutine reads from this channel, stores entries in the ring
-// buffer, and fires frontend events. The caller must close the returned channel
-// when the task finishes to clean up the forwarding goroutine.
+// buffer, and fires frontend events. The caller may close the returned channel
+// to clean up the forwarding goroutine, or call CloseStream(taskID) to do so
+// from the outside.
 func (lb *LogBroker) CreateStream(taskID string) chan<- LogEntry {
 	lb.mu.Lock()
 	if _, exists := lb.rings[taskID]; !exists {
 		lb.rings[taskID] = newRingBuffer(lb.maxCap)
 	}
+	ch, exists := lb.streams[taskID]
+	if !exists {
+		ch = make(chan LogEntry, 64)
+		lb.streams[taskID] = ch
+		go lb.forward(taskID, ch)
+	}
 	lb.mu.Unlock()
-
-	ch := make(chan LogEntry, 64)
-	go lb.forward(taskID, ch)
 	return ch
+}
+
+// CloseStream closes the forwarding channel for the given task and removes
+// the in-memory ring buffer. Persisted logs on disk are preserved. Safe to
+// call multiple times.
+func (lb *LogBroker) CloseStream(taskID string) {
+	lb.mu.Lock()
+	ch, ok := lb.streams[taskID]
+	if ok {
+		delete(lb.streams, taskID)
+	}
+	lb.mu.Unlock()
+	if ok {
+		defer func() { _ = recover() }()
+		close(ch)
+	}
+	lb.mu.Lock()
+	delete(lb.rings, taskID)
+	lb.mu.Unlock()
 }
 
 // forward reads from ch until it is closed, ingesting entries.

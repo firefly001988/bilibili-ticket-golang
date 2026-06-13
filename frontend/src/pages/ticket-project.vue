@@ -1,11 +1,11 @@
 <script lang="ts" setup>
 import { ref, computed } from 'vue';
 import { GetProjectInformation, GetTicketSkuIDsByProjectID } from '../../wailsjs/go/biliutils/BiliClient';
-import { AddTicket, AddTicketTask, FetchRealNameBuyers, GetRetryInterval } from '../../wailsjs/go/scheduler/SchedulerService';
+import { AddTicket, AddTicketTask, FetchRealNameBuyers } from '../../wailsjs/go/scheduler/SchedulerService';
 import type { _return } from '../../wailsjs/go/models';
 import { useMessagesStore } from '@/stores/snackbar';
 import { useRouter } from 'vue-router';
-import { DEFAULT_INTERVAL_MS, DEFAULT_EXPIRE_DAYS, SECONDS_PER_DAY } from '@/composables/defaults';
+import { DEFAULT_EXPIRE_DAYS, SECONDS_PER_DAY } from '@/composables/defaults';
 import { useDebug } from '@/composables/useDebug';
 
 const router = useRouter();
@@ -38,7 +38,6 @@ const buyerForm = ref({
     buyerName: '',
     buyerTel: '',
     buyerId: 0,
-    intervalMs: DEFAULT_INTERVAL_MS,
 });
 
 // ── Form validation ──────────────────────────────────
@@ -120,15 +119,10 @@ function openCreateDialog(ticket: _return.TicketSkuScreenID) {
         apiEndLabel.value = fmt(new Date(Date.now() + SECONDS_PER_DAY * DEFAULT_EXPIRE_DAYS * 1000));
     }
 
-    buyerForm.value = { buyerName: '', buyerTel: '', buyerId: 0, intervalMs: DEFAULT_INTERVAL_MS };
+    buyerForm.value = { buyerName: '', buyerTel: '', buyerId: 0 };
     buyerList.value = [];
     selectedBuyerId.value = null;
     showCreateDialog.value = true;
-
-    // Fetch the global retry interval as default
-    GetRetryInterval().then(ms => {
-        if (ms > 0) buyerForm.value.intervalMs = ms;
-    }).catch(() => { /* use default */ });
 }
 
 async function fetchBuyers() {
@@ -180,7 +174,7 @@ async function submitCreateAndStart() {
 
         debugLog('[AddTicket] hash:', hash);
 
-        await AddTicketTask(hash, buyerForm.value.intervalMs);
+        await AddTicketTask(hash);
 
         debugLog('[AddTicketTask] started for hash:', hash);
         messages.add({ text: `任务已创建并启动 (${hash.slice(0, 8)}...)`, color: 'success', timeout: 3000 });
@@ -305,11 +299,6 @@ function formatPrice(price: number): string {
                         </v-col>
                     </template>
 
-                    <v-col cols="6">
-                        <v-text-field v-model="buyerForm.intervalMs" label="提交间隔 (ms)" type="number" variant="outlined"
-                            density="compact" hide-details="auto" :hint="`默认 ${DEFAULT_INTERVAL_MS}ms`"
-                            persistent-hint />
-                    </v-col>
                     <v-col cols="12">
                         <v-alert density="compact" variant="tonal" color="grey" class="text-caption">
                             <div>开售: {{ apiStartLabel }}</div>

@@ -76,7 +76,6 @@ func (td *TicketData) SetChangeCallback(cb func(data *TicketData, ticket TicketE
 // Expired duplicates are silently replaced.
 func (td *TicketData) AddTicket(data TicketEntry) bool {
 	td.mutex.Lock()
-	defer td.mutex.Unlock()
 
 	now := time.Now()
 
@@ -88,6 +87,7 @@ func (td *TicketData) AddTicket(data TicketEntry) bool {
 			continue
 		}
 		if t.Buyer.Compare(data.Buyer) && t.ProjectID == data.ProjectID && t.SkuID == data.SkuID && t.ScreenID == data.ScreenID {
+			td.mutex.Unlock()
 			return false // active duplicate found
 		}
 		td.Tickets[n] = t
@@ -96,8 +96,10 @@ func (td *TicketData) AddTicket(data TicketEntry) bool {
 	td.Tickets = td.Tickets[:n]
 
 	td.Tickets = append(td.Tickets, data)
-	if td.ticketChangeCallback != nil {
-		go (*td.ticketChangeCallback)(td, data)
+	cb := td.ticketChangeCallback
+	td.mutex.Unlock()
+	if cb != nil {
+		go (*cb)(td, data)
 	}
 	return true
 }
@@ -138,7 +140,6 @@ func (td *TicketData) GetTicketsNoMutate() []TicketEntry {
 // RemoveTicketByHash removes a ticket by its SHA256 hash.
 func (td *TicketData) RemoveTicketByHash(hash string) bool {
 	td.mutex.Lock()
-	defer td.mutex.Unlock()
 
 	now := time.Now()
 	n := 0
@@ -159,8 +160,10 @@ func (td *TicketData) RemoveTicketByHash(hash string) bool {
 	}
 	td.Tickets = td.Tickets[:n]
 
-	if found && td.ticketChangeCallback != nil {
-		go (*td.ticketChangeCallback)(td, removed)
+	cb := td.ticketChangeCallback
+	td.mutex.Unlock()
+	if found && cb != nil {
+		go (*cb)(td, removed)
 	}
 	return found
 }
@@ -183,14 +186,16 @@ func (td *TicketData) UpdateTicketStat(hash string, stat int) bool {
 // RemoveTicketByIndex removes a ticket at the given index.
 func (td *TicketData) RemoveTicketByIndex(index int64) bool {
 	td.mutex.Lock()
-	defer td.mutex.Unlock()
 	if index < 0 || index >= int64(len(td.Tickets)) {
+		td.mutex.Unlock()
 		return false
 	}
 	old := td.Tickets[index]
 	td.Tickets = append(td.Tickets[:index], td.Tickets[index+1:]...)
-	if td.ticketChangeCallback != nil {
-		go (*td.ticketChangeCallback)(td, old)
+	cb := td.ticketChangeCallback
+	td.mutex.Unlock()
+	if cb != nil {
+		go (*cb)(td, old)
 	}
 	return true
 }

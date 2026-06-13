@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"bilibili-ticket-golang/biliutils"
-	"bilibili-ticket-golang/biliutils/clock"
 	"bilibili-ticket-golang/store/configuration"
 	"context"
 	"fmt"
@@ -66,7 +65,7 @@ func (t *BWSTask) GetTargetTime() time.Time { return t.TargetTime }
 func (t *BWSTask) Start(globalOffset time.Duration) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	if t.GetStat() == StatPending {
+	if t.GetStat() != StatWaiting {
 		return
 	}
 	go t.run(globalOffset)
@@ -84,18 +83,25 @@ func (t *BWSTask) ForceStart() {
 	if t.GetStat() != StatWaiting {
 		return
 	}
+	select {
+	case <-t.stopChan:
+		// already closed
+	default:
+		close(t.stopChan)
+	}
 	go t.executeAndStop()
 }
 
 func (t *BWSTask) Stop() {
 	t.mutex.Lock()
-	stat := t.getStatNoLock()
+	stat := t.GetStat()
 	if stat != StatWaiting && stat != StatPending {
 		t.mutex.Unlock()
 		return
 	}
 	select {
 	case <-t.stopChan:
+		// already closed
 	default:
 		close(t.stopChan)
 	}
@@ -103,8 +109,7 @@ func (t *BWSTask) Stop() {
 		t.timer.Stop()
 	}
 	t.mutex.Unlock()
-	t.cancelFunc()
-	t.setStatNoLock(StatFailed)
+	t.setStat(StatFailed)
 }
 
 func (t *BWSTask) GetStat() RunningStat {
@@ -123,12 +128,14 @@ func (t *BWSTask) UpdateInterval(newInterval time.Duration) {
 	// BWS task uses per-config loop delay; store it
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
+	t.sendLog(LogInfo, fmt.Sprintf("更新请求间隔: %v → %v", time.Duration(t.config.LoopDelayMs)*time.Millisecond, newInterval))
 	t.config.LoopDelayMs = int(newInterval.Milliseconds())
 }
 
 func (t *BWSTask) UpdateStartDelay(newDelay time.Duration) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
+	t.sendLog(LogInfo, fmt.Sprintf("更新启动延迟: %v → %v", time.Duration(t.config.StartDelayMs)*time.Millisecond, newDelay))
 	t.config.StartDelayMs = int(newDelay.Milliseconds())
 }
 
@@ -138,7 +145,7 @@ func (t *BWSTask) rescheduleWithNewOffset(offsetDelta time.Duration) {
 	if t.GetStat() != StatWaiting || t.timer == nil {
 		return
 	}
-	if t.timer != nil && !t.timer.Stop() {
+	if !t.timer.Stop() {
 		select {
 		case <-t.timer.C:
 		default:
@@ -147,11 +154,25 @@ func (t *BWSTask) rescheduleWithNewOffset(offsetDelta time.Duration) {
 	adjustedTime := t.TargetTime.Add(offsetDelta)
 	waitDuration := time.Until(adjustedTime)
 	if waitDuration <= 0 {
+		// Clean up old goroutine before starting immediate execution.
+		select {
+		case <-t.stopChan:
+		default:
+			close(t.stopChan)
+		}
+		t.stopChan = make(chan struct{})
 		go t.executeAndStop()
 		return
 	}
 	t.timer = time.NewTimer(waitDuration)
-	go t.waitForExecution()
+	timerC := t.timer.C // captured under mutex — no data race
+	select {
+	case <-t.stopChan:
+	default:
+		close(t.stopChan)
+	}
+	t.stopChan = make(chan struct{})
+	go t.waitForExecution(timerC)
 }
 
 // ── Internal state helpers ─────────────────────────────────────────────────
@@ -160,30 +181,13 @@ func (t *BWSTask) setStat(stat RunningStat) {
 	t.statLock.Lock()
 	wasTerminal := t.stat > StatPending
 	t.stat = stat
-	if stat > StatError {
+	if stat > StatPending {
 		t.cancelFunc()
 	}
 	t.statLock.Unlock()
 	if !wasTerminal && stat > StatPending && t.onComplete != nil {
 		t.onComplete(stat)
 	}
-}
-
-func (t *BWSTask) setStatNoLock(stat RunningStat) {
-	t.statLock.Lock()
-	wasTerminal := t.stat > StatPending
-	t.stat = stat
-	if stat > StatError {
-		t.cancelFunc()
-	}
-	t.statLock.Unlock()
-	if !wasTerminal && stat > StatPending && t.onComplete != nil {
-		t.onComplete(stat)
-	}
-}
-
-func (t *BWSTask) getStatNoLock() RunningStat {
-	return t.stat
 }
 
 func (t *BWSTask) setError(err error) {
@@ -229,12 +233,15 @@ func (t *BWSTask) run(globalOffset time.Duration) {
 		return
 	}
 	t.timer = time.NewTimer(waitDuration)
-	go t.waitForExecution()
+	timerC := t.timer.C // captured under mutex — no data race
+	go t.waitForExecution(timerC)
 }
 
-func (t *BWSTask) waitForExecution() {
+// waitForExecution waits for the timer to fire or the task to be stopped.
+// timerC is captured under lock by the caller to avoid data races on t.timer.
+func (t *BWSTask) waitForExecution(timerC <-chan time.Time) {
 	select {
-	case <-t.timer.C:
+	case <-timerC:
 		t.executeAndStop()
 	case <-t.stopChan:
 	}
@@ -270,14 +277,24 @@ func (t *BWSTask) executeAndStop() {
 // It first waits until the precise reservation time, then enters the
 // submission loop.
 func (t *BWSTask) bwsReservationFunc() {
+	// Snapshot config under lock to avoid data races with UpdateInterval/UpdateStartDelay.
+	t.mutex.RLock()
+	activityTitle := t.config.ActivityTitle
+	activityID := t.config.ActivityID
+	reserveDate := t.config.ReserveDate
+	ticketNo := t.config.TicketNo
+	startDelayMs := t.config.StartDelayMs
+	loopDelayMs := t.config.LoopDelayMs
+	t.mutex.RUnlock()
+
 	t.sendLog(LogInfo, fmt.Sprintf("BWS任务开始 — 活动:%s (ID:%d) 日期:%s 票号:%s",
-		t.config.ActivityTitle, t.config.ActivityID, t.config.ReserveDate, t.config.TicketNo))
+		activityTitle, activityID, reserveDate, ticketNo))
 
 	// Step 1: wait until the reservation time (with NTP calibration)
-	t.waitForReserveTime()
+	t.waitForReserveTime(startDelayMs, activityTitle)
 
 	// Step 2: enter the reservation submission loop
-	t.startReservationLoop()
+	t.startReservationLoop(loopDelayMs, activityID, ticketNo, activityTitle, reserveDate)
 }
 
 // ── waitForReserveTime ─────────────────────────────────────────────────────
@@ -287,20 +304,17 @@ func (t *BWSTask) bwsReservationFunc() {
 // the reservation time to ensure precise timing.
 
 const (
-	autoCalibBeforeSec  = 300 // auto-calibrate 5 minutes before reserve time
-	calibLogIntervalSec = 3   // print countdown every 3 seconds
+	calibLogIntervalSec = 3 // print countdown every 3 seconds
 	pollInterval        = 100 * time.Millisecond
 )
 
-func (t *BWSTask) waitForReserveTime() {
-	autoSyncDone := false
+func (t *BWSTask) waitForReserveTime(startDelayMs int, activityTitle string) {
 	lastLogTime := int64(0)
 
-	delaySec := float64(t.config.StartDelayMs) / 1000.0
-	targetTime := t.TargetTime.Add(time.Duration(t.config.StartDelayMs) * time.Millisecond)
+	targetTime := t.TargetTime.Add(time.Duration(startDelayMs) * time.Millisecond)
 
 	t.sendLog(LogInfo, fmt.Sprintf("等待开抢时间 — 目标时间: %s (延迟: %dms)",
-		targetTime.Format("2006-01-02 15:04:05.000"), t.config.StartDelayMs))
+		targetTime.Format("2006-01-02 15:04:05.000"), startDelayMs))
 
 	for {
 		select {
@@ -313,10 +327,10 @@ func (t *BWSTask) waitForReserveTime() {
 		remaining := targetTime.Sub(now)
 
 		if remaining <= 0 {
-			if t.config.StartDelayMs > 0 {
-				t.sendLog(LogInfo, fmt.Sprintf("开票时间已到，延迟 %dms 后开始抢票...", t.config.StartDelayMs))
-			} else if t.config.StartDelayMs < 0 {
-				t.sendLog(LogInfo, fmt.Sprintf("提前 %dms 开始抢票...", -t.config.StartDelayMs))
+			if startDelayMs > 0 {
+				t.sendLog(LogInfo, fmt.Sprintf("开票时间已到，延迟 %dms 后开始抢票...", startDelayMs))
+			} else if startDelayMs < 0 {
+				t.sendLog(LogInfo, fmt.Sprintf("提前 %dms 开始抢票...", -startDelayMs))
 			} else {
 				t.sendLog(LogInfo, "开票时间已到，开始抢票...")
 			}
@@ -325,70 +339,25 @@ func (t *BWSTask) waitForReserveTime() {
 
 		curUnix := now.Unix()
 
-		// Auto NTP/Bilibili calibration 5 minutes before reserve time
-		if !autoSyncDone && curUnix >= t.TargetTime.Unix()-autoCalibBeforeSec {
-			autoSyncDone = true
-			t.sendLog(LogInfo, "开抢前5分钟，正在进行自动校时...")
-			t.autoCalibrate()
-		}
-
 		// Log countdown every calibLogIntervalSec seconds (only when > 5 seconds remaining)
 		remainingSec := remaining.Seconds()
 		if remainingSec > 5 {
 			if curUnix > lastLogTime+calibLogIntervalSec {
 				lastLogTime = curUnix
 				t.sendLog(LogInfo, fmt.Sprintf("等待开票 — 活动:%s | 剩余: %.1f秒 (延迟: %dms)",
-					t.config.ActivityTitle, remainingSec, t.config.StartDelayMs))
+					activityTitle, remainingSec, startDelayMs))
 			}
 		} else if remainingSec <= 5 && lastLogTime < curUnix {
 			lastLogTime = curUnix
 			t.sendLog(LogInfo, "即将开始抢票，进入待抢状态...")
 		}
 
-		// Poll every 100ms for precision
+		// Poll every pollInterval for precision — cancellable via ctx
 		select {
 		case <-t.ctx.Done():
 			return
 		case <-time.After(pollInterval):
 		}
-
-		_ = delaySec // suppress unused warning
-	}
-}
-
-// autoCalibrate performs clock synchronization using both Bilibili's
-// RTC endpoint and the NTP protocol. The best available offset is applied.
-func (t *BWSTask) autoCalibrate() {
-	// Try Bilibili clock first
-	biliOff, biliErr := clock.GetBilibiliClockOffset()
-	if biliErr == nil {
-		absOff := biliOff
-		if absOff < 0 {
-			absOff = -absOff
-		}
-		if absOff > 700*time.Millisecond {
-			t.sendLog(LogWarn, fmt.Sprintf("B站时钟偏差较大: %.3f秒 (本地时间可能有误差)", biliOff.Seconds()))
-		} else {
-			t.sendLog(LogInfo, fmt.Sprintf("B站时钟偏差: %.3f秒 (时间同步良好)", biliOff.Seconds()))
-		}
-	}
-
-	// Try NTP as supplementary
-	ntpOff, ntpErr := clock.GetNTPClockOffset("ntp.aliyun.com")
-	if ntpErr == nil {
-		absOff := ntpOff
-		if absOff < 0 {
-			absOff = -absOff
-		}
-		if absOff > 700*time.Millisecond {
-			t.sendLog(LogWarn, fmt.Sprintf("NTP时钟偏差较大: %.3f秒 (建议检查系统时间)", ntpOff.Seconds()))
-		} else {
-			t.sendLog(LogInfo, fmt.Sprintf("NTP时钟偏差: %.3f秒", ntpOff.Seconds()))
-		}
-	}
-
-	if biliErr != nil && ntpErr != nil {
-		t.sendLog(LogWarn, "自动校时失败，将使用本地时间")
 	}
 }
 
@@ -417,14 +386,14 @@ const bwsRiskControlWait = 180 * time.Second
 // bwsThrottleWait is how long to wait when a 429 (rate limited) is received.
 const bwsThrottleWait = 500 * time.Millisecond
 
-func (t *BWSTask) startReservationLoop() {
-	loopDelay := time.Duration(t.config.LoopDelayMs) * time.Millisecond
+func (t *BWSTask) startReservationLoop(loopDelayMs int, activityID int, ticketNo, activityTitle, reserveDate string) {
+	loopDelay := time.Duration(loopDelayMs) * time.Millisecond
 	if loopDelay <= 0 {
 		loopDelay = bwsDefaultRetryDelay
 	}
 
 	t.sendLog(LogInfo, fmt.Sprintf("进入抢票循环 — 活动ID:%d 票号:%s 请求间隔:%v",
-		t.config.ActivityID, t.config.TicketNo, loopDelay))
+		activityID, ticketNo, loopDelay))
 
 	for {
 		select {
@@ -433,61 +402,59 @@ func (t *BWSTask) startReservationLoop() {
 		default:
 		}
 
-		code, msg, err := t.client.MakeBWSReservation(t.config.TicketNo, t.config.ActivityID)
+		code, msg, err := t.client.MakeBWSReservation(ticketNo, activityID)
 
 		if err != nil {
-			// Transport or unmarshal error — retry
 			t.sendLog(LogError, fmt.Sprintf("网络错误: %v", err))
-			goto sleepLoop
+			// Fall through to sleep before retrying.
+		} else {
+			switch code {
+			case bwsCodeSuccess:
+				t.sendLog(LogSuccess, "预约成功！")
+				if t.notifyFn != nil {
+					t.notifyFn(fmt.Sprintf("BWS预约成功！\n活动：%s\n日期：%s",
+						activityTitle, reserveDate))
+				}
+				t.setStat(StatSuccess)
+				return
+
+			case bwsCodeNotOpen:
+				t.sendLog(LogInfo, fmt.Sprintf("[%d] 尚未开放，等待预约开始", code))
+
+			case bwsCodeRateLimit:
+				t.sendLog(LogWarn, fmt.Sprintf("[%d] 请求频率太快", code))
+
+			case bwsCodeNetworkErr:
+				t.sendLog(LogError, fmt.Sprintf("[%d] 网络错误，继续重试", code))
+
+			case bwsCodeRiskControl:
+				t.sendLog(LogWarn, fmt.Sprintf("[%d] 风控触发，等待 %.0f 秒后重试...", code, bwsRiskControlWait.Seconds()))
+				select {
+				case <-t.ctx.Done():
+					return
+				case <-time.After(bwsRiskControlWait):
+				}
+				continue // don't apply loopDelay after a long wait
+
+			case bwsCodeThrottled:
+				t.sendLog(LogWarn, fmt.Sprintf("[%d] 限流，等待 %.0f 秒后重试...", code, bwsThrottleWait.Seconds()))
+				select {
+				case <-t.ctx.Done():
+					return
+				case <-time.After(bwsThrottleWait):
+				}
+				continue
+
+			case bwsCodeFullReserved:
+				t.sendLog(LogInfo, fmt.Sprintf("[%d] 预约已满或已预约: %s", code, msg))
+				t.setStat(StatFailed)
+				return
+
+			default:
+				t.sendLog(LogWarn, fmt.Sprintf("[%d] 未知响应: %s", code, msg))
+			}
 		}
 
-		switch code {
-		case bwsCodeSuccess:
-			t.sendLog(LogSuccess, "\033[32m预约成功！\033[0m")
-			if t.notifyFn != nil {
-				t.notifyFn(fmt.Sprintf("BWS预约成功！\n活动：%s\n日期：%s",
-					t.config.ActivityTitle, t.config.ReserveDate))
-			}
-			t.setStat(StatSuccess)
-			return
-
-		case bwsCodeNotOpen:
-			t.sendLog(LogInfo, fmt.Sprintf("[%d] 尚未开放，等待预约开始", code))
-
-		case bwsCodeRateLimit:
-			t.sendLog(LogWarn, fmt.Sprintf("[%d] 请求频率太快", code))
-
-		case bwsCodeNetworkErr:
-			t.sendLog(LogError, fmt.Sprintf("[%d] 网络错误，继续重试", code))
-
-		case bwsCodeRiskControl:
-			t.sendLog(LogWarn, fmt.Sprintf("[%d] 风控触发，等待 %.0f 秒后重试...", code, bwsRiskControlWait.Seconds()))
-			select {
-			case <-t.ctx.Done():
-				return
-			case <-time.After(bwsRiskControlWait):
-			}
-			continue // don't apply loopDelay after a long wait
-
-		case bwsCodeThrottled:
-			t.sendLog(LogWarn, fmt.Sprintf("[%d] 限流，等待 %.0f 秒后重试...", code, bwsThrottleWait.Seconds()))
-			select {
-			case <-t.ctx.Done():
-				return
-			case <-time.After(bwsThrottleWait):
-			}
-			continue
-
-		case bwsCodeFullReserved:
-			t.sendLog(LogInfo, fmt.Sprintf("[%d] 预约已满或已预约: %s", code, msg))
-			t.setStat(StatFailed)
-			return
-
-		default:
-			t.sendLog(LogWarn, fmt.Sprintf("[%d] 未知响应: %s", code, msg))
-		}
-
-	sleepLoop:
 		select {
 		case <-t.ctx.Done():
 			return
