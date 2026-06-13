@@ -4,11 +4,12 @@ import (
 	"bilibili-ticket-golang/store/cookiejar"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/ugorji/go/codec"
 )
 
-// Data stroage, user should not edit it
+// Data storage, user should not edit it
 // use binary file to store data, so it is not easy to be modified by user
 
 const dataFileName = "data/store.bin"
@@ -21,6 +22,8 @@ type DataStorage struct {
 	RefreshToken    string                    `json:"refreshToken"`
 	RetryIntervalMs int                       `json:"retryIntervalMs"`
 	StartDelayMs    int                       `json:"startDelayMs"`
+
+	saveMu sync.Mutex
 }
 
 func NewDataStorage() *DataStorage {
@@ -35,10 +38,14 @@ func NewDataStorage() *DataStorage {
 }
 
 func (d *DataStorage) Load() error {
+	d.saveMu.Lock()
+	defer d.saveMu.Unlock()
 	return d.readFromFile(dataFileName)
 }
 
 func (d *DataStorage) Save() error {
+	d.saveMu.Lock()
+	defer d.saveMu.Unlock()
 	return d.writeToFile(dataFileName)
 }
 
@@ -64,22 +71,34 @@ func (d *DataStorage) readFromFile(filename string) error {
 	return nil
 }
 
+// writeToFile writes DataStorage to filename atomically: encodes to a
+// temporary file, then renames it over the target. This prevents file
+// corruption when Save is interrupted (crash / power loss) and ensures
+// readers always see either the old file or the complete new file.
 func (d *DataStorage) writeToFile(filename string) error {
 	if err := ensureParentDir(filename); err != nil {
 		return err
 	}
 
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	tmpFile := filename + ".tmp"
+	file, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 	encoder := codec.NewEncoder(file, &codec.MsgpackHandle{})
-	err = encoder.Encode(d)
-	if err != nil {
-		return err
+	encErr := encoder.Encode(d)
+	closeErr := file.Close()
+	// On encode error, clean up temp file and return.
+	if encErr != nil {
+		_ = os.Remove(tmpFile)
+		return encErr
 	}
-	return nil
+	if closeErr != nil {
+		_ = os.Remove(tmpFile)
+		return closeErr
+	}
+	// Atomic rename: replaces the target only after a successful write.
+	return os.Rename(tmpFile, filename)
 }
 
 func ensureParentDir(filename string) error {

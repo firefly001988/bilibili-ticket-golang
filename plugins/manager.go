@@ -30,20 +30,22 @@ const timeLayout = "2006-01-02 15:04:05 "
 func (t *timestampWriter) Write(p []byte) (int, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	written := len(p)
+
+	consumed := 0
 	for _, b := range p {
+		consumed++
 		if b == '\n' {
 			line := append([]byte(time.Now().Format(timeLayout)), t.buf.Bytes()...)
 			line = append(line, '\n')
 			if _, err := t.w.Write(line); err != nil {
-				return 0, err
+				return consumed, err
 			}
 			t.buf.Reset()
 		} else {
 			t.buf.WriteByte(b)
 		}
 	}
-	return written, nil
+	return len(p), nil
 }
 
 // multiple plugin management, e.g. captcha, account info, etc.

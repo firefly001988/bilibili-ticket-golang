@@ -67,12 +67,20 @@ func NewNotifyChannelData() *NotifyChannelData {
 	}
 }
 
-// GetAll returns a copy of all channels.
+// GetAll returns a deep copy of all channels (including their Params maps).
 func (ncd *NotifyChannelData) GetAll() []NotifyChannel {
 	ncd.mu.RLock()
 	defer ncd.mu.RUnlock()
 	result := make([]NotifyChannel, len(ncd.Channels))
-	copy(result, ncd.Channels)
+	for i, ch := range ncd.Channels {
+		result[i] = ch
+		if ch.Params != nil {
+			result[i].Params = make(map[string]string, len(ch.Params))
+			for k, v := range ch.Params {
+				result[i].Params[k] = v
+			}
+		}
+	}
 	return result
 }
 

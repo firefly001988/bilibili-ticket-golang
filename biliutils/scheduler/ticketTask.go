@@ -339,7 +339,8 @@ func (tt *TicketTask) ticketFunc() {
 	projectInfo, err := tt.client.GetProjectInformation(pidString)
 	if err != nil {
 		tt.sendLog(LogError, fmt.Sprintf("获取项目信息失败: %v", err))
-		panic(err)
+		tt.setError(err)
+		return
 	}
 
 	tt.sendLog(LogInfo, fmt.Sprintf("项目信息: %s (热门=%v, 实名=%v)", projectInfo.ProjectName, projectInfo.IsHotProject, projectInfo.IsForceRealName))
@@ -359,7 +360,8 @@ func (tt *TicketTask) ticketFunc() {
 	allTickets, err := tt.client.GetTicketSkuIDsByProjectID(pidString)
 	if err != nil {
 		tt.sendLog(LogError, fmt.Sprintf("获取票种列表失败: %v", err))
-		panic(err)
+		tt.setError(err)
+		return
 	}
 
 	var targetSku *r.TicketSkuScreenID
@@ -371,7 +373,8 @@ func (tt *TicketTask) ticketFunc() {
 	}
 	if targetSku == nil {
 		tt.sendLog(LogError, fmt.Sprintf("未找到目标票种 (SKU:%d Screen:%d)", tt.ticket.SkuID, tt.ticket.ScreenID))
-		panic(definedErrors.NewBilibiliMallTicketNotfoundError(tt.ticket.SkuID, tt.ticket.ProjectID, tt.ticket.ScreenID))
+		tt.setError(definedErrors.NewBilibiliMallTicketNotfoundError(tt.ticket.SkuID, tt.ticket.ProjectID, tt.ticket.ScreenID))
+		return
 	}
 
 	tt.sendLog(LogInfo, fmt.Sprintf("目标票种: %s — %s (¥%.2f)", targetSku.Name, targetSku.Desc, float64(targetSku.Price)/100.0))
@@ -381,7 +384,8 @@ func (tt *TicketTask) ticketFunc() {
 	orderTokens, err := tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku)
 	if err != nil {
 		tt.sendLog(LogError, fmt.Sprintf("获取下单 Token 失败: %v", err))
-		panic(err)
+		tt.setError(err)
+		return
 	}
 
 	tt.sendLog(LogInfo, "下单 Token 已获取")
@@ -410,7 +414,8 @@ func (tt *TicketTask) ticketFunc() {
 		confirmInfo, err := tt.client.GetConfirmInformation(orderTokens, pidString)
 		if err != nil {
 			tt.sendLog(LogError, fmt.Sprintf("获取实名信息失败: %v", err))
-			panic(err)
+			tt.setError(err)
+			return
 		}
 		for _, buyer := range confirmInfo.BuyerList.List {
 			if buyer.Id == tt.ticket.Buyer.ID {
@@ -426,7 +431,8 @@ func (tt *TicketTask) ticketFunc() {
 		}
 		if buyerData == nil {
 			tt.sendLog(LogError, fmt.Sprintf("未匹配到实名购票人 ID:%d", tt.ticket.Buyer.ID))
-			panic(definedErrors.NewBilibiliMallBuyerNotfoundError(tt.ticket.Buyer))
+			tt.setError(definedErrors.NewBilibiliMallBuyerNotfoundError(tt.ticket.Buyer))
+			return
 		}
 	}
 
