@@ -87,7 +87,7 @@ type SchedulerService struct {
 	client       *biliutils.BiliClient
 	logBroker    *LogBroker
 	tickets      *configuration.TicketData
-	bwsData      *configuration.BWSData
+	bwsData      *configuration.BWSScheduler
 	notifier     *notify.MultiNotifier
 	notifyChData *configuration.NotifyChannelData
 	store        *configuration.DataStorage // for persisting notify channel changes
@@ -105,7 +105,7 @@ type SchedulerService struct {
 }
 
 // NewSchedulerService creates a new SchedulerService.
-func NewSchedulerService(client *biliutils.BiliClient, logBroker *LogBroker, tickets *configuration.TicketData, bwsData *configuration.BWSData, notifier *notify.MultiNotifier, notifyChData *configuration.NotifyChannelData, store *configuration.DataStorage) *SchedulerService {
+func NewSchedulerService(client *biliutils.BiliClient, logBroker *LogBroker, tickets *configuration.TicketData, bwsData *configuration.BWSScheduler, notifier *notify.MultiNotifier, notifyChData *configuration.NotifyChannelData, store *configuration.DataStorage) *SchedulerService {
 	return &SchedulerService{
 		scheduler:    NewDynamicScheduler(),
 		client:       client,

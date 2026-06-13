@@ -4,9 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"math/rand"
 	"strings"
-	"time"
 )
 
 // FingerprintData represents browser fingerprint data for anti-detection.
@@ -59,17 +57,17 @@ func randomUserAgent() string {
 		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/%d.%d Safari/605.1.15",
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%d.0.%d.%d Safari/537.36 Edg/%d.0.%d.%d",
 	}
-	template := browsers[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(browsers))]
+	template := browsers[rng.IntN(len(browsers))]
 	switch {
 	case strings.Contains(template, "Chrome"):
-		return fmt.Sprintf(template, 90+rand.Intn(20), rand.Intn(1000), rand.Intn(100), 90+rand.Intn(20), rand.Intn(1000))
+		return fmt.Sprintf(template, 90+rng.IntN(20), rng.IntN(1000), rng.IntN(100), 90+rng.IntN(20), rng.IntN(1000))
 	case strings.Contains(template, "Firefox"):
-		ver := 90 + rand.Intn(20)
+		ver := 90 + rng.IntN(20)
 		return fmt.Sprintf(template, ver, ver)
 	case strings.Contains(template, "Safari"):
-		return fmt.Sprintf(template, 14+rand.Intn(5), rand.Intn(10))
+		return fmt.Sprintf(template, 14+rng.IntN(5), rng.IntN(10))
 	case strings.Contains(template, "Edg"):
-		return fmt.Sprintf(template, 90+rand.Intn(20), rand.Intn(1000), rand.Intn(100), 90+rand.Intn(20), rand.Intn(1000), rand.Intn(100))
+		return fmt.Sprintf(template, 90+rng.IntN(20), rng.IntN(1000), rng.IntN(100), 90+rng.IntN(20), rng.IntN(1000), rng.IntN(100))
 	default:
 		return browsers[0]
 	}
@@ -81,20 +79,19 @@ func randomScreenResolution() [2]int {
 		{1536, 864}, {1600, 900}, {1280, 720},
 		{2560, 1440}, {3840, 2160}, {1024, 768},
 	}
-	return resolutions[rand.Intn(len(resolutions))]
+	return resolutions[rng.IntN(len(resolutions))]
 }
 
 func randomColorDepth() int { return 24 }
 
-func randomTimezoneOffset() int { return -720 + rand.Intn(1440) }
+func randomTimezoneOffset() int { return -720 + rng.IntN(1440) }
 
-func randomHardwareConcurrency() int { return 2 << rand.Intn(4) }
+func randomHardwareConcurrency() int { return 2 << rng.IntN(4) }
 
-func randomDeviceMemory() int { return 2 << rand.Intn(4) }
+func randomDeviceMemory() int { return 2 << rng.IntN(4) }
 
 func randomTouchSupport() [3]bool {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return [3]bool{r.Intn(2) == 1, r.Intn(2) == 1, r.Intn(2) == 1}
+	return [3]bool{rng.IntN(2) == 1, rng.IntN(2) == 1, rng.IntN(2) == 1}
 }
 
 func randomWebGLVendor() string {
@@ -102,7 +99,7 @@ func randomWebGLVendor() string {
 		"Google Inc.", "Intel Inc.", "NVIDIA Corporation",
 		"AMD", "Apple Inc.", "Microsoft",
 	}
-	return vendors[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(vendors))]
+	return vendors[rng.IntN(len(vendors))]
 }
 
 func randomWebGLRenderer() string {
@@ -112,7 +109,7 @@ func randomWebGLRenderer() string {
 		"ANGLE (AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0)",
 		"Apple GPU", "Mali-G72", "Adreno (TM) 630",
 	}
-	return renderers[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(renderers))]
+	return renderers[rng.IntN(len(renderers))]
 }
 
 func randomCanvasFingerprint() string {
@@ -120,31 +117,31 @@ func randomCanvasFingerprint() string {
 }
 
 func randomAudioFingerprint() string {
-	return fmt.Sprintf("%d.%d", rand.New(rand.NewSource(time.Now().UnixNano())).Intn(1000), rand.New(rand.NewSource(time.Now().UnixNano())).Intn(1000000))
+	return fmt.Sprintf("%d.%d", rng.IntN(1000), rng.IntN(1000000))
 }
 
 func randomFonts() []string {
 	fonts := []string{"Arial", "Times New Roman", "Courier New", "Georgia", "Verdana", "Helvetica", "Tahoma", "Calibri", "Cambria"}
-	count := 3 + rand.New(rand.NewSource(time.Now().UnixNano())).Intn(6)
+	count := 3 + rng.IntN(6)
 	result := make([]string, count)
 	for i := 0; i < count; i++ {
-		result[i] = fonts[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(fonts))]
+		result[i] = fonts[rng.IntN(len(fonts))]
 	}
 	return result
 }
 
 func randomPlugins() []string {
 	plugins := []string{"Chrome PDF Viewer", "Native Client", "Widevine Content Decryption Module", "Microsoft Edge PDF Viewer", "WebKit built-in PDF"}
-	count := 1 + rand.New(rand.NewSource(time.Now().UnixNano())).Intn(4)
+	count := 1 + rng.IntN(4)
 	result := make([]string, count)
 	for i := 0; i < count; i++ {
-		result[i] = plugins[rand.New(rand.NewSource(time.Now().UnixNano())).Intn(len(plugins))]
+		result[i] = plugins[rng.IntN(len(plugins))]
 	}
 	return result
 }
 
 func randomHexString(length int) string {
 	b := make([]byte, length/2)
-	rand.New(rand.NewSource(time.Now().UnixNano())).Read(b)
+	randBytes(b)
 	return hex.EncodeToString(b)
 }

@@ -30,6 +30,9 @@ func NewDynamicScheduler() *DynamicScheduler {
 }
 
 // SetGlobalOffset updates the global time offset, rescheduling all waiting tasks.
+// SetGlobalOffset updates the global time offset, rescheduling all waiting tasks
+// whose remaining time is greater than 10 seconds. Tasks within 10 seconds of
+// execution are left untouched to avoid disturbing precise timing.
 func (ds *DynamicScheduler) SetGlobalOffset(offset time.Duration) {
 	ds.mutex.Lock()
 	defer ds.mutex.Unlock()
@@ -38,7 +41,7 @@ func (ds *DynamicScheduler) SetGlobalOffset(offset time.Duration) {
 	ds.globalOffset = offset
 
 	for _, task := range ds.tasks {
-		if task.GetStat() == StatWaiting && task.GetTargetTime().Add(oldOffset).Before(time.Now().Add(10*time.Second)) {
+		if task.GetStat() == StatWaiting && time.Until(task.GetTargetTime().Add(oldOffset)) > 10*time.Second {
 			task.rescheduleWithNewOffset(offset - oldOffset)
 		}
 	}

@@ -137,8 +137,10 @@ func (pm *PluginManager) LoadPlugin(name string) error {
 		})
 		pm.mu.Lock()
 		if old, exists := pm.plugins[name]; exists {
-			// Kill the previous client so we don't leak the plugin process.
+			// Kill the previous client and wait briefly for the OS to
+			// release resources (file handles, ports, etc.).
 			old.Kill()
+			time.Sleep(200 * time.Millisecond)
 		}
 		pm.plugins[name] = client
 		pm.mu.Unlock()

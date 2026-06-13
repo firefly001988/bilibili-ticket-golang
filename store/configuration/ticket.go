@@ -54,7 +54,7 @@ func (t TicketEntry) Valid() bool {
 type TicketData struct {
 	Tickets              []TicketEntry `json:"tickets"`
 	mutex                sync.Mutex
-	ticketChangeCallback *func(data *TicketData, ticket TicketEntry)
+	ticketChangeCallback *func(ticket TicketEntry)
 }
 
 // NewTicketData creates a new TicketData instance.
@@ -65,7 +65,7 @@ func NewTicketData() *TicketData {
 }
 
 // SetChangeCallback sets a callback invoked when tickets are added or removed.
-func (td *TicketData) SetChangeCallback(cb func(data *TicketData, ticket TicketEntry)) {
+func (td *TicketData) SetChangeCallback(cb func(ticket TicketEntry)) {
 	td.mutex.Lock()
 	defer td.mutex.Unlock()
 	td.ticketChangeCallback = &cb
@@ -99,7 +99,7 @@ func (td *TicketData) AddTicket(data TicketEntry) bool {
 	cb := td.ticketChangeCallback
 	td.mutex.Unlock()
 	if cb != nil {
-		go (*cb)(td, data)
+		go (*cb)(data)
 	}
 	return true
 }
@@ -163,7 +163,7 @@ func (td *TicketData) RemoveTicketByHash(hash string) bool {
 	cb := td.ticketChangeCallback
 	td.mutex.Unlock()
 	if found && cb != nil {
-		go (*cb)(td, removed)
+		go (*cb)(removed)
 	}
 	return found
 }
@@ -195,7 +195,7 @@ func (td *TicketData) RemoveTicketByIndex(index int64) bool {
 	cb := td.ticketChangeCallback
 	td.mutex.Unlock()
 	if cb != nil {
-		go (*cb)(td, old)
+		go (*cb)(old)
 	}
 	return true
 }

@@ -173,7 +173,7 @@ func main() {
 	schedSvc.StartClockCalibration()
 
 	// Keep tickets persisted on change
-	store.TicketData.SetChangeCallback(func(_ *configuration.TicketData, _ configuration.TicketEntry) {
+	store.TicketData.SetChangeCallback(func(_ configuration.TicketEntry) {
 		if saveErr := store.Save(); saveErr != nil {
 			log.Printf("[main] Failed to persist tickets: %v", saveErr)
 		}

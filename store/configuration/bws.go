@@ -48,22 +48,22 @@ func (e BWSEntry) String() string {
 	)
 }
 
-// BWSData wraps a thread-safe BWS entry list with a change callback.
-type BWSData struct {
+// BWSScheduler wraps a thread-safe BWS entry list with a change callback.
+type BWSScheduler struct {
 	Entries           []BWSEntry `json:"entries"`
 	mutex             sync.Mutex
-	bwsChangeCallback *func(data *BWSData, entry BWSEntry)
+	bwsChangeCallback *func(entry BWSEntry)
 }
 
-// NewBWSData creates a new BWSData instance.
-func NewBWSData() *BWSData {
-	return &BWSData{
+// NewBWSScheduler creates a new BWSScheduler instance.
+func NewBWSScheduler() *BWSScheduler {
+	return &BWSScheduler{
 		Entries: make([]BWSEntry, 0),
 	}
 }
 
 // SetChangeCallback sets a callback invoked when entries are added or removed.
-func (bd *BWSData) SetChangeCallback(cb func(data *BWSData, entry BWSEntry)) {
+func (bd *BWSScheduler) SetChangeCallback(cb func(entry BWSEntry)) {
 	bd.mutex.Lock()
 	defer bd.mutex.Unlock()
 	bd.bwsChangeCallback = &cb
@@ -71,7 +71,7 @@ func (bd *BWSData) SetChangeCallback(cb func(data *BWSData, entry BWSEntry)) {
 
 // AddEntry adds a BWS entry (deduplicated by activityID + date).
 // Returns true if the entry was actually added.
-func (bd *BWSData) AddEntry(entry BWSEntry) bool {
+func (bd *BWSScheduler) AddEntry(entry BWSEntry) bool {
 	bd.mutex.Lock()
 
 	now := time.Now()
@@ -95,13 +95,13 @@ func (bd *BWSData) AddEntry(entry BWSEntry) bool {
 	cb := bd.bwsChangeCallback
 	bd.mutex.Unlock()
 	if cb != nil {
-		go (*cb)(bd, entry)
+		go (*cb)(entry)
 	}
 	return true
 }
 
 // GetEntries returns all non-expired entries.
-func (bd *BWSData) GetEntries() []BWSEntry {
+func (bd *BWSScheduler) GetEntries() []BWSEntry {
 	bd.mutex.Lock()
 	defer bd.mutex.Unlock()
 
@@ -117,7 +117,7 @@ func (bd *BWSData) GetEntries() []BWSEntry {
 }
 
 // GetEntriesNoMutate returns all non-expired entries without mutating the internal slice.
-func (bd *BWSData) GetEntriesNoMutate() []BWSEntry {
+func (bd *BWSScheduler) GetEntriesNoMutate() []BWSEntry {
 	bd.mutex.Lock()
 	defer bd.mutex.Unlock()
 
@@ -132,7 +132,7 @@ func (bd *BWSData) GetEntriesNoMutate() []BWSEntry {
 }
 
 // RemoveEntryByHash removes an entry by its SHA256 hash.
-func (bd *BWSData) RemoveEntryByHash(hash string) bool {
+func (bd *BWSScheduler) RemoveEntryByHash(hash string) bool {
 	bd.mutex.Lock()
 
 	now := time.Now()
@@ -156,13 +156,13 @@ func (bd *BWSData) RemoveEntryByHash(hash string) bool {
 	cb := bd.bwsChangeCallback
 	bd.mutex.Unlock()
 	if found && cb != nil {
-		go (*cb)(bd, removed)
+		go (*cb)(removed)
 	}
 	return found
 }
 
 // UpdateEntryStat updates the persisted stat of an entry by hash.
-func (bd *BWSData) UpdateEntryStat(hash string, stat int) bool {
+func (bd *BWSScheduler) UpdateEntryStat(hash string, stat int) bool {
 	bd.mutex.Lock()
 	defer bd.mutex.Unlock()
 

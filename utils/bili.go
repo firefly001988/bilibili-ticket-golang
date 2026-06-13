@@ -21,9 +21,9 @@ func GenerateXUBUVID() string {
 	randomBytes := GenerateRandomDRMID(16)
 	hashHex := fmt.Sprintf("%x", md5.Sum(randomBytes))
 	var selectedBytes string
-	selectedBytes += hashHex[2:2]
-	selectedBytes += hashHex[12:12]
-	selectedBytes += hashHex[22:22]
+	selectedBytes += hashHex[2:3]
+	selectedBytes += hashHex[12:13]
+	selectedBytes += hashHex[22:23]
 	return strings.ToUpper("XU" + selectedBytes + hashHex)
 }
 
