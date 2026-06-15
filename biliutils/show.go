@@ -6,6 +6,7 @@ import (
 	"bilibili-ticket-golang/models/bili/api"
 	r "bilibili-ticket-golang/models/bili/response"
 	"bilibili-ticket-golang/models/errors"
+	"bilibili-ticket-golang/utils"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -85,7 +86,7 @@ func (c *BiliClient) GetTicketSkuIDsByProjectID(projectID string) ([]r.TicketSku
 // in the prepare request.
 func (c *BiliClient) GetRequestTokenAndPToken(tokenGen token.Generator, projectID string, ticket r.TicketSkuScreenID) (*r.RequestTokenAndPToken, error) {
 	form := map[string]any{
-		"project_id":    projectID,
+		"project_id":    utils.ParseInt64OrDefault(projectID, 0),
 		"screen_id":     ticket.ScreenID,
 		"order_type":    1,
 		"count":         1,
@@ -154,14 +155,14 @@ func (c *BiliClient) GetConfirmInformation(tokens *r.RequestTokenAndPToken, proj
 // Returns: error, API response code, API message, and the order result struct.
 func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Time, tokens *r.RequestTokenAndPToken, projectID string, ticket r.TicketSkuScreenID, buyer interface{}, buyerType r.BuyerType) (error, int, string, api.TicketOrderStruct) {
 	form := map[string]any{
-		"project_id":    projectID,
-		"screen_id":     strconv.FormatInt(ticket.ScreenID, 10),
-		"count":         "1",
-		"pay_money":     strconv.Itoa(ticket.Price),
-		"order_type":    "1",
-		"timestamp":     strconv.FormatInt(whenGenPToken.Unix(), 10),
+		"project_id":    utils.ParseInt64OrDefault(projectID, 0),
+		"screen_id":     ticket.ScreenID,
+		"count":         1,
+		"pay_money":     ticket.Price,
+		"order_type":    1,
+		"timestamp":     whenGenPToken.UnixMilli(),
 		"deviceId":      c.fingerprint.Buvidfp,
-		"sku_id":        strconv.FormatInt(ticket.SkuID, 10),
+		"sku_id":        ticket.SkuID,
 		"requestSource": "neul-next",
 		"token":         tokens.RequestToken,
 		"newRisk":       true,
