@@ -85,15 +85,13 @@ func (c *BiliClient) GetTicketSkuIDsByProjectID(projectID string) ([]r.TicketSku
 // in the prepare request.
 func (c *BiliClient) GetRequestTokenAndPToken(tokenGen token.Generator, projectID string, ticket r.TicketSkuScreenID) (*r.RequestTokenAndPToken, error) {
 	form := map[string]any{
-		"project_id":         projectID,
-		"screen_id":          ticket.ScreenID,
-		"order_type":         1,
-		"count":              1,
-		"sku_id":             ticket.SkuID,
-		"requestSource":      "neul-next",
-		"newRisk":            true,
-		"ignoreRequestLimit": true,
-		"ticket_agent":       "",
+		"project_id":    projectID,
+		"screen_id":     ticket.ScreenID,
+		"order_type":    1,
+		"count":         1,
+		"sku_id":        ticket.SkuID,
+		"requestSource": "neul-next",
+		"newRisk":       true,
 	}
 	if tokenGen.IsHotProject() {
 		form["token"] = tokenGen.GenerateTokenPrepareStage()
@@ -166,6 +164,7 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 		"sku_id":        strconv.FormatInt(ticket.SkuID, 10),
 		"requestSource": "neul-next",
 		"token":         tokens.RequestToken,
+		"newRisk":       true,
 	}
 
 	if buyerType == r.ForceRealName {
@@ -186,7 +185,6 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 	}
 
 	if tokenGen.IsHotProject() {
-		form["newRisk"] = "true"
 		form["ctoken"] = tokenGen.GenerateTokenCreateStage(whenGenPToken)
 		form["ptoken"] = tokens.PToken
 		form["orderCreateUrl"] = "https://show.bilibili.com/api/ticket/order/createV2"

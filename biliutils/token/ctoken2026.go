@@ -15,43 +15,43 @@ type CToken2026Generator struct {
 }
 
 type ctokenField struct {
-	H      int
-	F      int // 点击次数
-	Y      int
-	B      int // 页面切换次数
-	z      int
-	Q      int
-	V      int // openWindow次数
-	K      int
-	G      int // 页面停留时间，单位秒
-	U      int // 请求时间间隔
-	W      int
-	J      int
-	X      int
-	Dollar int
-	Z      int
-	ee     int
+	Param1                int
+	TouchCount            int
+	VisibilityChangeCount int
+	UnloadCount           int
+	Time1                 int
+	Time2                 int
+	Param7                int
+	Param8                int
+	Param9                int
+	Param10               int
+	Param11               int
+	Param12               int
+	Param13               int
+	Param14               int
+	Param15               int
+	Param16               int
 }
 
 func NewCToken2026Generator(ecdata *EncodeData) *CToken2026Generator {
 	return &CToken2026Generator{
 		field: ctokenField{
-			H:      ecdata.encode(1),
-			F:      0,
-			Y:      ecdata.encode(4),
-			B:      0,
-			z:      ecdata.encode(3),
-			Q:      ecdata.encode(2),
-			V:      0,
-			K:      ecdata.encode(5),
-			G:      0,
-			U:      0,
-			W:      ecdata.encode(6),
-			J:      ecdata.encode(7),
-			X:      ecdata.encode(8),
-			Dollar: ecdata.encode(9),
-			Z:      ecdata.encode(10),
-			ee:     ecdata.encode(11),
+			Param1:                ecdata.encode(1),
+			TouchCount:            0,
+			VisibilityChangeCount: 0,
+			UnloadCount:           0,
+			Time1:                 0,
+			Time2:                 0,
+			Param7:                ecdata.encode(2),
+			Param8:                ecdata.encode(3),
+			Param9:                ecdata.encode(4),
+			Param10:               ecdata.encode(5),
+			Param11:               ecdata.encode(6),
+			Param12:               ecdata.encode(7),
+			Param13:               ecdata.encode(8),
+			Param14:               ecdata.encode(9),
+			Param15:               ecdata.encode(10),
+			Param16:               ecdata.encode(11),
 		},
 		whenGen:    time.Now(),
 		lastSubmit: time.Now(),
@@ -142,20 +142,20 @@ func (f *ctokenField) Encode() string {
 		length int
 	}
 	fieldMap := map[int]fieldEntry{
-		0:  {f.H, 1},
-		1:  {f.F, 1},
-		2:  {f.Q, 1},
-		3:  {f.B, 1},
-		4:  {f.z, 1},
-		5:  {f.Y, 1},
-		6:  {f.V, 1},
-		7:  {f.K, 1},
-		8:  {f.G, 2},
-		10: {f.U, 2},
-		12: {f.W, 1},
-		13: {f.J, 1},
-		14: {f.X, 1},
-		15: {f.Dollar, 1},
+		0:  {f.Param1, 1},
+		1:  {f.TouchCount, 1},
+		2:  {f.Time2, 1},
+		3:  {f.VisibilityChangeCount, 1},
+		4:  {f.Param7, 1},
+		5:  {f.Param8, 1},
+		6:  {f.UnloadCount, 1},
+		7:  {f.Param10, 1},
+		8:  {f.Time1, 2},
+		10: {f.Time2, 2},
+		12: {f.Param11, 1},
+		13: {f.Param12, 1},
+		14: {f.Param13, 1},
+		15: {f.Param14, 1},
 	}
 
 	for i := 0; i < 16; i++ {
@@ -173,17 +173,17 @@ func (f *ctokenField) Encode() string {
 					val = 65535
 				}
 				// Big-endian: high byte first, matching JS DataView.setUint16 default
-				buf[i] = byte((val >> 8) & 0xFF)
+				buf[i] = byte(val >> 8)
 				buf[i+1] = byte(val & 0xFF)
 				i++ // skip the next byte consumed by uint16
 			}
 		} else {
 			// Fallback for unmapped indices (9, 11): 4 & Z ? Q : ee
 			var fallback int
-			if f.Z&4 != 0 {
-				fallback = f.Q
+			if f.Param15&4 != 0 {
+				fallback = f.Time2
 			} else {
-				fallback = f.ee
+				fallback = f.Param16
 			}
 			if fallback > 255 {
 				fallback = 255
@@ -205,11 +205,11 @@ func (f *ctokenField) Encode() string {
 // GenerateTokenPrepareStage generates the CToken for the order prepare stage.
 // It simulates a fresh page view with minimal interactions.
 func (gen *CToken2026Generator) GenerateTokenPrepareStage() string {
-	gen.field.F = rand.IntN(7) + 3                       // 模拟点击次数
-	gen.field.B = rand.IntN(2)                           // 模拟页面切换
-	gen.field.V = rand.IntN(3)                           // 模拟 openWindow 次数
-	gen.field.G = int(time.Since(gen.whenGen).Seconds()) // 页面停留时间
-	gen.field.U = 0                                      // 首次请求，无间隔
+	gen.field.TouchCount = rand.IntN(7) + 3                       // 模拟点击次数
+	gen.field.VisibilityChangeCount = rand.IntN(2)                // 模拟页面切换
+	gen.field.UnloadCount = rand.IntN(3)                          // 模拟 openWindow 次数
+	gen.field.Time1 = int(time.Since(gen.whenGen).Seconds() + 15) // 页面停留时间
+	gen.field.Time2 = 0                                           // 首次请求，无间隔
 
 	gen.lastSubmit = time.Now()
 	return gen.field.Encode()
@@ -218,11 +218,11 @@ func (gen *CToken2026Generator) GenerateTokenPrepareStage() string {
 // GenerateTokenCreateStage generates the CToken for the order create stage.
 // It simulates a page that has been open for a while with more interactions.
 func (gen *CToken2026Generator) GenerateTokenCreateStage(whenGenPToken time.Time) string {
-	gen.field.F += rand.IntN(3) + 1                           // 点击继续增加
-	gen.field.B += rand.IntN(2) + 1                           // 页面切换继续增加
-	gen.field.V += rand.IntN(2)                               // openWindow 继续增加
-	gen.field.G = int(time.Since(gen.whenGen).Seconds() + 10) // 页面停留时间
-	gen.field.U = int(time.Since(gen.lastSubmit).Seconds())   // 距上次提交的间隔
+	gen.field.TouchCount += rand.IntN(3) + 1                      // 点击继续增加
+	gen.field.VisibilityChangeCount += rand.IntN(2) + 1           // 页面切换继续增加
+	gen.field.UnloadCount += rand.IntN(2)                         // openWindow 继续增加
+	gen.field.Time1 = int(time.Since(gen.whenGen).Seconds() + 15) // 页面停留时间
+	gen.field.Time2 = int(time.Since(gen.lastSubmit).Seconds())   // 距上次提交的间隔
 
 	gen.lastSubmit = time.Now()
 	return gen.field.Encode()

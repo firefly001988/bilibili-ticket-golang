@@ -2,6 +2,8 @@ package token_test
 
 import (
 	"bilibili-ticket-golang/biliutils/token"
+	"encoding/base64"
+	"fmt"
 	"testing"
 )
 
@@ -34,4 +36,92 @@ func TestCToken2026Generator(t *testing.T) {
 		t.Error("GenerateTokenPrepareStage returned empty token")
 	}
 	t.Logf("PrepareStage token: %s", tokenStr)
+}
+
+func TestCToken2026GeneratorWithRandomData(t *testing.T) {
+	type fieldEntry struct {
+		data   int
+		length int
+	}
+	mapped := map[int]fieldEntry{
+		0: {
+			85,
+			1,
+		},
+		1: {
+			0,
+			1,
+		},
+		2: {
+			245,
+			1,
+		},
+		3: {
+			0,
+			1,
+		},
+		4: {
+			55,
+			1,
+		},
+		5: {
+			108,
+			1,
+		},
+		6: {
+			0,
+			1,
+		},
+		7: {
+			244,
+			1,
+		},
+		8: {
+			1,
+			2,
+		},
+		10: {
+			0,
+			2,
+		},
+		12: {
+			57,
+			1,
+		},
+		13: {
+			7,
+			1,
+		},
+		14: {
+			222,
+			1,
+		},
+		15: {
+			92,
+			1,
+		},
+	}
+	buf := make([]byte, 16)
+	for i := 0; i < 16; i++ {
+		if entry, ok := mapped[i]; ok {
+			switch entry.length {
+			case 1:
+				val := entry.data
+				buf[i] = byte(val)
+			case 2:
+				val := entry.data
+				buf[i] = byte(val >> 8)
+				buf[i+1] = byte(val & 0xFF)
+				i++
+			}
+		}
+	}
+	result := make([]byte, 32)
+	for i := 0; i < 16; i++ {
+		result[i*2] = buf[i]
+		result[i*2+1] = 0x00
+	}
+	fmt.Printf("Generated buffer: %x\n", buf)
+	fmt.Printf("Generated result: %x\n", result)
+	fmt.Printf("Generated token: %s\n", base64.StdEncoding.EncodeToString(result))
 }
