@@ -420,11 +420,20 @@ func (tt *TicketTask) ticketFunc() {
 		for _, buyer := range confirmInfo.BuyerList.List {
 			if buyer.Id == tt.ticket.Buyer.ID {
 				buyerData = []map[string]any{{
-					"id":          buyer.Id,
-					"name":        buyer.Name,
-					"tel":         buyer.Tel,
-					"personal_id": buyer.PersonalId,
-					"id_type":     buyer.IdType,
+					"id":                  buyer.Id,
+					"uid":                 buyer.Uid,
+					"accountId":           buyer.AccountId,
+					"name":                buyer.Name,
+					"tel":                 buyer.Tel,
+					"account_channel":     buyer.AccountChannel,
+					"personal_id":         buyer.PersonalId,
+					"id_card_front":       buyer.IdCardFront,
+					"id_card_back":        buyer.IdCardBack,
+					"is_default":          buyer.IsDefault,
+					"id_type":             buyer.IdType,
+					"verify_status":       buyer.VerifyStatus,
+					"isBuyerInfoVerified": buyer.IsBuyerInfoVerified,
+					"isBuyerValid":        buyer.IsBuyerValid,
 				}}
 				tt.sendLog(LogInfo, fmt.Sprintf("购票人(实名): %s (ID:%d)", buyer.Name, buyer.Id))
 			}

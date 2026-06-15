@@ -205,11 +205,11 @@ func (f *ctokenField) Encode() string {
 // GenerateTokenPrepareStage generates the CToken for the order prepare stage.
 // It simulates a fresh page view with minimal interactions.
 func (gen *CToken2026Generator) GenerateTokenPrepareStage() string {
-	gen.field.Param2 = rand.IntN(7) + 3                            // 模拟点击次数
-	gen.field.Param3 = rand.IntN(2)                                // 模拟页面切换
-	gen.field.Param4 = rand.IntN(3)                                // 模拟 openWindow 次数
-	gen.field.Param5 = int(time.Since(gen.whenGen).Seconds() + 15) // 页面停留时间
-	gen.field.Param6 = 0                                           // 首次请求，无间隔
+	gen.field.Param2 = rand.IntN(7) + 3                           // 模拟点击次数
+	gen.field.Param3 = rand.IntN(2)                               // 模拟页面切换
+	gen.field.Param4 = rand.IntN(3)                               // 模拟 openWindow 次数
+	gen.field.Param5 = int(time.Since(gen.whenGen).Seconds() + 9) // 页面停留时间
+	gen.field.Param6 = 0                                          // 首次请求，无间隔
 
 	gen.lastSubmit = time.Now()
 	return gen.field.Encode()
@@ -218,11 +218,11 @@ func (gen *CToken2026Generator) GenerateTokenPrepareStage() string {
 // GenerateTokenCreateStage generates the CToken for the order create stage.
 // It simulates a page that has been open for a while with more interactions.
 func (gen *CToken2026Generator) GenerateTokenCreateStage(whenGenPToken time.Time) string {
-	gen.field.Param2 += rand.IntN(3) + 1                           // 点击继续增加
-	gen.field.Param3 += rand.IntN(2) + 1                           // 页面切换继续增加
-	gen.field.Param4 += rand.IntN(2)                               // openWindow 继续增加
-	gen.field.Param5 = int(time.Since(gen.whenGen).Seconds() + 15) // 页面停留时间
-	gen.field.Param6 = int(time.Since(gen.lastSubmit).Seconds())   // 距上次提交的间隔
+	gen.field.Param2 += rand.IntN(3) + 1                                            // 点击继续增加
+	gen.field.Param3 += rand.IntN(2) + 1                                            // 页面切换继续增加
+	gen.field.Param4 += rand.IntN(2)                                                // openWindow 继续增加
+	gen.field.Param5 = int(time.Since(gen.whenGen).Seconds() + 9)                   // 页面停留时间
+	gen.field.Param6 = int(time.Since(gen.lastSubmit).Seconds()) + rand.IntN(8) + 2 // 距上次提交的间隔
 
 	gen.lastSubmit = time.Now()
 	return gen.field.Encode()

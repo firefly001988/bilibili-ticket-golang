@@ -88,20 +88,22 @@ type ConfirmStruct struct {
 }
 
 type BuyerStruct struct {
-	Id             int64       `json:"id"`
-	Uid            int64       `json:"uid"`
-	AccountId      int64       `json:"accountId"`
-	Name           string      `json:"name"`
-	Buyer          interface{} `json:"buyer"`
-	Tel            string      `json:"tel"`
-	DisabledErr    interface{} `json:"disabledErr"`
-	AccountChannel string      `json:"account_channel"`
-	PersonalId     string      `json:"personal_id"`
-	IdCardFront    string      `json:"id_card_front"`
-	IdCardBack     string      `json:"id_card_back"`
-	IsDefault      int         `json:"is_default"`
-	IdType         int         `json:"id_type"`
-	VerifyStatus   int         `json:"verify_status"`
+	Id                  int64       `json:"id"`
+	Uid                 int64       `json:"uid"`
+	AccountId           int64       `json:"accountId"`
+	Name                string      `json:"name"`
+	Buyer               interface{} `json:"buyer"`
+	Tel                 string      `json:"tel"`
+	DisabledErr         interface{} `json:"disabledErr"`
+	AccountChannel      string      `json:"account_channel"`
+	PersonalId          string      `json:"personal_id"`
+	IdCardFront         string      `json:"id_card_front"`
+	IdCardBack          string      `json:"id_card_back"`
+	IsDefault           int         `json:"is_default"`
+	IdType              int         `json:"id_type"`
+	VerifyStatus        int         `json:"verify_status"`
+	IsBuyerInfoVerified bool        `json:"isBuyerInfoVerified"`
+	IsBuyerValid        bool        `json:"isBuyerValid"`
 }
 
 type TicketOrderStruct struct {

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestCToken2026Generator(t *testing.T) {
@@ -130,7 +131,7 @@ func TestCToken2026GeneratorWithRandomData(t *testing.T) {
 // 用法：将抓包拿到的 ctoken 字符串填入 tokenStr，然后运行测试。
 func TestCToken2026ReverseParser(t *testing.T) {
 	// ========== 在这里填入要逆解析的 ctoken ==========
-	tokenStr := "4wAGAAgAAgA0ACwAAADWAAAADwAAAAgAeAD6AMwAwwA="
+	tokenStr := "jABXAIAAOwD4AGoAFAA9AAAAKwAAABwAxAA4APQA5QA="
 	// ===============================================
 
 	if tokenStr == "" {
@@ -235,7 +236,8 @@ func TestCToken2026Roundtrip(t *testing.T) {
 	)
 	gen := token.NewCToken2026Generator(ecdata)
 	tokenStr := gen.GenerateTokenPrepareStage()
-	t.Logf("生成的 token: %s", tokenStr)
+	token2 := gen.GenerateTokenCreateStage(time.Now().Add(30 * time.Second))
+	t.Logf("生成的 token: %s, %s", tokenStr, token2)
 
 	// ===== 逆解析 =====
 	raw32, err := base64.StdEncoding.DecodeString(tokenStr)
