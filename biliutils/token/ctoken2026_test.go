@@ -131,7 +131,7 @@ func TestCToken2026GeneratorWithRandomData(t *testing.T) {
 // 用法：将抓包拿到的 ctoken 字符串填入 tokenStr，然后运行测试。
 func TestCToken2026ReverseParser(t *testing.T) {
 	// ========== 在这里填入要逆解析的 ctoken ==========
-	tokenStr := "jABXAIAAOwD4AGoAFAA9AAAAKwAAABwAxAA4APQA5QA="
+	tokenStr := "GgAGAK8AAwDtADoAAgDZAAAACQAAAAUA8wC+AGYASwA="
 	// ===============================================
 
 	if tokenStr == "" {

@@ -9,6 +9,7 @@ import (
 	"bilibili-ticket-golang/utils"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"strconv"
 	"time"
 )
@@ -153,19 +154,30 @@ func (c *BiliClient) GetConfirmInformation(tokens *r.RequestTokenAndPToken, proj
 //   - buyerType: Ordinary or ForceRealName
 //
 // Returns: error, API response code, API message, and the order result struct.
-func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Time, tokens *r.RequestTokenAndPToken, projectID string, ticket r.TicketSkuScreenID, buyer interface{}, buyerType r.BuyerType) (error, int, string, api.TicketOrderStruct) {
+func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Time, tokens *r.RequestTokenAndPToken, projectID string, ticket r.TicketSkuScreenID, buyer interface{}, buyerType r.BuyerType, confirmInfo *api.ConfirmStruct) (error, int, string, api.TicketOrderStruct) {
 	form := map[string]any{
-		"project_id":    utils.ParseInt64OrDefault(projectID, 0),
-		"screen_id":     ticket.ScreenID,
-		"count":         1,
-		"pay_money":     ticket.Price,
-		"order_type":    1,
-		"timestamp":     whenGenPToken.UnixMilli(),
-		"deviceId":      c.fingerprint.Buvidfp,
-		"sku_id":        ticket.SkuID,
-		"requestSource": "neul-next",
-		"token":         tokens.RequestToken,
-		"newRisk":       true,
+		"project_id":     utils.ParseInt64OrDefault(projectID, 0),
+		"screen_id":      ticket.ScreenID,
+		"count":          1,
+		"pay_money":      ticket.Price,
+		"order_type":     1,
+		"timestamp":      whenGenPToken.UnixMilli(),
+		"deviceId":       c.fingerprint.Buvidfp,
+		"sku_id":         ticket.SkuID,
+		"requestSource":  "neul-next",
+		"token":          tokens.RequestToken,
+		"newRisk":        true,
+		"orderCreateUrl": "https://show.bilibili.com/api/ticket/order/createV2",
+		"clickPostion": map[string]any{
+			"now":    time.Now().UnixMilli(),
+			"origin": time.Now().UnixMilli() - 10000,
+			"x":      rand.Int64N(400) + 100,
+			"y":      rand.Int64N(400) + 100,
+		},
+		"id_bind":      confirmInfo.IDBind,
+		"is_package":   confirmInfo.IsPackage,
+		"need_contact": confirmInfo.NeedContact,
+		"coupon_code":  "",
 	}
 
 	if buyerType == r.ForceRealName {
@@ -174,6 +186,7 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 			return fmt.Errorf("marshal buyer info: %w", err), -1, "", api.TicketOrderStruct{}
 		}
 		form["buyer_info"] = string(bs)
+		form["contactInfo"] = nil
 	} else if buyerType == r.Ordinary {
 		b, ok := buyer.(map[string]string)
 		if !ok {
@@ -181,6 +194,11 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 		}
 		form["tel"] = b["tel"]
 		form["buyer"] = b["name"]
+		form["contactInfo"] = map[string]any{
+			"name": b["name"],
+			"tel":  b["tel"],
+			"uid":  c.getUID(),
+		}
 	} else {
 		return errors.NewTicketEmptyContactError(projectID, strconv.FormatInt(ticket.SkuID, 10), strconv.FormatInt(ticket.ScreenID, 10)), -1, "", api.TicketOrderStruct{}
 	}
@@ -191,7 +209,9 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 		form["orderCreateUrl"] = "https://show.bilibili.com/api/ticket/order/createV2"
 	}
 
-	resp, err := c.client.R().SetBodyJsonMarshal(form).Post("https://show.bilibili.com/api/ticket/order/createV2?project_id=" + projectID)
+	resp, err := c.client.R().
+		SetHeader("X-Risk-Header", fmt.Sprintf("platform/h5 uid/%s deviceId/%s", c.getUID(), c.GetInfocUUID())).
+		SetBodyJsonMarshal(form).Post("https://show.bilibili.com/api/ticket/order/createV2?project_id=" + projectID + "&ptoken=" + tokens.PToken)
 	if err != nil {
 		return err, -1, "", api.TicketOrderStruct{}
 	}

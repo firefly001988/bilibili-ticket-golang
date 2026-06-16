@@ -379,6 +379,20 @@ func (c *BiliClient) getBuvid34AndBnut() error {
 	return nil
 }
 
+// getUID extracts the UID from cookies for use in headers and logging.
+func (c *BiliClient) getUID() string {
+	if c.cookieJar == nil {
+		return ""
+	}
+	bilibiliURL, _ := url.Parse("https://www.bilibili.com/")
+	for _, cookie := range c.cookieJar.Cookies(bilibiliURL) {
+		if cookie.Name == "DedeUserID" {
+			return cookie.Value
+		}
+	}
+	return ""
+}
+
 // FetchAvatar downloads the avatar image from the given URL (with Bilibili
 // Referer to bypass hotlink protection) and returns a base64 data URI.
 // Returns empty string if the fetch fails.

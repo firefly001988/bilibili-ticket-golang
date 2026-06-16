@@ -85,6 +85,9 @@ type ConfirmStruct struct {
 	ItemTotalMoney int              `json:"item_total_money"`
 	PayMoney       int              `json:"pay_money"`
 	TicketInfo     TicketInfoDetail `json:"ticket_info"`
+	IDBind         int              `json:"id_bind"`
+	IsPackage      int              `json:"is_package"`
+	NeedContact    int              `json:"need_contact"`
 }
 
 type BuyerStruct struct {

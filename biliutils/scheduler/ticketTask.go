@@ -403,6 +403,7 @@ func (tt *TicketTask) ticketFunc() {
 
 	// 6. Prepare buyer info based on buyer type
 	var buyerData interface{}
+	confirmInfo, err := tt.client.GetConfirmInformation(orderTokens, pidString)
 	switch tt.ticket.Buyer.BuyerType {
 	case r.Ordinary:
 		buyerData = map[string]string{
@@ -411,7 +412,6 @@ func (tt *TicketTask) ticketFunc() {
 		}
 		tt.sendLog(LogInfo, fmt.Sprintf("购票人(普通): %s %s", tt.ticket.Buyer.Name, tt.ticket.Buyer.Tel))
 	case r.ForceRealName:
-		confirmInfo, err := tt.client.GetConfirmInformation(orderTokens, pidString)
 		if err != nil {
 			tt.sendLog(LogError, fmt.Sprintf("获取实名信息失败: %v", err))
 			tt.setError(err)
@@ -474,11 +474,10 @@ func (tt *TicketTask) ticketFunc() {
 				orderResult api.TicketOrderStruct
 			)
 
-			err, code, msg, orderResult = tt.client.SubmitOrder(tokenGen, whenGenPtoken, orderTokens, pidString, *targetSku, buyerData, tt.ticket.Buyer.BuyerType)
+			err, code, msg, orderResult = tt.client.SubmitOrder(tokenGen, whenGenPtoken, orderTokens, pidString, *targetSku, buyerData, tt.ticket.Buyer.BuyerType, confirmInfo)
 			if err != nil {
 				tt.sendLog(LogWarn, fmt.Sprintf("提交订单失败: %v", err))
 			} else {
-
 				// Success: OrderId is non-zero and code is 0, 100048, or 100079
 				if (code == 0 || code == 100048 || code == 100079) && orderResult.OrderId != 0 {
 					successMsg := fmt.Sprintf("🎉 抢票成功！订单号: %d", orderResult.OrderId)
@@ -502,9 +501,25 @@ func (tt *TicketTask) ticketFunc() {
 					tt.sendLog(LogError, fmt.Sprintf("不可售 — %s (%d)", msg, code))
 					tt.setStat(StatFailed)
 					return
+				case 3:
+					tt.sendLog(LogWarn, fmt.Sprintf("请求过于频繁 — %s (%d)", msg, code))
+					select {
+					case <-tt.ctx.Done():
+						return
+					case <-time.After(4800 * time.Millisecond):
+					}
+				case 100041, 100050, 900002:
+					//refresh ptoken
+					tt.sendLog(LogWarn, fmt.Sprintf("Token 可能失效 — %s (%d)，下次提交将刷新 Token", msg, code))
+					submitCount = global.MaxTokenRefreshCount // trigger token refresh on next loop
+				case 100009:
+					tt.sendLog(LogInfo, "库存不足")
+				case 211:
+					tt.sendLog(LogInfo, "肘击失败")
 				}
 
 				tt.sendLog(LogDebug, fmt.Sprintf("#%d: %s (%d)", submitCount+1, msg, code))
+
 			}
 		}
 
