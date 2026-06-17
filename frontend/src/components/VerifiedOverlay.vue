@@ -1,6 +1,9 @@
 <script lang="ts" setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { IsVerified, Verify } from '../../wailsjs/go/main/App'
+
+const { t } = useI18n()
 
 const emit = defineEmits<{
     (e: 'verified'): void
@@ -47,12 +50,12 @@ async function submit() {
     <v-overlay v-model="show" class="align-center justify-center" persistent :opacity="0.95">
         <v-card v-if="!checking" width="480" class="pa-6 rounded-lg" elevation="8">
             <v-card-title class="text-h5 text-center text-wrap">
-                验证声明
+                {{ t('verified.title') }}
             </v-card-title>
 
             <v-card-text class="text-center">
                 <p class="text-body-1 mb-2">
-                    本工具仅供个人学习交流使用，严禁倒卖。
+                    {{ t('verified.description') }}
                 </p>
                 <p class="text-body-2 text-medium-emphasis mb-4">
                     Github Repo: <br />
@@ -62,21 +65,21 @@ async function submit() {
                 <v-divider class="mb-4" />
 
                 <p class="text-body-2 text-medium-emphasis mb-2">
-                    请输入 <strong>「黄牛死全家」</strong> 后按回车继续：
+                    {{ t('verified.instruction') }}
                 </p>
 
                 <v-text-field v-model="input" variant="outlined" density="compact" autofocus :error="error"
-                    :error-messages="error ? '输入内容不正确，请重新输入' : ''" @keydown.enter="submit" @input="error = false" />
+                    :error-messages="error ? t('verified.error') : ''" @keydown.enter="submit" @input="error = false" />
 
                 <v-btn block color="primary" class="mt-2" @click="submit">
-                    确认
+                    {{ t('verified.confirm') }}
                 </v-btn>
             </v-card-text>
         </v-card>
 
         <v-card v-else width="320" class="pa-6 rounded-lg text-center" elevation="8">
             <v-progress-circular indeterminate color="primary" class="mb-3" />
-            <p class="text-body-2 text-medium-emphasis">正在检查...</p>
+            <p class="text-body-2 text-medium-emphasis">{{ t('verified.checking') }}</p>
         </v-card>
     </v-overlay>
 </template>

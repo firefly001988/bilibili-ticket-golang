@@ -1,8 +1,11 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { CheckForUpdate } from '../../wailsjs/go/biliutils/BiliClient'
 import type { githubutils } from '../../wailsjs/go/models'
 import { mirrorSelectOptionsByPrefix, MIRROR_KEYS } from '@/composables/mirrors'
+
+const { t } = useI18n()
 
 const info = ref<githubutils.UpdateInfo | null>(null)
 const loading = ref(false)
@@ -60,13 +63,13 @@ onMounted(() => {
 <template>
     <div>
         <div class="d-flex align-center">
-            <h1 class="text-h5">更新检测</h1>
+            <h1 class="text-h5">{{ t('update.title') }}</h1>
             <v-spacer />
             <v-select v-model="selectedMirror" :items="mirrorOptions" item-title="title" item-value="value"
-                label="下载加速源" variant="outlined" density="compact" hide-details style="max-width: 200px;" class="mr-2"
+                :label="t('update.downloadMirror')" variant="outlined" density="compact" hide-details style="max-width: 200px;" class="mr-2"
                 @update:model-value="(v: string) => saveMirror(v as string)" />
             <v-btn prepend-icon="mdi-refresh" variant="tonal" size="default" :loading="loading" @click="check">
-                检查更新
+                {{ t('update.checkUpdate') }}
             </v-btn>
         </div>
         <v-divider thickness="3" class="mb-4" />
@@ -78,22 +81,21 @@ onMounted(() => {
         <v-card v-if="info" variant="outlined" class="pa-4">
             <v-card-text>
                 <div class="mb-4">
-                    <span class="text-grey">当前版本:</span>
+                    <span class="text-grey">{{ t('update.currentVersion') }}:</span>
                     <v-chip size="x-small" variant="tonal" class="ml-2">{{ info.currentVersion }}</v-chip>
                 </div>
 
                 <v-alert v-if="info.hasUpdate" type="warning" variant="tonal" class="mb-4">
-                    发现新版本 <strong>{{ info.latestVersion }}</strong>，
-                    发布于 {{ new Date(info.publishedAt).toLocaleString('zh-CN') }}
+                    {{ t('update.newVersionFound', { version: info.latestVersion, date: new Date(info.publishedAt).toLocaleString('zh-CN') }) }}
                 </v-alert>
 
                 <v-alert v-else type="success" variant="tonal" class="mb-4">
-                    已是最新版本
+                    {{ t('update.alreadyLatest') }}
                 </v-alert>
 
                 <!-- Download assets -->
                 <div v-if="info.assets && info.assets.length > 0" class="mb-4">
-                    <div class="text-body-2 font-weight-bold mb-2">下载资源:</div>
+                    <div class="text-body-2 font-weight-bold mb-2">{{ t('update.downloadAssets') }}:</div>
                     <v-list density="compact">
                         <v-list-item v-for="a in info.assets" :key="a.name" :href="mirrorUrl(a.browser_download_url)"
                             target="_blank">

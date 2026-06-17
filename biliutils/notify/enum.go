@@ -1,5 +1,7 @@
 package notify
 
+import "bilibili-ticket-golang/internal/i18n"
+
 // NotificationType classifies notification backends.
 type NotificationType int
 
@@ -54,7 +56,7 @@ func GetNotifyChannelTypes() []NotifyChannelTypeMeta {
 			Fields: []NotifyChannelFieldMeta{
 				{
 					Key:         "endpoint",
-					Label:       "服务器地址",
+					Label:       i18n.T("notify.field.endpoint", nil),
 					Type:        "url",
 					Placeholder: "https://gotify.example.com",
 					Required:    true,
@@ -63,7 +65,7 @@ func GetNotifyChannelTypes() []NotifyChannelTypeMeta {
 					Key:         "token",
 					Label:       "Token / API Key",
 					Type:        "password",
-					Placeholder: "输入应用 Token",
+					Placeholder: i18n.T("notify.field.token_placeholder_gotify", nil),
 					Required:    true,
 				},
 			},
@@ -76,7 +78,7 @@ func GetNotifyChannelTypes() []NotifyChannelTypeMeta {
 					Key:         "token",
 					Label:       "Token / API Key",
 					Type:        "password",
-					Placeholder: "输入 PushPlus Token",
+					Placeholder: i18n.T("notify.field.token_placeholder_pushplus", nil),
 					Required:    true,
 				},
 			},
@@ -87,7 +89,7 @@ func GetNotifyChannelTypes() []NotifyChannelTypeMeta {
 			Fields: []NotifyChannelFieldMeta{
 				{
 					Key:         "endpoint",
-					Label:       "服务器地址",
+					Label:       i18n.T("notify.field.endpoint", nil),
 					Type:        "url",
 					Placeholder: "https://api.day.app",
 					Required:    true,
@@ -97,7 +99,7 @@ func GetNotifyChannelTypes() []NotifyChannelTypeMeta {
 					Key:         "token",
 					Label:       "Token / API Key",
 					Type:        "password",
-					Placeholder: "输入 Bark Token",
+					Placeholder: i18n.T("notify.field.token_placeholder_bark", nil),
 					Required:    true,
 				},
 			},

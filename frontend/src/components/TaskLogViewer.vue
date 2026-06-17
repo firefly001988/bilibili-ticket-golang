@@ -1,7 +1,10 @@
 <script lang="ts" setup>
 import { ref, onMounted, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useTaskLogs } from '@/composables/useTaskLogs'
 import type { LogEntry } from '@/composables/schedulerTypes'
+
+const { t } = useI18n()
 
 const props = defineProps<{
     taskId: string
@@ -80,7 +83,7 @@ function scrollToBottom() {
 <template>
     <v-card variant="outlined" class="log-viewer">
         <v-card-title class="d-flex align-center py-2 px-3">
-            <span class="text-body-2">任务日志</span>
+            <span class="text-body-2">{{ t('taskLog.title') }}</span>
             <v-spacer />
             <v-btn icon="mdi-delete-outline" size="x-small" variant="text" @click="clear" />
             <v-btn icon="mdi-arrow-down" size="x-small" variant="text" @click="scrollToBottom" />
@@ -88,7 +91,7 @@ function scrollToBottom() {
         <v-divider />
         <v-card-text class="log-container pa-2" style="overflow:hidden">
             <div v-if="logs.length === 0" class="text-grey text-caption pa-4 text-center">
-                暂无日志 — 等待任务启动...
+                {{ t('taskLog.empty') }}
             </div>
             <v-virtual-scroll v-else ref="vsRef" :items="logs" :height="containerH" class="log-virtual">
                 <template #default="{ item: entry, index: idx }">

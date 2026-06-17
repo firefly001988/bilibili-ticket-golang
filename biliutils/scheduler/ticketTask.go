@@ -4,6 +4,7 @@ import (
 	"bilibili-ticket-golang/biliutils"
 	"bilibili-ticket-golang/biliutils/token"
 	"bilibili-ticket-golang/global"
+	"bilibili-ticket-golang/internal/i18n"
 	"bilibili-ticket-golang/models/bili/api"
 	r "bilibili-ticket-golang/models/bili/response"
 	definedErrors "bilibili-ticket-golang/models/errors"
@@ -166,7 +167,7 @@ func (tt *TicketTask) setStat(stat RunningStat) {
 func (tt *TicketTask) UpdateInterval(newInterval time.Duration) {
 	tt.mutex.Lock()
 	defer tt.mutex.Unlock()
-	tt.sendLog(LogInfo, fmt.Sprintf("更新请求间隔: %v → %v", tt.interval, newInterval))
+	tt.sendLog(LogInfo, i18n.T("task.interval_updated", map[string]interface{}{"Old": tt.interval, "New": newInterval}))
 	tt.interval = newInterval
 }
 
@@ -174,7 +175,7 @@ func (tt *TicketTask) UpdateInterval(newInterval time.Duration) {
 func (tt *TicketTask) UpdateStartDelay(newDelay time.Duration) {
 	tt.mutex.Lock()
 	defer tt.mutex.Unlock()
-	tt.sendLog(LogInfo, fmt.Sprintf("更新启动延迟: %v → %v", tt.startDelay, newDelay))
+	tt.sendLog(LogInfo, i18n.T("task.delay_updated", map[string]interface{}{"Old": tt.startDelay, "New": newDelay}))
 	tt.startDelay = newDelay
 }
 
@@ -332,34 +333,34 @@ func (tt *TicketTask) ticketFunc() {
 
 	pidString := strconv.FormatInt(tt.ticket.ProjectID, 10)
 
-	tt.sendLog(LogInfo, fmt.Sprintf("任务开始 — 项目:%s 场次:%s 票种:%s 购票人:%s",
-		tt.ticket.ProjectName, tt.ticket.ScreenName, tt.ticket.SkuName, tt.ticket.Buyer.String()))
+	tt.sendLog(LogInfo, i18n.T("task.started", map[string]interface{}{
+		"Project": tt.ticket.ProjectName, "Screen": tt.ticket.ScreenName, "Sku": tt.ticket.SkuName, "Buyer": tt.ticket.Buyer.String()}))
 
 	// 1. Get project info
 	projectInfo, err := tt.client.GetProjectInformation(pidString)
 	if err != nil {
-		tt.sendLog(LogError, fmt.Sprintf("获取项目信息失败: %v", err))
+		tt.sendLog(LogError, i18n.T("task.error.fetch_project", map[string]interface{}{"Error": err.Error()}))
 		tt.setError(err)
 		return
 	}
 
-	tt.sendLog(LogInfo, fmt.Sprintf("项目信息: %s (热门=%v, 实名=%v)", projectInfo.ProjectName, projectInfo.IsHotProject, projectInfo.IsForceRealName))
+	tt.sendLog(LogInfo, i18n.T("task.project_info", map[string]interface{}{"Name": projectInfo.ProjectName, "Hot": projectInfo.IsHotProject, "RealName": projectInfo.IsForceRealName}))
 
 	// 2. Choose token generator based on project type
 	var tokenGen token.Generator
 	if projectInfo.IsHotProject {
 		ec := token.NewEncodeData(tt.client.GetBrowserUA(), fmt.Sprintf("https://mall.bilibili.com/neul-next/ticket-renovation/detail.html?id=%d&outsideMall=no&outsideMall=no#themeType=2", tt.ticket.ProjectID))
 		tokenGen = token.NewCToken2026Generator(ec)
-		tt.sendLog(LogInfo, "使用 CToken 生成器 (热门项目)")
+		tt.sendLog(LogInfo, i18n.T("task.using_ctoken", nil))
 	} else {
 		tokenGen = token.NewNormalTokenGenerator()
-		tt.sendLog(LogInfo, "使用普通 Token 生成器")
+		tt.sendLog(LogInfo, i18n.T("task.using_normal_token", nil))
 	}
 
 	// 3. Get all ticket SKU/screen combos and match target
 	allTickets, err := tt.client.GetTicketSkuIDsByProjectID(pidString)
 	if err != nil {
-		tt.sendLog(LogError, fmt.Sprintf("获取票种列表失败: %v", err))
+		tt.sendLog(LogError, i18n.T("task.error.fetch_sku_list", map[string]interface{}{"Error": err.Error()}))
 		tt.setError(err)
 		return
 	}
@@ -372,30 +373,30 @@ func (tt *TicketTask) ticketFunc() {
 		}
 	}
 	if targetSku == nil {
-		tt.sendLog(LogError, fmt.Sprintf("未找到目标票种 (SKU:%d Screen:%d)", tt.ticket.SkuID, tt.ticket.ScreenID))
+		tt.sendLog(LogError, i18n.T("task.error.sku_not_found", map[string]interface{}{"SkuID": tt.ticket.SkuID, "ScreenID": tt.ticket.ScreenID}))
 		tt.setError(definedErrors.NewBilibiliMallTicketNotfoundError(tt.ticket.SkuID, tt.ticket.ProjectID, tt.ticket.ScreenID))
 		return
 	}
 
-	tt.sendLog(LogInfo, fmt.Sprintf("目标票种: %s — %s (¥%.2f)", targetSku.Name, targetSku.Desc, float64(targetSku.Price)/100.0))
+	tt.sendLog(LogInfo, i18n.T("task.target_sku", map[string]interface{}{"Name": targetSku.Name, "Desc": targetSku.Desc, "Price": fmt.Sprintf("%.2f", float64(targetSku.Price)/100.0)}))
 
 	// 4. Obtain request token and ptoken
 	whenGenPtoken := time.Now()
 	orderTokens, err := tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku)
 	if err != nil {
-		tt.sendLog(LogError, fmt.Sprintf("获取下单 Token 失败: %v", err))
+		tt.sendLog(LogError, i18n.T("task.error.get_token", map[string]interface{}{"Error": err.Error()}))
 		tt.setError(err)
 		return
 	}
 
-	tt.sendLog(LogInfo, "下单 Token 已获取")
+	tt.sendLog(LogInfo, i18n.T("task.token_obtained", nil))
 
 	// 5. Apply one-time start delay before the first submit attempt
 	if startDelay > 0 {
-		tt.sendLog(LogInfo, fmt.Sprintf("启动延时 %v...", startDelay))
+		tt.sendLog(LogInfo, i18n.T("task.start_delay", map[string]interface{}{"Delay": startDelay.String()}))
 		select {
 		case <-tt.ctx.Done():
-			tt.sendLog(LogInfo, "任务在启动延时期间被取消")
+			tt.sendLog(LogInfo, i18n.T("task.cancelled_during_delay", nil))
 			return
 		case <-time.After(startDelay):
 		}
@@ -410,10 +411,10 @@ func (tt *TicketTask) ticketFunc() {
 			"tel":  tt.ticket.Buyer.Tel,
 			"name": tt.ticket.Buyer.Name,
 		}
-		tt.sendLog(LogInfo, fmt.Sprintf("购票人(普通): %s %s", tt.ticket.Buyer.Name, tt.ticket.Buyer.Tel))
+		tt.sendLog(LogInfo, i18n.T("task.buyer_ordinary", map[string]interface{}{"Name": tt.ticket.Buyer.Name, "Tel": tt.ticket.Buyer.Tel}))
 	case r.ForceRealName:
 		if err != nil {
-			tt.sendLog(LogError, fmt.Sprintf("获取实名信息失败: %v", err))
+			tt.sendLog(LogError, i18n.T("task.error.fetch_buyer", map[string]interface{}{"Error": err.Error()}))
 			tt.setError(err)
 			return
 		}
@@ -435,23 +436,23 @@ func (tt *TicketTask) ticketFunc() {
 					"isBuyerInfoVerified": buyer.IsBuyerInfoVerified,
 					"isBuyerValid":        buyer.IsBuyerValid,
 				}}
-				tt.sendLog(LogInfo, fmt.Sprintf("购票人(实名): %s (ID:%d)", buyer.Name, buyer.Id))
+				tt.sendLog(LogInfo, i18n.T("task.buyer_realname", map[string]interface{}{"Name": buyer.Name, "ID": buyer.Id}))
 			}
 		}
 		if buyerData == nil {
-			tt.sendLog(LogError, fmt.Sprintf("未匹配到实名购票人 ID:%d", tt.ticket.Buyer.ID))
+			tt.sendLog(LogError, i18n.T("task.buyer_not_matched", map[string]interface{}{"ID": tt.ticket.Buyer.ID}))
 			tt.setError(definedErrors.NewBilibiliMallBuyerNotfoundError(tt.ticket.Buyer))
 			return
 		}
 	}
 
 	// 6. Main submission loop
-	tt.sendLog(LogInfo, "进入提交循环...")
+	tt.sendLog(LogInfo, i18n.T("task.entering_submit_loop", nil))
 	var submitCount uint16 = 0
 	for {
 		select {
 		case <-tt.ctx.Done():
-			tt.sendLog(LogInfo, "任务被取消")
+			tt.sendLog(LogInfo, i18n.T("task.cancelled", nil))
 			return
 		default:
 		}
@@ -461,9 +462,9 @@ func (tt *TicketTask) ticketFunc() {
 			whenGenPtoken = time.Now()
 			orderTokens, err = tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku)
 			if err != nil {
-				tt.sendLog(LogWarn, fmt.Sprintf("刷新 Token 失败: %v", err))
+				tt.sendLog(LogWarn, i18n.T("task.token_refresh_failed", map[string]interface{}{"Error": err.Error()}))
 			} else {
-				tt.sendLog(LogDebug, "Token 已刷新")
+				tt.sendLog(LogDebug, i18n.T("task.token_refreshed", nil))
 			}
 			submitCount = 0
 		} else {
@@ -476,15 +477,15 @@ func (tt *TicketTask) ticketFunc() {
 
 			err, code, msg, orderResult = tt.client.SubmitOrder(tokenGen, whenGenPtoken, orderTokens, pidString, *targetSku, buyerData, tt.ticket.Buyer.BuyerType, confirmInfo)
 			if err != nil {
-				tt.sendLog(LogWarn, fmt.Sprintf("提交订单失败: %v", err))
+				tt.sendLog(LogWarn, i18n.T("task.submit_failed", map[string]interface{}{"Error": err.Error()}))
 			} else {
 				// Success: OrderId is non-zero and code is 0, 100048, or 100079
 				if (code == 0 || code == 100048 || code == 100079) && orderResult.OrderId != 0 {
-					successMsg := fmt.Sprintf("🎉 抢票成功！订单号: %d", orderResult.OrderId)
+					successMsg := i18n.T("task.success", map[string]interface{}{"OrderID": orderResult.OrderId})
 					if tt.notifyFn != nil {
-						tt.notifyFn(fmt.Sprintf("抢票成功！\n项目：%s\n场次：%s\n票种：%s\n购票人：%s\n购票用户：%s(%d)",
-							tt.ticket.ProjectName, tt.ticket.ScreenName, tt.ticket.SkuName,
-							tt.ticket.Buyer.String(), tt.username, tt.userid))
+						tt.notifyFn(i18n.T("task.notify_success", map[string]interface{}{
+							"Project": tt.ticket.ProjectName, "Screen": tt.ticket.ScreenName, "Sku": tt.ticket.SkuName,
+							"Buyer": tt.ticket.Buyer.String(), "User": tt.username, "UID": tt.userid}))
 					}
 					tt.sendLog(LogSuccess, successMsg)
 					tt.setStat(StatSuccess)
@@ -496,13 +497,13 @@ func (tt *TicketTask) ticketFunc() {
 				case 100034:
 					oldPrice := targetSku.Price
 					targetSku.Price = orderResult.PayMoney
-					tt.sendLog(LogInfo, fmt.Sprintf("价格变更: ¥%.2f → ¥%.2f", float64(oldPrice)/100.0, float64(targetSku.Price)/100.0))
+					tt.sendLog(LogInfo, i18n.T("task.price_changed", map[string]interface{}{"Old": fmt.Sprintf("%.2f", float64(oldPrice)/100.0), "New": fmt.Sprintf("%.2f", float64(targetSku.Price)/100.0)}))
 				case 100017:
-					tt.sendLog(LogError, fmt.Sprintf("不可售 — %s (%d)", msg, code))
+					tt.sendLog(LogError, i18n.T("task.not_sellable", map[string]interface{}{"Msg": msg, "Code": code}))
 					tt.setStat(StatFailed)
 					return
 				case 3:
-					tt.sendLog(LogWarn, fmt.Sprintf("请求过于频繁 — %s (%d)", msg, code))
+					tt.sendLog(LogWarn, i18n.T("task.too_frequent", map[string]interface{}{"Msg": msg, "Code": code}))
 					select {
 					case <-tt.ctx.Done():
 						return
@@ -510,15 +511,15 @@ func (tt *TicketTask) ticketFunc() {
 					}
 				case 100041, 100050, 900002:
 					//refresh ptoken
-					tt.sendLog(LogWarn, fmt.Sprintf("Token 可能失效 — %s (%d)，下次提交将刷新 Token", msg, code))
+					tt.sendLog(LogWarn, i18n.T("task.token_maybe_expired", map[string]interface{}{"Msg": msg, "Code": code}))
 					submitCount = global.MaxTokenRefreshCount // trigger token refresh on next loop
 				case 100009:
-					tt.sendLog(LogInfo, "库存不足")
+					tt.sendLog(LogInfo, i18n.T("task.out_of_stock", nil))
 				case 211:
-					tt.sendLog(LogInfo, "肘击失败")
+					tt.sendLog(LogInfo, i18n.T("task.elbow_failed", nil))
 				}
 
-				tt.sendLog(LogDebug, fmt.Sprintf("#%d: %s (%d)", submitCount+1, msg, code))
+				tt.sendLog(LogDebug, i18n.T("task.debug_submit", map[string]interface{}{"Count": submitCount + 1, "Msg": msg, "Code": code}))
 
 			}
 		}

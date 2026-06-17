@@ -22,6 +22,7 @@ type DataStorage struct {
 	RefreshToken    string                    `json:"refreshToken"`
 	RetryIntervalMs int                       `json:"retryIntervalMs"`
 	StartDelayMs    int                       `json:"startDelayMs"`
+	Locale          string                    `json:"locale"`
 
 	saveMu sync.Mutex
 }

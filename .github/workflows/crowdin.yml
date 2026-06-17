@@ -1,0 +1,41 @@
+name: Crowdin Sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/src/locales/zh-CN.json'
+      - 'internal/i18n/locales/active.zh-CN.json'
+  schedule:
+    - cron: '0 0 * * 1' # Weekly on Monday UTC
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload sources to Crowdin
+        uses: crowdin/github-action@v2
+        with:
+          upload_sources: true
+          upload_translations: false
+          download_translations: false
+        env:
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+
+      - name: Download translations (scheduled / manual only)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: crowdin/github-action@v2
+        with:
+          upload_sources: false
+          upload_translations: false
+          download_translations: true
+          create_pull_request: true
+          localization_branch_name: l10n_crowdin_translations
+        env:
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

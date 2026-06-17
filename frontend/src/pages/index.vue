@@ -3,12 +3,12 @@
     <!-- ── Header ─────────────────────────────────────── -->
     <div class="d-flex align-center mb-4">
       <div>
-        <h1 class="text-h4 font-weight-bold">Bilibili Ticket System</h1>
+        <h1 class="text-h4 font-weight-bold">{{ t('index.title') }}</h1>
       </div>
       <v-spacer />
       <!-- Mirror selector (shown on error) -->
       <v-select v-if="error && mirrorOptions.length > 1" :model-value="activeMirrorIndex" :items="mirrorOptions"
-        item-title="title" item-value="value" label="切换镜像" variant="outlined" density="compact" hide-details
+        item-title="title" item-value="value" :label="t('index.mirrorLabel')" variant="outlined" density="compact" hide-details
         style="max-width: 180px;" class="mr-2" @update:model-value="switchMirror" />
       <!-- Refresh button -->
       <v-btn icon="mdi-refresh" variant="text" size="small" :loading="loading" @click="refresh()" />
@@ -18,7 +18,7 @@
 
     <!-- ── Network error banner ──────────────────────── -->
     <v-alert v-if="error" type="warning" variant="tonal" class="mb-4">
-      公告获取失败：{{ error }}。已显示上次缓存的内容，可尝试切换镜像重试。
+      {{ t('index.errorBanner', { error }) }}
     </v-alert>
 
     <!-- ── Loading skeleton ─────────────────────────── -->
@@ -41,15 +41,18 @@
     <v-card v-if="!loading && !error && announcements.length === 0" variant="outlined" class="pa-8 text-center"
       rounded="lg">
       <v-icon icon="mdi-check-circle" size="48" color="success" class="mb-3" />
-      <p class="text-body-1 text-medium-emphasis">暂无公告，一切正常 🎉</p>
+      <p class="text-body-1 text-medium-emphasis">{{ t('index.empty') }}</p>
     </v-card>
   </div>
 </template>
 
 <script lang="ts" setup>
 import { onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AnnouncementCard from '@/components/AnnouncementFloatingCard.vue'
 import { useAnnouncements } from '@/composables/useAnnouncements'
+
+const { t } = useI18n()
 
 const { announcements, refresh, loading, error, mirrorOptions, activeMirrorIndex, switchMirror } = useAnnouncements()
 

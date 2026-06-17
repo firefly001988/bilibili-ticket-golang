@@ -1,11 +1,13 @@
 <script lang="ts" setup>
 import VueQr from 'vue-qr'
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { GetQRCodeUrlAndKey, GetQRLoginState, GetAccountStatus } from '../../wailsjs/go/biliutils/BiliClient';
 import { api } from '../../wailsjs/go/models';
 import { useMessagesStore } from '@/stores/snackbar';
 import { useAuthStore } from '@/stores/auth';
 
+const { t } = useI18n()
 const message = useMessagesStore();
 const auth = useAuthStore();
 
@@ -44,7 +46,7 @@ function startPolling() {
             QRData.value.isNeedRefresh = true;
             clearInterval(timerId!);
             timerId = null;
-            message.add({ text: 'QR Code expired, please refresh.', color: 'error', timeout: 1500 });
+            message.add({ text: t('account.qrExpired'), color: 'error', timeout: 1500 });
             return;
         }
         QRData.value.leftTime = Math.max(0, Math.floor((180000 - (Date.now() - QRData.value.genTimestamp)) / 1000));
@@ -57,11 +59,11 @@ function startPolling() {
             if (state.refresh_token) {
                 await auth.saveRefreshToken(state.refresh_token)
             }
-            message.add({ text: 'Login successful!', color: 'success', timeout: 3000 });
+            message.add({ text: t('account.loginSuccess'), color: 'success', timeout: 3000 });
             // Refresh auth store
             await auth.checkLoginStatus();
         } else if (state.code === 86038) {
-            message.add({ text: 'QR Code expired, please refresh.', color: 'error', timeout: 1500 });
+            message.add({ text: t('account.qrExpired'), color: 'error', timeout: 1500 });
             clearInterval(timerId!);
             timerId = null;
             QRData.value.isNeedRefresh = true;
@@ -83,15 +85,15 @@ onUnmounted(() => {
 </style>
 
 <template>
-    <h1>Account</h1>
+    <h1>{{ t('account.title') }}</h1>
     <v-divider thickness="3" />
 
     <!-- Already logged in -->
     <v-card v-if="auth.isLogin" class="pa-4 mt-4" color="success" variant="tonal">
-        <v-card-title>Logged In</v-card-title>
+        <v-card-title>{{ t('account.loggedIn') }}</v-card-title>
         <v-card-text>
-            <p><strong>Username:</strong> {{ auth.username }}</p>
-            <p><strong>UID:</strong> {{ auth.uid }}</p>
+            <p><strong>{{ t('account.username') }}:</strong> {{ auth.username }}</p>
+            <p><strong>{{ t('account.uid') }}:</strong> {{ auth.uid }}</p>
         </v-card-text>
     </v-card>
 

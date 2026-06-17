@@ -1,5 +1,6 @@
 <script lang="ts" setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
 import {
     GetRetryInterval, SetRetryInterval,
@@ -7,7 +8,19 @@ import {
     GetBilibiliOffset, GetNTPOffset,
 } from '../../wailsjs/go/scheduler/SchedulerService'
 
+const { t, locale } = useI18n()
 const messages = useMessagesStore()
+
+const currentLocale = ref(locale.value)
+const langOptions = computed(() => [
+    { title: t('language.zhCN'), value: 'zh-CN' },
+    { title: t('language.en'), value: 'en' },
+])
+
+function changeLocale(lang: string) {
+    locale.value = lang
+    localStorage.setItem('app_locale', lang)
+}
 
 // ── State ──────────────────────────────────────────────
 const intervalMs = ref(500)
@@ -30,7 +43,7 @@ async function load() {
         startDelayMs.value = sd
     } catch (e: any) {
         console.error('Load settings failed:', e)
-        messages.add({ text: `加载设置失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('settings.loadFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     } finally {
         loading.value = false
     }
@@ -44,9 +57,9 @@ async function saveInterval() {
     savingInterval.value = true
     try {
         await SetRetryInterval(intervalMs.value)
-        messages.add({ text: '重试间隔已保存', color: 'success', timeout: 2000 })
+        messages.add({ text: t('settings.saveRetryInterval'), color: 'success', timeout: 2000 })
     } catch (e: any) {
-        messages.add({ text: `保存失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('settings.saveFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     } finally {
         savingInterval.value = false
     }
@@ -56,9 +69,9 @@ async function saveStartDelay() {
     savingDelay.value = true
     try {
         await SetStartDelay(startDelayMs.value)
-        messages.add({ text: '启动延时已保存', color: 'success', timeout: 2000 })
+        messages.add({ text: t('settings.saveStartDelay'), color: 'success', timeout: 2000 })
     } catch (e: any) {
-        messages.add({ text: `保存失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('settings.saveFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     } finally {
         savingDelay.value = false
     }
@@ -90,21 +103,35 @@ onUnmounted(() => {
 <template>
     <div>
         <div class="d-flex align-center">
-            <h1 class="text-h5">常规设置</h1>
+            <h1 class="text-h5">{{ t('settings.title') }}</h1>
             <v-spacer />
         </div>
         <v-divider thickness="3" class="mb-4" />
+
+        <!-- Language -->
+        <v-card variant="outlined" class="mb-4">
+            <v-card-title class="text-body-1 py-3 px-4">
+                <v-icon start size="20" color="primary">mdi-translate</v-icon>
+                {{ t('language.label') }}
+            </v-card-title>
+            <v-divider />
+            <v-card-text class="pa-4">
+                <v-select v-model="currentLocale" :items="langOptions" item-title="title" item-value="value"
+                    variant="outlined" density="compact" hide-details style="max-width: 300px"
+                    @update:model-value="changeLocale" />
+            </v-card-text>
+        </v-card>
 
         <!-- Retry interval -->
         <v-card variant="outlined" :loading="loading">
             <v-card-title class="text-body-1 py-3 px-4">
                 <v-icon start size="20" color="primary">mdi-timer-sand</v-icon>
-                重试间隔
+                {{ t('settings.retryInterval') }}
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-4">
                 <p class="text-body-2 text-medium-emphasis mb-4">
-                    设置每次抢票尝试之间的等待时间。较短的间隔可以提高抢票频率，但过短的间隔可能触发平台风控。
+                    {{ t('settings.retryIntervalDesc') }}
                 </p>
 
                 <div class="d-flex align-center ga-4">
@@ -112,27 +139,27 @@ onUnmounted(() => {
                         density="compact" show-ticks="always"
                         :ticks="{ 50: '50ms', 500: '500ms', 1000: '1s', 2000: '2s' }" style="flex: 1" />
 
-                    <v-text-field v-model.number="intervalMs" type="number" label="间隔 (ms)" variant="outlined"
-                        density="compact" :min="50" :max="2000" :step="50" style="max-width: 140px" hide-details
-                        suffix="ms" />
+                    <v-text-field v-model.number="intervalMs" type="number" :label="t('settings.intervalLabel')"
+                        variant="outlined" density="compact" :min="50" :max="2000" :step="50" style="max-width: 140px"
+                        hide-details suffix="ms" />
                 </div>
 
                 <div class="mt-6">
                     <v-alert v-if="intervalMs < 500" type="warning" variant="tonal" density="compact">
-                        低延迟模式 (&lt;500ms)：高频率请求可能触发平台风控，请谨慎使用。
+                        {{ t('settings.lowDelayWarning') }}
                     </v-alert>
                     <v-alert v-else-if="intervalMs >= 500" type="info" variant="tonal" density="compact">
-                        保守模式 (≥500ms)：请求频率较低，风控风险较小，但可能降低抢票成功率。
+                        {{ t('settings.conservativeModeInfo') }}
                     </v-alert>
                     <v-alert v-if="intervalMs >= 1000" type="error" variant="tonal" density="compact" class="mt-4">
-                        在 ≥1000ms 的设置下，抢票频率非常低，可能会错过抢票时机。建议根据实际情况调整。
+                        {{ t('settings.highIntervalWarning') }}
                     </v-alert>
                 </div>
             </v-card-text>
             <v-card-actions class="px-4 pb-4">
                 <v-spacer />
                 <v-btn color="primary" variant="tonal" :loading="savingInterval" @click="saveInterval">
-                    保存设置
+                    {{ t('settings.saveSettings') }}
                 </v-btn>
             </v-card-actions>
         </v-card>
@@ -141,12 +168,12 @@ onUnmounted(() => {
         <v-card variant="outlined" :loading="loading" class="mt-4">
             <v-card-title class="text-body-1 py-3 px-4">
                 <v-icon start size="20" color="secondary">mdi-timer-play</v-icon>
-                启动延时
+                {{ t('settings.startDelay') }}
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-4">
                 <p class="text-body-2 text-medium-emphasis mb-4">
-                    在进入抢票循环之前，等待一段固定时间。可用于错开多个任务的启动时机，避免瞬时请求风暴。设为 0 则立即开始抢票。
+                    {{ t('settings.startDelayDesc') }}
                 </p>
 
                 <div class="d-flex align-center ga-4">
@@ -155,30 +182,30 @@ onUnmounted(() => {
                         :ticks="{ 0: '0', 100: '100ms', 200: '200ms', 300: '300ms', 400: '400ms', 500: '500ms' }"
                         style="flex: 1" />
 
-                    <v-text-field v-model.number="startDelayMs" type="number" label="延时 (ms)" variant="outlined"
-                        density="compact" :min="0" :max="500" :step="10" style="max-width: 140px" hide-details
-                        suffix="ms" />
+                    <v-text-field v-model.number="startDelayMs" type="number" :label="t('settings.delayLabel')"
+                        variant="outlined" density="compact" :min="0" :max="500" :step="10" style="max-width: 140px"
+                        hide-details suffix="ms" />
                 </div>
 
                 <div class="mt-4">
                     <v-alert type="warning" variant="tonal" density="compact">
-                        过小会导致获得风控惩罚，请合理配置启动延时，尤其是在同时运行多个抢票任务时。
+                        {{ t('settings.startDelayWarning') }}
                     </v-alert>
                     <v-alert v-if="startDelayMs === 0" type="info" variant="tonal" density="compact" class="mt-4">
-                        立即启动：任务创建后立即进入抢票循环。
+                        {{ t('settings.immediateStart') }}
                     </v-alert>
                     <v-alert v-else-if="startDelayMs <= 100" type="info" variant="tonal" density="compact" class="mt-4">
-                        轻度延迟 (≤100ms)：等待短暂时间后开始抢票。
+                        {{ t('settings.lightDelay') }}
                     </v-alert>
                     <v-alert v-else type="warning" variant="tonal" density="compact" class="mt-4">
-                        较长延迟 (≤500ms)：可用于错开多个任务的启动时机。
+                        {{ t('settings.extendedDelay') }}
                     </v-alert>
                 </div>
             </v-card-text>
             <v-card-actions class="px-4 pb-4">
                 <v-spacer />
                 <v-btn color="secondary" variant="tonal" :loading="savingDelay" @click="saveStartDelay">
-                    保存设置
+                    {{ t('settings.saveSettings') }}
                 </v-btn>
             </v-card-actions>
         </v-card>
@@ -187,53 +214,59 @@ onUnmounted(() => {
         <v-card variant="outlined" class="mt-4">
             <v-card-title class="text-body-1 py-3 px-4">
                 <v-icon start size="20" color="green">mdi-clock-check-outline</v-icon>
-                时钟校准（每 10 秒刷新）
+                {{ t('settings.clockOffset') }}
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-4">
                 <p class="text-body-2 text-medium-emphasis mb-4">
-                    本地时间与服务器时间的差值。正值表示本地时钟落后于服务器。抢票瞄准的时间会自动以此修正。
+                    {{ t('settings.clockOffsetDesc') }}
                 </p>
 
                 <v-row dense>
                     <v-col cols="6">
                         <v-card variant="tonal" color="blue-grey" class="pa-4 text-center">
-                            <div class="text-caption text-medium-emphasis">Bilibili API</div>
+                            <div class="text-caption text-medium-emphasis">{{ t('settings.biliApi') }}</div>
                             <div class="text-h5 mt-1"
                                 :class="biliOffsetMs !== null && Math.abs(biliOffsetMs) > 1000 ? 'text-red' : 'text-blue'">
                                 {{ biliOffsetMs !== null ? (biliOffsetMs > 0 ? '+' : '') + biliOffsetMs + ' ms' : '—' }}
                             </div>
                             <div class="text-caption mt-1">
-                                <template v-if="biliOffsetMs === null">等待中...</template>
+                                <template v-if="biliOffsetMs === null">{{ t('settings.offsetWaiting') }}</template>
                                 <template v-else-if="Math.abs(biliOffsetMs) < 200">
-                                    <v-icon size="12" color="green">mdi-check-circle</v-icon> 良好
+                                    <v-icon size="12" color="green">mdi-check-circle</v-icon> {{
+                                    t('settings.offsetGood') }}
                                 </template>
                                 <template v-else-if="Math.abs(biliOffsetMs) < 500">
-                                    <v-icon size="12" color="warning">mdi-alert-circle</v-icon> 略大
+                                    <v-icon size="12" color="warning">mdi-alert-circle</v-icon> {{
+                                    t('settings.offsetSlightly') }}
                                 </template>
                                 <template v-else>
-                                    <v-icon size="12" color="red">mdi-close-circle</v-icon> 偏差大
+                                    <v-icon size="12" color="red">mdi-close-circle</v-icon> {{ t('settings.offsetLarge')
+                                    }}
                                 </template>
                             </div>
                         </v-card>
                     </v-col>
                     <v-col cols="6">
                         <v-card variant="tonal" color="teal" class="pa-4 text-center">
-                            <div class="text-caption text-medium-emphasis">NTP (阿里云)</div>
+                            <div class="text-caption text-medium-emphasis">{{ t('settings.ntpAliyun') }}</div>
                             <div class="text-h5 mt-1"
                                 :class="ntpOffsetMs !== null && Math.abs(ntpOffsetMs) > 1000 ? 'text-red' : 'text-teal'">
                                 {{ ntpOffsetMs !== null ? (ntpOffsetMs > 0 ? '+' : '') + ntpOffsetMs + ' ms' : '—' }}
                             </div>
                             <div class="text-caption mt-1">
-                                <template v-if="ntpOffsetMs === null">等待中...</template>
+                                <template v-if="ntpOffsetMs === null">{{ t('settings.offsetWaiting') }}</template>
                                 <template v-else-if="Math.abs(ntpOffsetMs) < 200">
-                                    <v-icon size="12" color="green">mdi-check-circle</v-icon> 良好
+                                    <v-icon size="12" color="green">mdi-check-circle</v-icon> {{
+                                    t('settings.offsetGood') }}
                                 </template>
                                 <template v-else-if="Math.abs(ntpOffsetMs) < 500">
-                                    <v-icon size="12" color="warning">mdi-alert-circle</v-icon> 略大
+                                    <v-icon size="12" color="warning">mdi-alert-circle</v-icon> {{
+                                    t('settings.offsetSlightly') }}
                                 </template>
                                 <template v-else>
-                                    <v-icon size="12" color="red">mdi-close-circle</v-icon> 偏差大
+                                    <v-icon size="12" color="red">mdi-close-circle</v-icon> {{ t('settings.offsetLarge')
+                                    }}
                                 </template>
                             </div>
                         </v-card>

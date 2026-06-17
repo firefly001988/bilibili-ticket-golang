@@ -1,7 +1,10 @@
 <script lang="ts" setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { GetAllVersions } from '../../wailsjs/go/plugins/PluginManager'
 import type { plugins } from '../../wailsjs/go/models'
+
+const { t } = useI18n()
 
 const pluginsInfo = ref<plugins.LoadedPluginInfo[]>([])
 const loading = ref(false)
@@ -33,7 +36,7 @@ onMounted(refresh)
         <!-- Header -->
         <div class="d-flex align-center mb-4">
             <div>
-                <h1 class="text-h4 font-weight-bold">插件管理</h1>
+                <h1 class="text-h4 font-weight-bold">{{ t('pluginManagement.title') }}</h1>
             </div>
             <v-spacer />
             <v-btn icon="mdi-refresh" variant="text" size="small" :loading="loading" @click="refresh" />
@@ -57,7 +60,7 @@ onMounted(refresh)
         <v-card v-if="!loading && !error && pluginsInfo.length === 0" variant="outlined" class="pa-8 text-center"
             rounded="lg">
             <v-icon icon="mdi-puzzle-outline" size="48" class="mb-3" color="medium-emphasis" />
-            <p class="text-body-1 text-medium-emphasis">没有已加载的插件</p>
+            <p class="text-body-1 text-medium-emphasis">{{ t('pluginManagement.noPlugins') }}</p>
         </v-card>
 
         <!-- Plugin cards: 每个占一整行，可伸缩 -->
@@ -75,7 +78,7 @@ onMounted(refresh)
                         </div>
                         <div class="d-flex align-center mt-1 flex-wrap ga-1">
                             <span class="text-caption text-medium-emphasis">
-                                版本 {{ p.Version }}
+                                {{ t('pluginManagement.version', { version: p.Version }) }}
                             </span>
                             <v-chip size="x-small" class="font-mono text-medium-emphasis">
                                 {{ p.GitCommit }}
@@ -98,7 +101,7 @@ onMounted(refresh)
                                 {{ p.TestResult }}
                             </div>
                             <div v-else class="text-body-2 text-medium-emphasis font-italic">
-                                未进行测试或无测试结果
+                                {{ t('pluginManagement.noTestResult') }}
                             </div>
                         </v-card-text>
                     </div>

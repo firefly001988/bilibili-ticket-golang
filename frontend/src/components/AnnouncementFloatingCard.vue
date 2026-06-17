@@ -1,8 +1,11 @@
 <script lang="ts" setup>
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { Announcement } from '@/utils/announcementParser'
 import { Priority } from '@/utils/announcementParser'
 import MarkdownRender from 'markstream-vue'
+
+const { t } = useI18n()
 
 const props = defineProps<{
     announcement: Announcement
@@ -14,10 +17,10 @@ const expanded = ref(false)
 // ── Derived display values ───────────────────────────────
 const priorityLabel = computed(() => {
     const p = props.announcement.priority
-    if (p === Priority.CRITICAL) return '严重'
-    if (p === Priority.WARN) return '注意'
-    if (p === Priority.SUCCESS) return '成功'
-    return '信息'
+    if (p === Priority.CRITICAL) return t('announcement.priority.critical')
+    if (p === Priority.WARN) return t('announcement.priority.warn')
+    if (p === Priority.SUCCESS) return t('announcement.priority.success')
+    return t('announcement.priority.info')
 })
 
 const priorityColor = computed(() => {

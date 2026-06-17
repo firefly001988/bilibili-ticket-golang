@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"bilibili-ticket-golang/biliutils"
+	"bilibili-ticket-golang/internal/i18n"
 	"bilibili-ticket-golang/store/configuration"
 	"context"
 	"fmt"
@@ -128,14 +129,14 @@ func (t *BWSTask) UpdateInterval(newInterval time.Duration) {
 	// BWS task uses per-config loop delay; store it
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	t.sendLog(LogInfo, fmt.Sprintf("更新请求间隔: %v → %v", time.Duration(t.config.LoopDelayMs)*time.Millisecond, newInterval))
+	t.sendLog(LogInfo, i18n.T("bws.interval_updated", map[string]interface{}{"Old": time.Duration(t.config.LoopDelayMs) * time.Millisecond, "New": newInterval}))
 	t.config.LoopDelayMs = int(newInterval.Milliseconds())
 }
 
 func (t *BWSTask) UpdateStartDelay(newDelay time.Duration) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	t.sendLog(LogInfo, fmt.Sprintf("更新启动延迟: %v → %v", time.Duration(t.config.StartDelayMs)*time.Millisecond, newDelay))
+	t.sendLog(LogInfo, i18n.T("bws.delay_updated", map[string]interface{}{"Old": time.Duration(t.config.StartDelayMs) * time.Millisecond, "New": newDelay}))
 	t.config.StartDelayMs = int(newDelay.Milliseconds())
 }
 
@@ -313,8 +314,8 @@ func (t *BWSTask) waitForReserveTime(startDelayMs int, activityTitle string) {
 
 	targetTime := t.TargetTime.Add(time.Duration(startDelayMs) * time.Millisecond)
 
-	t.sendLog(LogInfo, fmt.Sprintf("等待开抢时间 — 目标时间: %s (延迟: %dms)",
-		targetTime.Format("2006-01-02 15:04:05.000"), startDelayMs))
+	t.sendLog(LogInfo, i18n.T("bws.waiting_target", map[string]interface{}{
+		"Target": targetTime.Format("2006-01-02 15:04:05.000"), "Delay": startDelayMs}))
 
 	for {
 		select {
@@ -328,11 +329,11 @@ func (t *BWSTask) waitForReserveTime(startDelayMs int, activityTitle string) {
 
 		if remaining <= 0 {
 			if startDelayMs > 0 {
-				t.sendLog(LogInfo, fmt.Sprintf("开票时间已到，延迟 %dms 后开始抢票...", startDelayMs))
+				t.sendLog(LogInfo, i18n.T("bws.time_reached_delayed", map[string]interface{}{"Delay": startDelayMs}))
 			} else if startDelayMs < 0 {
-				t.sendLog(LogInfo, fmt.Sprintf("提前 %dms 开始抢票...", -startDelayMs))
+				t.sendLog(LogInfo, i18n.T("bws.time_reached_early", map[string]interface{}{"Early": -startDelayMs}))
 			} else {
-				t.sendLog(LogInfo, "开票时间已到，开始抢票...")
+				t.sendLog(LogInfo, i18n.T("bws.time_reached_start", nil))
 			}
 			return
 		}
@@ -344,12 +345,12 @@ func (t *BWSTask) waitForReserveTime(startDelayMs int, activityTitle string) {
 		if remainingSec > 5 {
 			if curUnix > lastLogTime+calibLogIntervalSec {
 				lastLogTime = curUnix
-				t.sendLog(LogInfo, fmt.Sprintf("等待开票 — 活动:%s | 剩余: %.1f秒 (延迟: %dms)",
-					activityTitle, remainingSec, startDelayMs))
+				t.sendLog(LogInfo, i18n.T("bws.waiting_status", map[string]interface{}{
+					"Activity": activityTitle, "Remaining": fmt.Sprintf("%.1f", remainingSec), "Delay": startDelayMs}))
 			}
 		} else if remainingSec <= 5 && lastLogTime < curUnix {
 			lastLogTime = curUnix
-			t.sendLog(LogInfo, "即将开始抢票，进入待抢状态...")
+			t.sendLog(LogInfo, i18n.T("bws.about_to_start", nil))
 		}
 
 		// Poll every pollInterval for precision — cancellable via ctx
@@ -392,8 +393,8 @@ func (t *BWSTask) startReservationLoop(loopDelayMs int, activityID int, ticketNo
 		loopDelay = bwsDefaultRetryDelay
 	}
 
-	t.sendLog(LogInfo, fmt.Sprintf("进入抢票循环 — 活动ID:%d 票号:%s 请求间隔:%v",
-		activityID, ticketNo, loopDelay))
+	t.sendLog(LogInfo, i18n.T("bws.enter_loop", map[string]interface{}{
+		"ActivityID": activityID, "TicketNo": ticketNo, "Interval": loopDelay}))
 
 	for {
 		select {
@@ -405,30 +406,30 @@ func (t *BWSTask) startReservationLoop(loopDelayMs int, activityID int, ticketNo
 		code, msg, err := t.client.MakeBWSReservation(ticketNo, activityID)
 
 		if err != nil {
-			t.sendLog(LogError, fmt.Sprintf("网络错误: %v", err))
+			t.sendLog(LogError, i18n.T("bws.network_error", map[string]interface{}{"Error": err.Error()}))
 			// Fall through to sleep before retrying.
 		} else {
 			switch code {
 			case bwsCodeSuccess:
-				t.sendLog(LogSuccess, "预约成功！")
+				t.sendLog(LogSuccess, i18n.T("bws.success", nil))
 				if t.notifyFn != nil {
-					t.notifyFn(fmt.Sprintf("BWS预约成功！\n活动：%s\n日期：%s",
-						activityTitle, reserveDate))
+					t.notifyFn(i18n.T("bws.success_notify", map[string]interface{}{
+						"Activity": activityTitle, "Date": reserveDate}))
 				}
 				t.setStat(StatSuccess)
 				return
 
 			case bwsCodeNotOpen:
-				t.sendLog(LogInfo, fmt.Sprintf("[%d] 尚未开放，等待预约开始", code))
+				t.sendLog(LogInfo, i18n.T("bws.status_not_open", nil))
 
 			case bwsCodeRateLimit:
-				t.sendLog(LogWarn, fmt.Sprintf("[%d] 请求频率太快", code))
+				t.sendLog(LogWarn, i18n.T("bws.status_rate_limit", nil))
 
 			case bwsCodeNetworkErr:
-				t.sendLog(LogError, fmt.Sprintf("[%d] 网络错误，继续重试", code))
+				t.sendLog(LogError, i18n.T("bws.status_network_error", nil))
 
 			case bwsCodeRiskControl:
-				t.sendLog(LogWarn, fmt.Sprintf("[%d] 风控触发，等待 %.0f 秒后重试...", code, bwsRiskControlWait.Seconds()))
+				t.sendLog(LogWarn, i18n.T("bws.status_risk_control", map[string]interface{}{"Wait": fmt.Sprintf("%.0f", bwsRiskControlWait.Seconds())}))
 				select {
 				case <-t.ctx.Done():
 					return
@@ -437,7 +438,7 @@ func (t *BWSTask) startReservationLoop(loopDelayMs int, activityID int, ticketNo
 				continue // don't apply loopDelay after a long wait
 
 			case bwsCodeThrottled:
-				t.sendLog(LogWarn, fmt.Sprintf("[%d] 限流，等待 %.0f 秒后重试...", code, bwsThrottleWait.Seconds()))
+				t.sendLog(LogWarn, i18n.T("bws.status_throttled", map[string]interface{}{"Wait": fmt.Sprintf("%.0f", bwsThrottleWait.Seconds())}))
 				select {
 				case <-t.ctx.Done():
 					return
@@ -446,7 +447,7 @@ func (t *BWSTask) startReservationLoop(loopDelayMs int, activityID int, ticketNo
 				continue
 
 			case bwsCodeFullReserved:
-				t.sendLog(LogInfo, fmt.Sprintf("[%d] 预约已满或已预约: %s", code, msg))
+				t.sendLog(LogInfo, i18n.T("bws.status_full", map[string]interface{}{"Msg": msg}))
 				t.setStat(StatFailed)
 				return
 

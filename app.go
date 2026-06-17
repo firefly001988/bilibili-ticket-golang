@@ -2,14 +2,17 @@ package main
 
 import (
 	"bilibili-ticket-golang/biliutils"
+	"bilibili-ticket-golang/internal/i18n"
+	"bilibili-ticket-golang/store/configuration"
 	"context"
 	"os"
 )
 
 // App struct
 type App struct {
-	ctx  context.Context
-	bili *biliutils.BiliClient
+	ctx   context.Context
+	bili  *biliutils.BiliClient
+	store *configuration.DataStorage
 }
 
 // NewApp creates a new App application struct
@@ -26,6 +29,11 @@ func NewApp() *App {
 // NewAppWithClient creates an App with an existing BiliClient.
 func NewAppWithClient(c *biliutils.BiliClient) *App {
 	return &App{bili: c}
+}
+
+// NewAppWithClientAndStore creates an App with BiliClient and DataStorage for locale persistence.
+func NewAppWithClientAndStore(c *biliutils.BiliClient, store *configuration.DataStorage) *App {
+	return &App{bili: c, store: store}
 }
 
 // startup is called when the app starts. The context is saved
@@ -50,6 +58,22 @@ func (a *App) Verify(input string) bool {
 	return os.WriteFile("data/.verified", []byte("1"), 0644) == nil
 }
 
+// GetBiliClient returns the underlying BiliClient.
 func (a *App) GetBiliClient() *biliutils.BiliClient {
 	return a.bili
+}
+
+// SetLocale sets the application locale and persists it.
+func (a *App) SetLocale(locale string) {
+	i18n.SetLocale(locale)
+	if a.store != nil {
+		a.store.Locale = locale
+		_ = a.store.Save()
+	}
+}
+
+// GetLocale returns the current application locale.
+// Returns empty string if no locale has been set (first startup).
+func (a *App) GetLocale() string {
+	return i18n.GetLocale()
 }

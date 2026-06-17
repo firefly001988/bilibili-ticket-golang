@@ -1,8 +1,11 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { GetAvailablePlugins, FetchPluginListByName } from '../../wailsjs/go/biliutils/BiliClient'
 import type { plugins } from '../../wailsjs/go/models'
 import { mirrorSelectOptionsByPrefix, MIRROR_KEYS } from '@/composables/mirrors'
+
+const { t } = useI18n()
 
 // Re-use Wails-generated types instead of redefining them.
 type PluginAsset = plugins.PluginAsset
@@ -119,10 +122,10 @@ onMounted(() => {
     <div>
         <!-- Header -->
         <div class="d-flex align-center mb-2">
-            <h1 class="text-h5">插件下载</h1>
+            <h1 class="text-h5">{{ t('pluginDownload.title') }}</h1>
             <v-spacer />
             <v-select v-model="selectedMirror" :items="mirrorOptions" item-title="title" item-value="value"
-                label="下载加速源" variant="outlined" density="compact" hide-details style="max-width: 200px" class="mr-2"
+                :label="t('pluginDownload.downloadMirror')" variant="outlined" density="compact" hide-details style="max-width: 200px" class="mr-2"
                 @update:model-value="(v: string) => saveMirror(v as string)" />
         </div>
         <v-divider thickness="3" class="mb-4" />
@@ -131,7 +134,7 @@ onMounted(() => {
         <v-card variant="outlined" class="pa-3 mb-4">
             <div class="d-flex align-center mb-3">
                 <v-icon start size="20" color="primary">mdi-puzzle</v-icon>
-                <span class="text-body-2 font-weight-bold">选择要下载的插件 ({{ definitions.length }})</span>
+                <span class="text-body-2 font-weight-bold">{{ t('pluginDownload.selectPlugin', { count: definitions.length }) }}</span>
                 <v-spacer />
                 <v-progress-circular v-if="loadingDefs" indeterminate size="16" width="2" color="primary" />
             </div>
@@ -161,7 +164,7 @@ onMounted(() => {
             </v-row>
 
             <div v-else-if="!loadingDefs" class="text-body-2 text-grey pa-3 text-center">
-                暂无可用的插件定义
+                {{ t('pluginDownload.noDefinitions') }}
             </div>
         </v-card>
 
@@ -173,20 +176,20 @@ onMounted(() => {
         <!-- Prompt to select a plugin -->
         <v-card v-if="!selectedPlugin && !loadingReleases && !result" variant="outlined" class="pa-6 text-center">
             <v-icon size="48" color="grey" class="mb-2">mdi-arrow-up-bold</v-icon>
-            <div class="text-body-1 text-grey">请先选择上方插件以查看版本列表</div>
+            <div class="text-body-1 text-grey">{{ t('pluginDownload.selectFirst') }}</div>
         </v-card>
 
         <!-- Loading releases -->
         <v-card v-if="loadingReleases" variant="outlined" class="pa-6 text-center">
             <v-progress-circular indeterminate color="primary" class="mb-2" />
-            <div class="text-body-2 text-grey">正在获取 {{ selectedPlugin }} 的版本列表...</div>
+            <div class="text-body-2 text-grey">{{ t('pluginDownload.fetchingVersions', { plugin: selectedPlugin }) }}</div>
         </v-card>
 
         <!-- Empty releases -->
         <v-card v-if="result && (!result.plugins || result.plugins.length === 0) && !result.error && !loadingReleases"
             variant="outlined" class="pa-6 text-center">
             <v-icon size="48" color="grey" class="mb-2">mdi-package-variant-closed</v-icon>
-            <div class="text-body-1 text-grey">暂无可用版本</div>
+            <div class="text-body-1 text-grey">{{ t('pluginDownload.noVersions') }}</div>
         </v-card>
 
         <!-- Plugin version list -->

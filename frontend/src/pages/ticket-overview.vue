@@ -1,8 +1,10 @@
 <script lang="ts" setup>
 import { onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { GetAccountStatus, GetBUVID, GetFingerprint, GetAppVersion } from '../../wailsjs/go/biliutils/BiliClient';
 import { useAuthStore } from '@/stores/auth';
 
+const { t } = useI18n()
 const auth = useAuthStore();
 
 const sysInfo = ref({
@@ -35,39 +37,38 @@ onMounted(async () => {
 </style>
 
 <template>
-    <h1>Ticket Management</h1>
+    <h1>{{ t('ticketOverview.title') }}</h1>
     <v-divider thickness="3" />
 
     <!-- System Status -->
     <v-card class="mt-4 pa-4" variant="outlined">
         <v-card-title>
-            <strong>System Status</strong>
+            <strong>{{ t('ticketOverview.systemStatus') }}</strong>
         </v-card-title>
         <v-card-text>
-            <p><strong>Login:</strong> {{ auth.isLogin ? `${sysInfo.loginName} (UID: ${sysInfo.loginUid})` : `Not logged
-                in ` }}</p>
-            <p><strong>BUVID:</strong> {{ sysInfo.buvid || '—' }}</p>
-            <p><strong>App Version:</strong> {{ sysInfo.appVersion || '—' }}</p>
+            <p><strong>{{ t('ticketOverview.login') }}:</strong> {{ auth.isLogin ? `${sysInfo.loginName} (UID: ${sysInfo.loginUid})` : t('ticketOverview.notLoggedIn') }}</p>
+            <p><strong>{{ t('ticketOverview.buvid') }}:</strong> {{ sysInfo.buvid || '—' }}</p>
+            <p><strong>{{ t('ticketOverview.appVersion') }}:</strong> {{ sysInfo.appVersion || '—' }}</p>
         </v-card-text>
     </v-card>
 
     <v-card v-if="auth.isLogin" class="mt-4 pa-4" variant="outlined">
-        <v-card-title>Quick Links</v-card-title>
+        <v-card-title>{{ t('ticketOverview.quickLinks') }}</v-card-title>
         <v-card-text>
             <v-btn variant="tonal" color="primary" class="mr-2" @click="$router.push('/scheduler')">
                 <v-icon start>mdi-calendar-clock</v-icon>
-                任务管理
+                {{ t('ticketOverview.taskManagement') }}
             </v-btn>
             <v-btn variant="tonal" color="primary" @click="$router.push('/ticket-project')">
                 <v-icon start>mdi-magnify</v-icon>
-                项目查找
+                {{ t('ticketOverview.projectLookup') }}
             </v-btn>
         </v-card-text>
     </v-card>
 
     <v-card v-else class="mt-4 pa-4" color="warning" variant="tonal">
         <v-card-text>
-            Please <router-link to="/account">login</router-link> first to manage tickets.
+            {{ t('ticketOverview.loginFirst') }}
         </v-card-text>
     </v-card>
 </template>

@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
 import {
     GetNotifyChannels,
@@ -11,6 +12,7 @@ import {
 } from '../../wailsjs/go/scheduler/SchedulerService'
 import type { FrontendNotifyChannel, NotifyChannelTypeMeta, NotifyChannelFieldMeta } from '@/composables/schedulerTypes'
 
+const { t } = useI18n()
 const messages = useMessagesStore()
 
 // ── State ──────────────────────────────────────────────
@@ -84,7 +86,7 @@ async function toggleEnabled(index: number) {
     try {
         ch.enabled = !ch.enabled
         await UpdateNotifyChannel(index, { index, type: ch.type, name: ch.name, enabled: ch.enabled, params: ch.params })
-        messages.add({ text: ch.enabled ? '已开启' : '已关闭', color: 'info', timeout: 1500 })
+        messages.add({ text: ch.enabled ? t('notify.enabled') : t('notify.disabled'), color: 'info', timeout: 1500 })
     } catch (e: any) {
         ch.enabled = !ch.enabled // revert
         messages.add({ text: `操作失败: ${e}`, color: 'error', timeout: 4000 })

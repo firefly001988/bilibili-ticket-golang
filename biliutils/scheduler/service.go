@@ -5,6 +5,7 @@ import (
 	"bilibili-ticket-golang/biliutils/clock"
 	"bilibili-ticket-golang/biliutils/notify"
 	"bilibili-ticket-golang/global"
+	"bilibili-ticket-golang/internal/i18n"
 	r "bilibili-ticket-golang/models/bili/response"
 	"bilibili-ticket-golang/store/configuration"
 	"context"
@@ -280,7 +281,7 @@ func (svc *SchedulerService) AddTicket(ticket FrontendTicket) (string, error) {
 	}
 
 	if !svc.tickets.AddTicket(entry) {
-		return "", fmt.Errorf("重复票据: 相同的购票人+项目+场次+票种已存在")
+		return "", fmt.Errorf(i18n.T("ticket.error.duplicate", nil))
 	}
 
 	fmt.Printf("[DEBUG] AddTicket: hash=%s expire=%d start=%d buyerType=%d buyer=%+v\n",
@@ -326,7 +327,7 @@ func (svc *SchedulerService) ReloadTickets() {
 func (svc *SchedulerService) FetchRealNameBuyers() ([]FrontendBuyer, error) {
 	err, buyers := svc.client.GetRealnameBuyerList()
 	if err != nil {
-		return nil, fmt.Errorf("获取实名信息失败: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("task.error.fetch_buyer", nil), err)
 	}
 
 	result := make([]FrontendBuyer, len(buyers))
@@ -345,17 +346,17 @@ func (svc *SchedulerService) FetchRealNameBuyers() ([]FrontendBuyer, error) {
 func statName(s RunningStat) string {
 	switch s {
 	case StatWaiting:
-		return "等待中"
+		return i18n.T("stat.waiting", nil)
 	case StatPending:
-		return "执行中"
+		return i18n.T("stat.pending", nil)
 	case StatSuccess:
-		return "已成功"
+		return i18n.T("stat.success", nil)
 	case StatFailed:
-		return "已失败"
+		return i18n.T("stat.failed", nil)
 	case StatError:
-		return "错误"
+		return i18n.T("stat.error", nil)
 	default:
-		return "未知"
+		return i18n.T("stat.unknown", nil)
 	}
 }
 
@@ -391,7 +392,7 @@ func (svc *SchedulerService) AddNotifyChannel(ch FrontendNotifyChannel) (int, er
 
 	n, err := nc.ToNotifier()
 	if err != nil {
-		return -1, fmt.Errorf("创建通知渠道失败: %w", err)
+		return -1, fmt.Errorf("%s: %w", i18n.T("notify.error.create", nil), err)
 	}
 
 	index := svc.notifyChData.Add(nc)
@@ -406,7 +407,7 @@ func (svc *SchedulerService) RemoveNotifyChannel(index int) error {
 	defer svc.notifyOpsMu.Unlock()
 
 	if !svc.notifyChData.Remove(index) {
-		return fmt.Errorf("通知渠道索引 %d 不存在", index)
+		return fmt.Errorf(i18n.T("notify.error.index_not_found", map[string]interface{}{"Index": index}))
 	}
 	svc.rebuildNotifier()
 	svc.persistNotify()
@@ -426,11 +427,11 @@ func (svc *SchedulerService) UpdateNotifyChannel(index int, ch FrontendNotifyCha
 	}
 
 	if _, err := nc.ToNotifier(); err != nil {
-		return fmt.Errorf("更新通知渠道失败: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("notify.error.update", nil), err)
 	}
 
 	if !svc.notifyChData.Update(index, nc) {
-		return fmt.Errorf("通知渠道索引 %d 不存在", index)
+		return fmt.Errorf(i18n.T("notify.error.index_not_found", map[string]interface{}{"Index": index}))
 	}
 	svc.rebuildNotifier()
 	svc.persistNotify()
@@ -441,7 +442,7 @@ func (svc *SchedulerService) UpdateNotifyChannel(index int, ch FrontendNotifyCha
 func (svc *SchedulerService) TestNotifyChannel(index int) error {
 	channels := svc.notifyChData.GetAll()
 	if index < 0 || index >= len(channels) {
-		return fmt.Errorf("通知渠道索引 %d 不存在", index)
+		return fmt.Errorf(i18n.T("notify.error.index_not_found", map[string]interface{}{"Index": index}))
 	}
 
 	n, err := channels[index].ToNotifier()
@@ -450,7 +451,7 @@ func (svc *SchedulerService) TestNotifyChannel(index int) error {
 	}
 
 	if b, err := n.Test(); !b {
-		return fmt.Errorf("测试消息发送失败：请检查通知渠道配置是否正确: %s", err)
+		return fmt.Errorf(i18n.T("notify.error.test_failed", map[string]interface{}{"Error": err}))
 	}
 	return nil
 }
@@ -669,7 +670,7 @@ func (svc *SchedulerService) AddBWSEntry(entry FrontendBWSEntry) (string, error)
 	}
 
 	if !svc.bwsData.AddEntry(e) {
-		return "", fmt.Errorf("重复BWS活动: 相同的活动+日期已存在")
+		return "", fmt.Errorf(i18n.T("bws.error.duplicate", nil))
 	}
 
 	if svc.store != nil {

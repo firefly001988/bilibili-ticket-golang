@@ -4,6 +4,7 @@ import (
 	"bilibili-ticket-golang/biliutils"
 	"bilibili-ticket-golang/biliutils/notify"
 	"bilibili-ticket-golang/biliutils/scheduler"
+	"bilibili-ticket-golang/internal/i18n"
 	"bilibili-ticket-golang/models/bili/api"
 	gcaptcha "bilibili-ticket-golang/models/bili/captcha"
 	"bilibili-ticket-golang/plugins"
@@ -37,19 +38,19 @@ func testCaptchaPlugin(solverFunc func(gt string, challenge string) (string, err
 			SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36").
 			Get("https://passport.bilibili.com/x/passport-login/captcha?source=main_web")
 		if err != nil {
-			pm.SetTestResult(pluginName, fmt.Sprintf("获取验证码失败: %v", err))
+			pm.SetTestResult(pluginName, i18n.T("plugin.test.captcha_failed", map[string]interface{}{"Error": err}))
 			return
 		}
 
 		var r api.MainApiDataRoot[gcaptcha.RegisterVoucherResponse]
 		err = json.Unmarshal(res.Body(), &r)
 		if err != nil {
-			pm.SetTestResult(pluginName, fmt.Sprintf("解析验证码响应失败: %v\nResp: %s", err, string(res.Body())))
+			pm.SetTestResult(pluginName, i18n.T("plugin.test.parse_failed", map[string]interface{}{"Error": err, "Resp": string(res.Body())}))
 			return
 		}
 
 		if r.Code != 0 {
-			pm.SetTestResult(pluginName, fmt.Sprintf("获取验证码返回错误: %s", string(res.Body())))
+			pm.SetTestResult(pluginName, i18n.T("plugin.test.api_error", map[string]interface{}{"Resp": string(res.Body())}))
 			return
 		}
 
@@ -61,9 +62,9 @@ func testCaptchaPlugin(solverFunc func(gt string, challenge string) (string, err
 		elapsed := time.Since(start)
 
 		if err != nil {
-			pm.SetTestResult(pluginName, fmt.Sprintf("测试失败 (耗时 %v):\n%v", elapsed, err))
+			pm.SetTestResult(pluginName, i18n.T("plugin.test.failed", map[string]interface{}{"Elapsed": elapsed, "Error": err}))
 		} else {
-			pm.SetTestResult(pluginName, fmt.Sprintf("测试成功 (耗时 %v)", elapsed))
+			pm.SetTestResult(pluginName, i18n.T("plugin.test.success", map[string]interface{}{"Elapsed": elapsed}))
 		}
 	}()
 }
@@ -116,6 +117,11 @@ func main() {
 	if err != nil {
 		panic("Failed to load data:" + err.Error())
 	}
+
+	// Restore saved locale or leave empty for first-startup detection
+	if store.Locale != "" {
+		i18n.SetLocale(store.Locale)
+	}
 	jar := cookiejar.New(&cookiejar.Options{
 		DefaultCookies: store.Cookies,
 	})
@@ -157,7 +163,7 @@ func main() {
 	schedSvc := scheduler.NewSchedulerService(c, logBroker, store.TicketData, store.BWSData, notifier, store.NotifyChData, store)
 
 	// App instance for frontend verification & misc utilities
-	app := NewAppWithClient(c)
+	app := NewAppWithClientAndStore(c, store)
 
 	defer func() {
 		schedSvc.StopClockCalibration()

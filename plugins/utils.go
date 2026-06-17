@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"bilibili-ticket-golang/internal/i18n"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,7 +25,7 @@ const (
 var plugins = []PluginDefinition{
 	{
 		Name:        "captcha-plugin",
-		Description: "极验验证码自动识别插件",
+		Description: i18n.T("plugin.geetest_desc", nil),
 		Source:      SourceGitHub,
 		RepoOwner:   "firefly001988",
 		RepoName:    "biliTicker_gt",
