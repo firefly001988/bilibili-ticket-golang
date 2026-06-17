@@ -18,7 +18,7 @@ const showLangPicker = ref(false)
 function detectOSLocale(): string {
   const nav = navigator.language
   if (nav.startsWith('zh')) return 'zh-CN'
-  if (nav.startsWith('en')) return 'en'
+  if (nav.startsWith('en')) return 'en-US'
   return 'zh-CN'
 }
 
@@ -69,23 +69,12 @@ onMounted(async () => {
         🌐 选择语言 / Select Language
       </v-card-title>
       <v-card-text class="text-center mt-4">
-        <v-btn
-          block
-          size="large"
-          variant="outlined"
-          class="mb-3"
-          :color="detectOSLocale() === 'zh-CN' ? 'primary' : undefined"
-          @click="selectLanguage('zh-CN')"
-        >
+        <v-btn block size="large" variant="outlined" class="mb-3"
+          :color="detectOSLocale() === 'zh-CN' ? 'primary' : undefined" @click="selectLanguage('zh-CN')">
           🇨🇳 简体中文
         </v-btn>
-        <v-btn
-          block
-          size="large"
-          variant="outlined"
-          :color="detectOSLocale() === 'en' ? 'primary' : undefined"
-          @click="selectLanguage('en')"
-        >
+        <v-btn block size="large" variant="outlined" :color="detectOSLocale() === 'en-US' ? 'primary' : undefined"
+          @click="selectLanguage('en-US')">
           🇺🇸 English
         </v-btn>
       </v-card-text>
@@ -128,23 +117,26 @@ onMounted(async () => {
             {{ bwsTooltip }}
           </v-tooltip>
         </v-list-item>
-        <v-list-item :title="t('nav.scheduler')" value="scheduler" :disabled="!auth.isLogin" @click="router.push('/scheduler')"
-          prepend-icon="mdi-calendar-clock" />
+        <v-list-item :title="t('nav.scheduler')" value="scheduler" :disabled="!auth.isLogin"
+          @click="router.push('/scheduler')" prepend-icon="mdi-calendar-clock" />
         <v-divider class="mt-1" />
         <v-list-subheader>
           {{ t('nav.pluginArea') }}
         </v-list-subheader>
         <v-list-item :title="t('nav.pluginDownload')" value="plugin-download" @click="router.push('/plugin-download')"
           prepend-icon="mdi-puzzle" />
-        <v-list-item :title="t('nav.pluginManagement')" value="plugin-management" @click="router.push('/plugin-management')"
-          prepend-icon="mdi-puzzle-edit" />
+        <v-list-item :title="t('nav.pluginManagement')" value="plugin-management"
+          @click="router.push('/plugin-management')" prepend-icon="mdi-puzzle-edit" />
         <v-divider class="mt-1" />
         <v-list-subheader>
           {{ t('nav.settingsArea') }}
         </v-list-subheader>
-        <v-list-item :title="t('nav.notify')" value="notify" @click="router.push('/notify')" prepend-icon="mdi-bell-ring" />
-        <v-list-item :title="t('nav.settings')" value="settings" @click="router.push('/settings')" prepend-icon="mdi-cog" />
-        <v-list-item :title="t('nav.update')" value="update" @click="router.push('/update')" prepend-icon="mdi-update" />
+        <v-list-item :title="t('nav.notify')" value="notify" @click="router.push('/notify')"
+          prepend-icon="mdi-bell-ring" />
+        <v-list-item :title="t('nav.settings')" value="settings" @click="router.push('/settings')"
+          prepend-icon="mdi-cog" />
+        <v-list-item :title="t('nav.update')" value="update" @click="router.push('/update')"
+          prepend-icon="mdi-update" />
       </v-list>
     </v-navigation-drawer>
     <v-main>

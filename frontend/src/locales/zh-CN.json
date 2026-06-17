@@ -23,7 +23,7 @@
         "overview": "概览",
         "projectLookup": "项目查找",
         "bwsReservation": "BWS 预约",
-        "scheduler": "调度器",
+        "scheduler": "任务列表",
         "pluginArea": "插件",
         "pluginDownload": "插件下载",
         "pluginManagement": "插件管理",
@@ -79,7 +79,7 @@
         "fetchBuyerFailed": "获取购票人失败: {error}"
     },
     "scheduler": {
-        "title": "Scheduler",
+        "title": "任务列表",
         "addTicket": "添加票据",
         "startTask": "启动",
         "stopTask": "停止",
@@ -188,9 +188,11 @@
         "empty": "暂无日志 — 等待任务启动..."
     },
     "announcement": {
-        "priority.critical": "严重",
-        "priority.warn": "注意",
-        "priority.success": "成功",
-        "priority.info": "信息"
+        "priority": {
+            "critical": "严重",
+            "warn": "注意",
+            "success": "成功",
+            "info": "信息"
+        }
     }
 }

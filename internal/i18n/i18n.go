@@ -19,9 +19,17 @@ var (
 	initOnce      sync.Once
 )
 
+var supportedLocales []string
+
 // Init initializes the i18n bundle. Safe to call multiple times (no-op after first).
 // Locale files are embedded from internal/i18n/locales/*.json.
 func init() {
+	localeEntries, _ := localeFS.ReadDir("locales")
+	for _, entry := range localeEntries {
+		if !entry.IsDir() {
+			supportedLocales = append(supportedLocales, entry.Name()[:len(entry.Name())-5]) // Remove ".json" extension
+		}
+	}
 	initOnce.Do(func() {
 		bundle = goi18n.NewBundle(language.Chinese)
 		bundle.RegisterUnmarshalFunc("json", json.Unmarshal)
@@ -46,7 +54,12 @@ func init() {
 func SetLocale(loc string) {
 	mu.Lock()
 	defer mu.Unlock()
-	currentLocale = loc
+	for _, locale := range supportedLocales {
+		if locale == loc {
+			currentLocale = loc
+			return
+		}
+	}
 }
 
 // GetLocale returns the current locale string.
