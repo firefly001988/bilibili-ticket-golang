@@ -173,6 +173,12 @@
     "bws.status_full": {
         "other": "Reservation full or already reserved: {{.Msg}}"
     },
+    "bws.task_started": {
+        "other": "BWS task started — Activity:{{.Activity}} (ID:{{.ActivityID}}) Date:{{.Date}} TicketNo:{{.TicketNo}}"
+    },
+    "bws.unknown_response": {
+        "other": "[{{.Code}}] Unknown response: {{.Msg}}"
+    },
     "notify.error.create": {
         "other": "Failed to create notify channel: {{.Error}}"
     },

@@ -214,5 +214,11 @@
     },
     "bws.status_full": {
         "other": "预约已满或已预约: {{.Msg}}"
+    },
+    "bws.task_started": {
+        "other": "BWS任务开始 — 活动:{{.Activity}} (ID:{{.ActivityID}}) 日期:{{.Date}} 票号:{{.TicketNo}}"
+    },
+    "bws.unknown_response": {
+        "other": "[{{.Code}}] 未知响应: {{.Msg}}"
     }
 }

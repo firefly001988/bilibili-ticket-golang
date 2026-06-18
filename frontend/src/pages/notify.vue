@@ -89,7 +89,7 @@ async function toggleEnabled(index: number) {
         messages.add({ text: ch.enabled ? t('notify.enabled') : t('notify.disabled'), color: 'info', timeout: 1500 })
     } catch (e: any) {
         ch.enabled = !ch.enabled // revert
-        messages.add({ text: `操作失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('notify.operationFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     }
 }
 
@@ -127,25 +127,25 @@ async function submit() {
         }
         if (editingIndex.value !== null) {
             await UpdateNotifyChannel(editingIndex.value, ch)
-            messages.add({ text: '通知渠道已更新', color: 'success', timeout: 2000 })
+            messages.add({ text: t('notify.channelUpdated'), color: 'success', timeout: 2000 })
         } else {
             await AddNotifyChannel(ch)
-            messages.add({ text: '通知渠道已添加', color: 'success', timeout: 2000 })
+            messages.add({ text: t('notify.channelAdded'), color: 'success', timeout: 2000 })
         }
         showDialog.value = false
         await load()
     } catch (e: any) {
-        messages.add({ text: `操作失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('notify.operationFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     }
 }
 
 async function remove(index: number) {
     try {
         await RemoveNotifyChannel(index)
-        messages.add({ text: '通知渠道已删除', color: 'info', timeout: 2000 })
+        messages.add({ text: t('notify.channelDeleted'), color: 'info', timeout: 2000 })
         await load()
     } catch (e: any) {
-        messages.add({ text: `删除失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('notify.deleteFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     }
 }
 
@@ -153,9 +153,9 @@ async function test(index: number) {
     testingIndex.value = index
     try {
         await TestNotifyChannel(index)
-        messages.add({ text: '测试消息发送成功', color: 'success', timeout: 3000 })
+        messages.add({ text: t('notify.testSuccess'), color: 'success', timeout: 3000 })
     } catch (e: any) {
-        messages.add({ text: `测试失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('notify.testFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     } finally {
         testingIndex.value = null
     }
@@ -169,7 +169,7 @@ function typeLabel(t: string): string {
 /** Show first non-empty param value as subtitle, or fallback text. */
 function channelSubtitle(ch: FrontendNotifyChannel): string {
     const vals = Object.values(ch.params ?? {}).filter(Boolean)
-    return vals.length > 0 ? vals.join(' · ') : '未配置参数'
+    return vals.length > 0 ? vals.join(' · ') : t('notify.noParams')
 }
 
 // ── Lifecycle ──────────────────────────────────────────
@@ -182,10 +182,10 @@ onMounted(async () => {
 <template>
     <div>
         <div class="d-flex align-center">
-            <h1 class="text-h5">通知渠道</h1>
+            <h1 class="text-h5">{{ t('notify.title') }}</h1>
             <v-spacer />
             <v-btn prepend-icon="mdi-plus" color="primary" variant="tonal" size="small" @click="openAdd">
-                添加渠道
+                {{ t('notify.addChannel') }}
             </v-btn>
         </div>
         <v-divider thickness="3" class="mb-4" />
@@ -193,7 +193,7 @@ onMounted(async () => {
         <v-card variant="outlined">
             <v-card-text class="pa-0">
                 <div v-if="channels.length === 0" class="text-grey text-caption pa-6 text-center">
-                    暂未配置通知渠道 — 添加渠道后，抢票成功时将向所有渠道发送通知
+                    {{ t('notify.emptyHint') }}
                 </div>
                 <v-list v-else density="compact" lines="one">
                     <v-list-item v-for="(ch, i) in channels" :key="i" :class="{ 'text-disabled': !ch.enabled }">
@@ -201,10 +201,10 @@ onMounted(async () => {
                             <v-icon size="18" :color="ch.enabled ? 'blue' : 'grey'">mdi-bell-ring</v-icon>
                         </template>
                         <template #title>
-                            <span class="text-body-2">{{ ch.name || '未命名' }}</span>
+                            <span class="text-body-2">{{ ch.name || t('notify.unnamed') }}</span>
                             <v-chip size="x-small" variant="tonal" class="ml-1">{{ typeLabel(ch.type) }}</v-chip>
-                            <v-chip v-if="!ch.enabled" size="x-small" color="grey" variant="tonal"
-                                class="ml-1">已关闭</v-chip>
+                            <v-chip v-if="!ch.enabled" size="x-small" color="grey" variant="tonal" class="ml-1">{{
+                                t('notify.disabled') }}</v-chip>
                         </template>
                         <template #subtitle>
                             <span class="text-caption text-grey">{{ channelSubtitle(ch) }}</span>
@@ -229,16 +229,16 @@ onMounted(async () => {
 
         <!-- Dialog -->
         <v-dialog v-model="showDialog" max-width="480">
-            <v-card :title="editingIndex !== null ? '编辑通知渠道' : '添加通知渠道'">
+            <v-card :title="editingIndex !== null ? t('notify.editChannel') : t('notify.addChannel')">
                 <v-card-text>
                     <v-row dense>
                         <v-col cols="12">
-                            <v-select v-model="formType" label="渠道类型" variant="outlined" density="compact"
-                                :items="typeItems" required />
+                            <v-select v-model="formType" :label="t('notify.channelType')" variant="outlined"
+                                density="compact" :items="typeItems" required />
                         </v-col>
                         <v-col cols="12">
-                            <v-text-field v-model="formName" label="名称 (选填)" variant="outlined" density="compact"
-                                hint="方便识别，如「手机通知」" persistent-hint />
+                            <v-text-field v-model="formName" :label="t('notify.channelName')" variant="outlined"
+                                density="compact" :placeholder="t('notify.namePlaceholder')" persistent-hint />
                         </v-col>
                         <!-- Dynamic fields from Go metadata -->
                         <template v-if="currentTypeMeta">
@@ -252,9 +252,9 @@ onMounted(async () => {
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
-                    <v-btn variant="text" @click="showDialog = false">取消</v-btn>
+                    <v-btn variant="text" @click="showDialog = false">{{ t('common.cancel') }}</v-btn>
                     <v-btn color="primary" variant="tonal" @click="submit">
-                        {{ editingIndex !== null ? '保存' : '添加' }}
+                        {{ editingIndex !== null ? t('notify.save') : t('notify.addChannel') }}
                     </v-btn>
                 </v-card-actions>
             </v-card>

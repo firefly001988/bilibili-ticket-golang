@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useMessagesStore } from '@/stores/snackbar'
 import TaskLogViewer from '@/components/TaskLogViewer.vue'
@@ -19,6 +20,7 @@ import { useDebug } from '@/composables/useDebug'
 
 const auth = useAuthStore()
 const { debugLog } = useDebug();
+const { t } = useI18n()
 const messages = useMessagesStore()
 
 // ── State ──────────────────────────────────────────────
@@ -119,11 +121,11 @@ async function startTask(hash: string) {
         debugLog('[startTask] calling AddTicketTask for hash:', hash)
         await AddTicketTask(hash)
         debugLog('[startTask] AddTicketTask returned successfully for hash:', hash)
-        messages.add({ text: '任务已启动', color: 'success', timeout: 2000 })
+        messages.add({ text: t('scheduler.taskStarted'), color: 'success', timeout: 2000 })
         await refresh()
         selectedHash.value = hash
     } catch (e: any) {
-        messages.add({ text: `启动失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('scheduler.startFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     } finally {
         loading.value = false
     }
@@ -134,10 +136,10 @@ async function stopTask(hash: string) {
         debugLog('[stopTask] calling RemoveTask for hash:', hash)
         await RemoveTask(hash)
         debugLog('[stopTask] RemoveTask returned successfully')
-        messages.add({ text: '任务已停止', color: 'info', timeout: 2000 })
+        messages.add({ text: t('scheduler.taskStopped'), color: 'info', timeout: 2000 })
         await refresh()
     } catch (e: any) {
-        messages.add({ text: `停止失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('scheduler.stopFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     }
 }
 
@@ -146,10 +148,10 @@ async function forceStart(hash: string) {
         debugLog('[forceStart] calling ForceStartTask for hash:', hash)
         await ForceStartTask(hash)
         debugLog('[forceStart] ForceStartTask returned successfully')
-        messages.add({ text: '已强制启动任务', color: 'warning', timeout: 2000 })
+        messages.add({ text: t('scheduler.forceStarted'), color: 'warning', timeout: 2000 })
         await refresh()
     } catch (e: any) {
-        messages.add({ text: `强制启动失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('scheduler.forceStartFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     }
 }
 
@@ -159,10 +161,10 @@ async function deleteTicket(hash: string) {
         await RemoveTicket(hash)
         debugLog('[deleteTicket] RemoveTicket returned successfully')
         if (selectedHash.value === hash) selectedHash.value = ''
-        messages.add({ text: '票据已删除', color: 'info', timeout: 2000 })
+        messages.add({ text: t('scheduler.ticketDeleted'), color: 'info', timeout: 2000 })
         await refresh()
     } catch (e: any) {
-        messages.add({ text: `删除失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('scheduler.deleteFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     }
 }
 
@@ -171,23 +173,23 @@ const formErrors = ref<string[]>([])
 function validateForm(): boolean {
     formErrors.value = []
     const f = form.value
-    if (!f.projectId) formErrors.value.push('请填写项目 ID')
-    if (!f.projectName) formErrors.value.push('请填写项目名称')
-    if (!f.screenId) formErrors.value.push('请填写场次 ID')
-    if (!f.screenName) formErrors.value.push('请填写场次名称')
-    if (!f.skuId) formErrors.value.push('请填写票种 ID')
-    if (!f.skuName) formErrors.value.push('请填写票种名称')
-    if (!formDate.value) formErrors.value.push('请选择开售日期')
-    if (!formTime.value) formErrors.value.push('请选择开售时间')
-    if (!f.buyerName.trim()) formErrors.value.push('请填写购票人姓名')
-    if (!f.buyerTel.trim()) formErrors.value.push('请填写购票人电话')
-    if (f.buyerId < 0) formErrors.value.push('实名 ID 不能为负数')
+    if (!f.projectId) formErrors.value.push(t('scheduler.formProjectId'))
+    if (!f.projectName) formErrors.value.push(t('scheduler.formProjectName'))
+    if (!f.screenId) formErrors.value.push(t('scheduler.formScreenId'))
+    if (!f.screenName) formErrors.value.push(t('scheduler.formScreenName'))
+    if (!f.skuId) formErrors.value.push(t('scheduler.formSkuId'))
+    if (!f.skuName) formErrors.value.push(t('scheduler.formSkuName'))
+    if (!formDate.value) formErrors.value.push(t('scheduler.formDate'))
+    if (!formTime.value) formErrors.value.push(t('scheduler.formTime'))
+    if (!f.buyerName.trim()) formErrors.value.push(t('scheduler.formBuyerName'))
+    if (!f.buyerTel.trim()) formErrors.value.push(t('scheduler.formBuyerTel'))
+    if (f.buyerId < 0) formErrors.value.push(t('scheduler.formBuyerId'))
     return formErrors.value.length === 0
 }
 
 async function submitAddTicket() {
     if (!validateForm()) {
-        messages.add({ text: `请完善以下信息: ${formErrors.value.join('、')}`, color: 'warning', timeout: 4000 })
+        messages.add({ text: t('scheduler.formIncomplete', { fields: formErrors.value.join('、') }), color: 'warning', timeout: 4000 })
         return
     }
     const startDate = formDate.value ? new Date(formDate.value + 'T' + (formTime.value || '00:00:00')) : new Date()
@@ -214,11 +216,11 @@ async function submitAddTicket() {
 
         debugLog('[submitAddTicket] AddTicket returned hash:', hash);
 
-        messages.add({ text: `票据已添加 (${hash.slice(0, 8)}...)`, color: 'success', timeout: 2000 })
+        messages.add({ text: t('scheduler.ticketAdded', { hash: hash.slice(0, 8) }), color: 'success', timeout: 2000 })
         showAddDialog.value = false
         await refresh()
     } catch (e: any) {
-        messages.add({ text: `添加失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('scheduler.addFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     }
 }
 
@@ -230,7 +232,7 @@ function formatTime(ts: string): string {
 }
 
 function formatRemaining(ms: number): string {
-    if (ms <= 0) return '已过期'
+    if (ms <= 0) return t('scheduler.expired')
     const abs = Math.abs(ms)
     const h = Math.floor(abs / 3600000)
     const m = Math.floor((abs % 3600000) / 60000)
@@ -259,18 +261,18 @@ onUnmounted(() => {
 <template>
     <div>
         <div class="d-flex align-center">
-            <h1 class="text-h5">Scheduler</h1>
+            <h1 class="text-h5">{{ t('scheduler.title') }}</h1>
             <v-spacer />
             <v-btn v-if="auth.isLogin" prepend-icon="mdi-plus" color="primary" variant="tonal" size="small"
                 @click="showAddDialog = true">
-                添加票据
+                {{ t('scheduler.addTicket') }}
             </v-btn>
         </div>
         <v-divider thickness="3" class="mb-4" />
 
         <v-card v-if="!auth.isLogin" color="warning" variant="tonal" class="pa-4">
             <v-card-text>
-                请先 <router-link to="/account">登录</router-link> 后才能管理任务。
+                {{ t('scheduler.loginRequired') }}
             </v-card-text>
         </v-card>
 
@@ -279,54 +281,55 @@ onUnmounted(() => {
             <!-- Ticket list -->
             <v-card variant="outlined" class="mb-4">
                 <v-card-title class="d-flex align-center py-2 px-3">
-                    <span class="text-body-medium">票据列表 ({{ mergedList.length }})</span>
+                    <span class="text-body-medium">{{ t('scheduler.ticketList', { count: mergedList.length }) }}</span>
                     <v-spacer />
                     <v-btn icon="mdi-refresh" size="x-small" variant="text" :loading="loading" @click="refresh" />
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="pa-0" style="max-height: 600px; overflow-y: auto;">
                     <div v-if="mergedList.length === 0" class="text-label-medium text-grey pa-6 text-center">
-                        暂无票据 — 点击「添加票据」或前往
-                        <router-link to="/ticket-project">项目查找</router-link>
+                        {{ t('scheduler.emptyTickets') }}
+                        <router-link to="/ticket-project">{{ t('nav.projectLookup') }}</router-link>
                     </div>
                     <v-list v-else density="compact" lines="two">
-                        <v-list-item v-for="t in mergedList" :key="t.hash" :active="selectedHash === t.hash"
-                            @click="selectedHash = t.hash">
+                        <v-list-item v-for="tk in mergedList" :key="tk.hash" :active="selectedHash === tk.hash"
+                            @click="selectedHash = tk.hash">
                             <template #prepend>
-                                <v-icon :color="statColor(t.displayStat)" size="18">
-                                    {{ t.displayStat === 0 ? 'mdi-clock-outline' :
-                                        t.displayStat === 1 ? 'mdi-progress-clock' :
-                                            t.displayStat === 2 ? 'mdi-check-circle' :
-                                                t.displayStat === 3 ? 'mdi-close-circle' : 'mdi-alert-circle' }}
+                                <v-icon :color="statColor(tk.displayStat)" size="18">
+                                    {{ tk.displayStat === 0 ? 'mdi-clock-outline' :
+                                        tk.displayStat === 1 ? 'mdi-progress-clock' :
+                                            tk.displayStat === 2 ? 'mdi-check-circle' :
+                                                tk.displayStat === 3 ? 'mdi-close-circle' : 'mdi-alert-circle' }}
                                 </v-icon>
                             </template>
 
                             <template #title>
-                                <span class="text-body-2">{{ t.projectName }}</span>
-                                <v-chip :color="statColor(t.displayStat)" size="x-small" variant="tonal" class="ml-1">
-                                    {{ statLabel(t.displayStat) }}
+                                <span class="text-body-2">{{ tk.projectName }}</span>
+                                <v-chip :color="statColor(tk.displayStat)" size="x-small" variant="tonal" class="ml-1">
+                                    {{ statLabel(tk.displayStat) }}
                                 </v-chip>
                             </template>
 
                             <template #subtitle>
                                 <span class="text-caption text-grey">
-                                    {{ t.screenName }} · {{ t.skuName }} · {{ t.buyerName }}
-                                    <template v-if="t.status && t.status.stat === StatWaiting">
-                                        · 剩余 {{ formatRemaining(t.status.remainingMs) }}
+                                    {{ tk.screenName }} · {{ tk.skuName }} · {{ tk.buyerName }}
+                                    <template v-if="tk.status && tk.status.stat === StatWaiting">
+                                        · {{ t('scheduler.remaining', { time: formatRemaining(tk.status.remainingMs) })
+                                        }}
                                     </template>
                                 </span>
                             </template>
 
                             <template #append>
                                 <div class="d-flex ga-0">
-                                    <v-btn v-if="!isTaskActive(t.hash)" icon="mdi-play" size="x-small" variant="text"
-                                        color="success" @click.stop="startTask(t.hash)" />
+                                    <v-btn v-if="!isTaskActive(tk.hash)" icon="mdi-play" size="x-small" variant="text"
+                                        color="success" @click.stop="startTask(tk.hash)" />
                                     <v-btn v-else icon="mdi-stop" size="x-small" variant="text" color="error"
-                                        @click.stop="stopTask(t.hash)" />
+                                        @click.stop="stopTask(tk.hash)" />
                                     <v-btn icon="mdi-lightning-bolt" size="x-small" variant="text" color="warning"
-                                        @click.stop="forceStart(t.hash)" />
+                                        @click.stop="forceStart(tk.hash)" />
                                     <v-btn icon="mdi-delete-outline" size="x-small" variant="text" color="grey"
-                                        @click.stop="deleteTicket(t.hash)" />
+                                        @click.stop="deleteTicket(tk.hash)" />
                                 </div>
                             </template>
                         </v-list-item>
@@ -340,43 +343,43 @@ onUnmounted(() => {
                 <v-card variant="outlined" class="mb-2 pa-3">
                     <div class="d-flex flex-wrap ga-3 text-caption">
                         <div>
-                            <span class="text-grey">项目:</span>
+                            <span class="text-grey">{{ t('scheduler.projectId') }}</span>
                             <strong>{{ selectedTicket.projectName }}</strong>
                             ({{ selectedTicket.projectId }})
                         </div>
                         <div>
-                            <span class="text-grey">场次:</span>
+                            <span class="text-grey">{{ t('scheduler.screen') }}</span>
                             <strong>{{ selectedTicket.screenName }}</strong>
                             ({{ selectedTicket.screenId }})
                         </div>
                         <div>
-                            <span class="text-grey">票种:</span>
+                            <span class="text-grey">{{ t('scheduler.sku') }}</span>
                             <strong>{{ selectedTicket.skuName }}</strong>
                             ({{ selectedTicket.skuId }})
                         </div>
                         <div>
-                            <span class="text-grey">购票人:</span>
+                            <span class="text-grey">{{ t('scheduler.buyer') }}</span>
                             <strong>{{ selectedTicket.buyerName }}</strong>
                         </div>
                         <div>
-                            <span class="text-grey">状态:</span>
+                            <span class="text-grey">{{ t('scheduler.status') }}</span>
                             <v-chip v-if="selectedStatus" :color="statColor(selectedStatus.stat)" size="x-small"
                                 variant="tonal">
                                 {{ statLabel(selectedStatus.stat) }}
                             </v-chip>
                         </div>
                         <div v-if="selectedTicket.start">
-                            <span class="text-grey">开售:</span>
+                            <span class="text-grey">{{ t('scheduler.saleTime') }}</span>
                             <strong>{{ formatTime(new Date(selectedTicket.start * 1000).toLocaleString('zh-CN'))
-                                }}</strong>
+                            }}</strong>
                         </div>
                         <div v-if="selectedStatus && selectedStatus.error" class="w-100">
-                            <span class="text-grey">错误:</span>
+                            <span class="text-grey">{{ t('scheduler.errorLabel') }}</span>
                             <span class="text-red">{{ selectedStatus.error }}</span>
                         </div>
                         <div v-if="selectedStatus && selectedStatus.stat === StatWaiting && selectedStatus.remainingMs > 0"
                             class="w-100">
-                            <span class="text-grey">剩余:</span>
+                            <span class="text-grey">{{ t('scheduler.remainingLabel') }}</span>
                             <strong>{{ formatRemaining(selectedStatus.remainingMs) }}</strong>
                         </div>
                     </div>
@@ -388,65 +391,66 @@ onUnmounted(() => {
 
             <v-card v-else variant="outlined" class="pa-6 text-center">
                 <v-icon size="48" color="grey">mdi-console-line</v-icon>
-                <p class="text-grey mt-2 mb-0">选择上方的票据查看实时日志</p>
+                <p class="text-grey mt-2 mb-0">{{ t('scheduler.selectLog') }}</p>
             </v-card>
         </template>
 
         <!-- Add Ticket Dialog -->
         <v-dialog v-model="showAddDialog" max-width="560">
-            <v-card title="添加票据">
+            <v-card :title="t('scheduler.addTicket')">
                 <v-card-text>
                     <v-row dense>
                         <v-col cols="6">
-                            <v-text-field v-model="form.projectId" label="项目 ID" type="number" variant="outlined"
-                                density="compact" required />
+                            <v-text-field v-model="form.projectId" :label="t('scheduler.formProjectIdLabel')"
+                                type="number" variant="outlined" density="compact" required />
                         </v-col>
                         <v-col cols="6">
-                            <v-text-field v-model="form.projectName" label="项目名称" variant="outlined" density="compact"
-                                required />
+                            <v-text-field v-model="form.projectName" :label="t('scheduler.formProjectNameLabel')"
+                                variant="outlined" density="compact" required />
                         </v-col>
                         <v-col cols="6">
-                            <v-text-field v-model="form.screenId" label="场次 ID" type="number" variant="outlined"
-                                density="compact" required />
+                            <v-text-field v-model="form.screenId" :label="t('scheduler.formScreenIdLabel')"
+                                type="number" variant="outlined" density="compact" required />
                         </v-col>
                         <v-col cols="6">
-                            <v-text-field v-model="form.screenName" label="场次名称" variant="outlined" density="compact"
-                                required />
+                            <v-text-field v-model="form.screenName" :label="t('scheduler.formScreenNameLabel')"
+                                variant="outlined" density="compact" required />
                         </v-col>
                         <v-col cols="6">
-                            <v-text-field v-model="form.skuId" label="票种 ID" type="number" variant="outlined"
-                                density="compact" required />
+                            <v-text-field v-model="form.skuId" :label="t('scheduler.formSkuIdLabel')" type="number"
+                                variant="outlined" density="compact" required />
                         </v-col>
                         <v-col cols="6">
-                            <v-text-field v-model="form.skuName" label="票种名称" variant="outlined" density="compact"
-                                required />
+                            <v-text-field v-model="form.skuName" :label="t('scheduler.formSkuNameLabel')"
+                                variant="outlined" density="compact" required />
                         </v-col>
                         <v-col cols="6">
-                            <v-text-field v-model="formDate" label="开售日期" type="date" variant="outlined"
-                                density="compact" />
+                            <v-text-field v-model="formDate" :label="t('scheduler.formDateLabel')" type="date"
+                                variant="outlined" density="compact" />
                         </v-col>
                         <v-col cols="6">
-                            <v-text-field v-model="formTime" label="开售时间" type="time" variant="outlined"
-                                density="compact" />
+                            <v-text-field v-model="formTime" :label="t('scheduler.formTimeLabel')" type="time"
+                                variant="outlined" density="compact" />
                         </v-col>
                         <v-col cols="4">
-                            <v-text-field v-model="form.buyerName" label="购票人姓名" variant="outlined" density="compact"
-                                required />
+                            <v-text-field v-model="form.buyerName" :label="t('scheduler.formBuyerNameLabel')"
+                                variant="outlined" density="compact" required />
                         </v-col>
                         <v-col cols="4">
-                            <v-text-field v-model="form.buyerTel" label="购票人电话" variant="outlined" density="compact"
-                                required />
+                            <v-text-field v-model="form.buyerTel" :label="t('scheduler.formBuyerTelLabel')"
+                                variant="outlined" density="compact" required />
                         </v-col>
                         <v-col cols="4">
-                            <v-text-field v-model="form.buyerId" label="实名 ID (0=普通)" type="number" variant="outlined"
-                                density="compact" hint="0 为普通购票，>0 为强实名" persistent-hint required />
+                            <v-text-field v-model="form.buyerId" :label="t('scheduler.formBuyerIdLabel')" type="number"
+                                variant="outlined" density="compact" :hint="t('scheduler.formBuyerIdHint')"
+                                persistent-hint required />
                         </v-col>
                     </v-row>
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
-                    <v-btn variant="text" @click="showAddDialog = false">取消</v-btn>
-                    <v-btn color="primary" variant="tonal" @click="submitAddTicket">添加</v-btn>
+                    <v-btn variant="text" @click="showAddDialog = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="primary" variant="tonal" @click="submitAddTicket">{{ t('scheduler.addBtn') }}</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>

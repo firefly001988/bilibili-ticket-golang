@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useMessagesStore } from '@/stores/snackbar'
 import TaskLogViewer from '@/components/TaskLogViewer.vue'
@@ -19,6 +20,7 @@ import { useDebug } from '@/composables/useDebug'
 
 const auth = useAuthStore()
 const { debugLog } = useDebug()
+const { t } = useI18n()
 const messages = useMessagesStore()
 
 // BWS 仅在 7月8日 00:00 ~ 7月11日 24:00 期间可用；dev 环境始终可用
@@ -70,7 +72,7 @@ const selectedStatus = computed(() => {
             error: '',
             projectName: entry.activityTitle,
             screenName: entry.reserveDate,
-            skuName: `票号: ${entry.ticketNo}`,
+            skuName: t('bwsReservation.ticketNoLabel') + ' ' + entry.ticketNo,
             buyerName: '',
         } as FrontendTaskStatus
     }
@@ -116,7 +118,7 @@ async function refresh() {
 // ── Fetch BWS info ─────────────────────────────────────
 async function fetchBWSInfo() {
     if (!reserveDates.value.trim()) {
-        messages.add({ text: '请输入日期，如 20250711,20250712', color: 'warning', timeout: 2000 })
+        messages.add({ text: t('bwsReservation.enterDates'), color: 'warning', timeout: 2000 })
         return
     }
     fetchingInfo.value = true
@@ -124,9 +126,9 @@ async function fetchBWSInfo() {
         const data = await GetBWSReservationInfo(reserveDates.value.trim())
         debugLog('[BWS] parsed data:', data)
         bwsData.value = data
-        messages.add({ text: 'BWS 活动信息已加载', color: 'success', timeout: 2000 })
+        messages.add({ text: t('bwsReservation.infoLoaded'), color: 'success', timeout: 2000 })
     } catch (e: any) {
-        messages.add({ text: `获取失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('bwsReservation.fetchFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     } finally {
         fetchingInfo.value = false
     }
@@ -147,7 +149,7 @@ async function submitAddEntry() {
     // Find ticket for this activity's date
     const ticket = bwsData.value?.TicketMapping?.[act.ReserveDate]
     if (!ticket) {
-        messages.add({ text: `未找到日期 ${act.ReserveDate} 的票号`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('bwsReservation.ticketNotFound', { date: act.ReserveDate }), color: 'error', timeout: 4000 })
         return
     }
 
@@ -166,11 +168,11 @@ async function submitAddEntry() {
         })
 
         debugLog('[BWS] AddBWSEntry hash:', hash)
-        messages.add({ text: `BWS 活动已添加 (${hash.slice(0, 8)}...)`, color: 'success', timeout: 2000 })
+        messages.add({ text: t('bwsReservation.entryAdded', { hash: hash.slice(0, 8) }), color: 'success', timeout: 2000 })
         showAddDialog.value = false
         await refresh()
     } catch (e: any) {
-        messages.add({ text: `添加失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('bwsReservation.addFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     }
 }
 
@@ -179,11 +181,11 @@ async function startTask(hash: string) {
     loading.value = true
     try {
         await AddBWSTask(hash)
-        messages.add({ text: 'BWS 任务已启动', color: 'success', timeout: 2000 })
+        messages.add({ text: t('bwsReservation.taskStarted'), color: 'success', timeout: 2000 })
         await refresh()
         selectedHash.value = hash
     } catch (e: any) {
-        messages.add({ text: `启动失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('bwsReservation.startFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     } finally {
         loading.value = false
     }
@@ -193,10 +195,10 @@ async function deleteEntry(hash: string) {
     try {
         await RemoveBWSEntry(hash)
         if (selectedHash.value === hash) selectedHash.value = ''
-        messages.add({ text: 'BWS 活动已删除', color: 'info', timeout: 2000 })
+        messages.add({ text: t('bwsReservation.entryDeleted'), color: 'info', timeout: 2000 })
         await refresh()
     } catch (e: any) {
-        messages.add({ text: `删除失败: ${e}`, color: 'error', timeout: 4000 })
+        messages.add({ text: t('bwsReservation.deleteFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     }
 }
 
@@ -209,7 +211,7 @@ function formatTime(ts: number): string {
 }
 
 function formatRemaining(ms: number): string {
-    if (ms <= 0) return '已到期'
+    if (ms <= 0) return t('bwsReservation.expired')
     const h = Math.floor(ms / 3600000)
     const m = Math.floor((ms % 3600000) / 60000)
     const s = Math.floor((ms % 60000) / 1000)
@@ -245,32 +247,32 @@ onUnmounted(() => {
 <template>
     <div>
         <div class="d-flex align-center">
-            <h1 class="text-h5">BWS 预约抢票</h1>
+            <h1 class="text-h5">{{ t('bwsReservation.title') }}</h1>
             <v-spacer />
             <v-btn v-if="auth.isLogin" prepend-icon="mdi-cloud-download" color="info" variant="tonal" size="small"
                 @click="showFetchDialog = true">
-                获取活动
+                {{ t('bwsReservation.fetchActivity') }}
             </v-btn>
         </div>
         <v-divider thickness="3" class="mb-4" />
 
         <v-card v-if="!auth.isLogin" color="warning" variant="tonal" class="pa-4">
             <v-card-text>
-                请先 <router-link to="/account">登录</router-link> 后才能使用 BWS 抢票。
+                {{ t('bwsReservation.loginRequired') }}
             </v-card-text>
         </v-card>
 
         <v-card v-else-if="!bwsAvailable" color="grey" variant="tonal" class="pa-4">
-            <v-card-title class="text-h6">⏳ BWS 活动尚未开始</v-card-title>
+            <v-card-title class="text-h6">{{ t('bwsReservation.notStarted') }}</v-card-title>
             <v-card-text>
-                BWS（Bilibili World 乐园）预定功能仅在 <strong>7月8日 00:00 至 7月12日 20:00</strong> 期间开放。
+                {{ t('bwsReservation.notStartedDesc') }}
             </v-card-text>
         </v-card>
 
         <template v-else>
             <!-- Ticket info summary -->
             <v-card v-if="bwsData?.TicketInfo" variant="outlined" class="mb-4 pa-3">
-                <div class="text-subtitle-2 mb-2">我的票务信息</div>
+                <div class="text-subtitle-2 mb-2">{{ t('bwsReservation.myTicketInfo') }}</div>
                 <div class="d-flex flex-wrap ga-3">
                     <v-chip v-for="(info, date) in bwsData.TicketInfo" :key="date" color="info" variant="tonal"
                         size="small">
@@ -283,14 +285,15 @@ onUnmounted(() => {
             <!-- Entry list -->
             <v-card variant="outlined" class="mb-4">
                 <v-card-title class="d-flex align-center py-2 px-3">
-                    <span class="text-body-medium">预约列表 ({{ mergedList.length }})</span>
+                    <span class="text-body-medium">{{ t('bwsReservation.entryList', { count: mergedList.length })
+                        }}</span>
                     <v-spacer />
                     <v-btn icon="mdi-refresh" size="x-small" variant="text" :loading="loading" @click="refresh" />
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="pa-0" style="max-height: 600px; overflow-y: auto;">
                     <div v-if="mergedList.length === 0" class="text-label-medium text-grey pa-6 text-center">
-                        暂无 BWS 预约活动 — 点击「获取活动」加载
+                        {{ t('bwsReservation.emptyEntries') }}
                     </div>
                     <v-list v-else density="compact" lines="two">
                         <v-list-item v-for="e in mergedList" :key="e.hash" :active="selectedHash === e.hash"
@@ -311,9 +314,10 @@ onUnmounted(() => {
                             </template>
                             <template #subtitle>
                                 <span class="text-caption text-grey">
-                                    ID: {{ e.activityId }} · {{ e.reserveDate }} · 票号: {{ e.ticketNo.slice(0, 8) }}...
+                                    ID: {{ e.activityId }} · {{ e.reserveDate }} · {{ t('bwsReservation.ticketNoLabel')
+                                    }} {{ e.ticketNo.slice(0, 8) }}...
                                     <template v-if="e.displayStat === StatWaiting && e.remainingMs > 0">
-                                        · 剩余 {{ formatRemaining(e.remainingMs) }}
+                                        · {{ t('bwsReservation.remaining', { time: formatRemaining(e.remainingMs) }) }}
                                     </template>
                                 </span>
                             </template>
@@ -337,32 +341,32 @@ onUnmounted(() => {
                 <v-card variant="outlined" class="mb-2 pa-3">
                     <div class="d-flex flex-wrap ga-3 text-caption">
                         <div>
-                            <span class="text-grey">活动:</span>
+                            <span class="text-grey">{{ t('bwsReservation.activity') }}</span>
                             <strong>{{ selectedEntry.activityTitle }}</strong>
                             (ID: {{ selectedEntry.activityId }})
                         </div>
                         <div>
-                            <span class="text-grey">日期:</span>
+                            <span class="text-grey">{{ t('bwsReservation.date') }}</span>
                             <strong>{{ selectedEntry.reserveDate }}</strong>
                         </div>
                         <div>
-                            <span class="text-grey">票号:</span>
+                            <span class="text-grey">{{ t('bwsReservation.ticketNo') }}</span>
                             <strong>{{ selectedEntry.ticketNo }}</strong>
                         </div>
                         <div v-if="selectedEntry.reserveTime">
-                            <span class="text-grey">开抢:</span>
+                            <span class="text-grey">{{ t('bwsReservation.grabTime') }}</span>
                             <strong>{{ formatTime(selectedEntry.reserveTime) }}</strong>
                         </div>
                         <div>
-                            <span class="text-grey">延迟:</span>
+                            <span class="text-grey">{{ t('bwsReservation.delay') }}</span>
                             <strong>{{ selectedEntry.startDelayMs }}ms</strong>
                         </div>
                         <div>
-                            <span class="text-grey">间隔:</span>
+                            <span class="text-grey">{{ t('bwsReservation.interval') }}</span>
                             <strong>{{ selectedEntry.loopDelayMs }}ms</strong>
                         </div>
                         <div v-if="selectedStatus && selectedStatus.error" class="w-100">
-                            <span class="text-grey">错误:</span>
+                            <span class="text-grey">{{ t('bwsReservation.errorLabel') }}</span>
                             <span class="text-red">{{ selectedStatus.error }}</span>
                         </div>
                     </div>
@@ -372,33 +376,36 @@ onUnmounted(() => {
 
             <v-card v-else variant="outlined" class="pa-6 text-center">
                 <v-icon size="48" color="grey">mdi-console-line</v-icon>
-                <p class="text-grey mt-2 mb-0">选择上方预约活动查看日志</p>
+                <p class="text-grey mt-2 mb-0">{{ t('bwsReservation.selectLog') }}</p>
             </v-card>
         </template>
 
         <!-- ── Fetch BWS Info Dialog ─────────────────────────── -->
         <v-dialog v-model="showFetchDialog" max-width="800" scrollable>
-            <v-card title="获取 BWS 活动">
+            <v-card :title="t('bwsReservation.fetchDialogTitle')">
                 <v-card-text>
                     <div class="d-flex ga-2 mb-4 mt-2 align-center">
-                        <v-text-field v-model="reserveDates" label="日期 (逗号分隔)" placeholder="20250711,20250712,20250713"
-                            variant="outlined" density="compact" hide-details="auto" style="max-width: 360px;"
-                            @keyup.enter="fetchBWSInfo" />
-                        <v-btn :loading="fetchingInfo" color="primary" @click="fetchBWSInfo">查询</v-btn>
+                        <v-text-field v-model="reserveDates" :label="t('bwsReservation.datesLabel')"
+                            placeholder="20250711,20250712,20250713" variant="outlined" density="compact"
+                            hide-details="auto" style="max-width: 360px;" @keyup.enter="fetchBWSInfo" />
+                        <v-btn :loading="fetchingInfo" color="primary" @click="fetchBWSInfo">{{
+                            t('bwsReservation.query')
+                            }}</v-btn>
                     </div>
 
                     <div v-if="bwsData?.ActivityMapping">
                         <div class="text-subtitle-2 mb-2">
-                            活动列表 ({{ Object.keys(bwsData.ActivityMapping).length }} 个)
+                            {{ t('bwsReservation.activityList', { count: Object.keys(bwsData.ActivityMapping).length })
+                            }}
                         </div>
                         <v-table density="compact">
                             <thead>
                                 <tr>
-                                    <th>ID</th>
-                                    <th>活动名称</th>
-                                    <th>日期</th>
-                                    <th>票号</th>
-                                    <th>开抢时间</th>
+                                    <th>{{ t('bwsReservation.colId') }}</th>
+                                    <th>{{ t('bwsReservation.colActivity') }}</th>
+                                    <th>{{ t('bwsReservation.colDate') }}</th>
+                                    <th>{{ t('bwsReservation.colTicketNo') }}</th>
+                                    <th>{{ t('bwsReservation.colGrabTime') }}</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -409,9 +416,11 @@ onUnmounted(() => {
                                     <td>
                                         {{ act.ActTitle }}
                                         <v-chip v-if="bwsData.ReservedIDs?.[id]" color="green" size="x-small"
-                                            variant="tonal">已预约</v-chip>
+                                            variant="tonal">{{
+                                            t('bwsReservation.reserved') }}</v-chip>
                                         <v-chip v-else-if="act.State === 3" color="grey" size="x-small"
-                                            variant="tonal">已结束</v-chip>
+                                            variant="tonal">{{
+                                            t('bwsReservation.ended') }}</v-chip>
                                     </td>
                                     <td>{{ act.ReserveDate }}</td>
                                     <td>
@@ -422,7 +431,7 @@ onUnmounted(() => {
                                         <v-btn v-if="!bwsData.ReservedIDs?.[id] && act.State !== 3"
                                             icon="mdi-plus-circle-outline" size="x-small" variant="text" color="primary"
                                             :disabled="!getTicketForDate(act.ReserveDate)"
-                                            :title="!getTicketForDate(act.ReserveDate) ? '该日期无票号' : '添加活动'"
+                                            :title="!getTicketForDate(act.ReserveDate) ? t('bwsReservation.noTicketForDate') : t('bwsReservation.addActivity')"
                                             @click="openAddDialog(act)" />
                                     </td>
                                 </tr>
@@ -430,47 +439,51 @@ onUnmounted(() => {
                         </v-table>
                     </div>
                     <div v-else-if="!fetchingInfo" class="text-grey text-center pa-4">
-                        输入日期后点击「查询」加载 BWS 活动列表
+                        {{ t('bwsReservation.inputDatesHint') }}
                     </div>
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
-                    <v-btn variant="text" @click="showFetchDialog = false">关闭</v-btn>
+                    <v-btn variant="text" @click="showFetchDialog = false">{{ t('bwsReservation.close') }}</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
 
         <!-- ── Add Entry Dialog ──────────────────────────────── -->
         <v-dialog v-model="showAddDialog" max-width="480">
-            <v-card :title="'添加 BWS 预约'">
+            <v-card :title="t('bwsReservation.addBwsEntry')">
                 <v-card-text v-if="selectedActivity">
                     <v-alert density="compact" variant="tonal" color="info" class="mb-3">
                         <strong>{{ selectedActivity.ActTitle }}</strong>
                         <br />
-                        日期: {{ selectedActivity.ReserveDate }} | ID: {{ selectedActivity.ReserveID }}
+                        {{ t('bwsReservation.date') }} {{ selectedActivity.ReserveDate }} | ID: {{
+                        selectedActivity.ReserveID }}
                         <br />
-                        开抢: {{ formatTime(selectedActivity.ReserveBeginTime) }}
+                        {{ t('bwsReservation.grabTime') }} {{ formatTime(selectedActivity.ReserveBeginTime) }}
                         <br />
-                        票号: {{ getTicketForDate(selectedActivity.ReserveDate) || '未找到' }}
+                        {{ t('bwsReservation.ticketNo') }} {{ getTicketForDate(selectedActivity.ReserveDate) ||
+                            t('bwsReservation.ticketNotFoundShort') }}
                     </v-alert>
 
                     <v-row dense>
                         <v-col cols="6">
-                            <v-text-field v-model="formStartDelayMs" label="开抢延迟 (ms)" type="number" variant="outlined"
-                                density="compact" hide-details="auto" hint="正数=延迟, 负数=提前" persistent-hint />
+                            <v-text-field v-model="formStartDelayMs" :label="t('bwsReservation.startDelayLabel')"
+                                type="number" variant="outlined" density="compact" hide-details="auto"
+                                :hint="t('bwsReservation.startDelayHint')" persistent-hint />
                         </v-col>
                         <v-col cols="6">
-                            <v-text-field v-model="formLoopDelayMs" label="请求间隔 (ms)" type="number" variant="outlined"
-                                density="compact" hide-details="auto" hint="0=最快, 推荐 ≥50ms" persistent-hint />
+                            <v-text-field v-model="formLoopDelayMs" :label="t('bwsReservation.loopDelayLabel')"
+                                type="number" variant="outlined" density="compact" hide-details="auto"
+                                :hint="t('bwsReservation.loopDelayHint')" persistent-hint />
                         </v-col>
                     </v-row>
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
-                    <v-btn variant="text" @click="showAddDialog = false">取消</v-btn>
+                    <v-btn variant="text" @click="showAddDialog = false">{{ t('common.cancel') }}</v-btn>
                     <v-btn color="primary" variant="tonal" @click="submitAddEntry"
                         :disabled="!selectedActivity || !getTicketForDate(selectedActivity?.ReserveDate)">
-                        添加
+                        {{ t('bwsReservation.addBtn') }}
                     </v-btn>
                 </v-card-actions>
             </v-card>

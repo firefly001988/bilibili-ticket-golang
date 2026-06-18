@@ -97,7 +97,7 @@ function selectPlugin(name: string) {
 // =============================================================================
 
 function formatSize(bytes: number): string {
-    if (!bytes || bytes < 0) return '未知'
+    if (!bytes || bytes < 0) return t('pluginDownload.unknownSize')
     if (bytes < 1024) return `${bytes} B`
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
@@ -125,8 +125,8 @@ onMounted(() => {
             <h1 class="text-h5">{{ t('pluginDownload.title') }}</h1>
             <v-spacer />
             <v-select v-model="selectedMirror" :items="mirrorOptions" item-title="title" item-value="value"
-                :label="t('pluginDownload.downloadMirror')" variant="outlined" density="compact" hide-details style="max-width: 200px" class="mr-2"
-                @update:model-value="(v: string) => saveMirror(v as string)" />
+                :label="t('pluginDownload.downloadMirror')" variant="outlined" density="compact" hide-details
+                style="max-width: 200px" class="mr-2" @update:model-value="(v: string) => saveMirror(v as string)" />
         </div>
         <v-divider thickness="3" class="mb-4" />
 
@@ -134,7 +134,9 @@ onMounted(() => {
         <v-card variant="outlined" class="pa-3 mb-4">
             <div class="d-flex align-center mb-3">
                 <v-icon start size="20" color="primary">mdi-puzzle</v-icon>
-                <span class="text-body-2 font-weight-bold">{{ t('pluginDownload.selectPlugin', { count: definitions.length }) }}</span>
+                <span class="text-body-2 font-weight-bold">{{ t('pluginDownload.selectPlugin', {
+                    count:
+                    definitions.length }) }}</span>
                 <v-spacer />
                 <v-progress-circular v-if="loadingDefs" indeterminate size="16" width="2" color="primary" />
             </div>
@@ -182,7 +184,8 @@ onMounted(() => {
         <!-- Loading releases -->
         <v-card v-if="loadingReleases" variant="outlined" class="pa-6 text-center">
             <v-progress-circular indeterminate color="primary" class="mb-2" />
-            <div class="text-body-2 text-grey">{{ t('pluginDownload.fetchingVersions', { plugin: selectedPlugin }) }}</div>
+            <div class="text-body-2 text-grey">{{ t('pluginDownload.fetchingVersions', { plugin: selectedPlugin }) }}
+            </div>
         </v-card>
 
         <!-- Empty releases -->
@@ -196,12 +199,12 @@ onMounted(() => {
         <div v-if="result?.plugins?.length">
             <div class="d-flex align-center mb-2">
                 <span class="text-body-2 text-grey">
-                    {{ selectedPlugin }} 共 {{ result.plugins.length }} 个版本
+                    {{ t('pluginDownload.versionCount', { plugin: selectedPlugin, count: result.plugins.length }) }}
                 </span>
                 <v-spacer />
                 <v-btn variant="text" size="small" prepend-icon="mdi-refresh" :loading="loadingReleases"
                     @click="fetchReleases(selectedPlugin)">
-                    刷新版本
+                    {{ t('pluginDownload.refreshVersions') }}
                 </v-btn>
             </div>
 
@@ -218,8 +221,10 @@ onMounted(() => {
                         </v-chip>
                     </template>
                     <template #subtitle>
-                        发布于 {{ formatDate(plugin.publishedAt) }}
-                        <span class="ml-2 text-grey">· 共 {{ plugin.assets?.length ?? 0 }} 个资源</span>
+                        {{ t('pluginDownload.publishedAt', { date: formatDate(plugin.publishedAt) }) }}
+                        <span class="ml-2 text-grey">{{ t('pluginDownload.assetCount', {
+                            count: plugin.assets?.length ??
+                            0 }) }}</span>
                     </template>
                 </v-card-item>
 
@@ -231,7 +236,7 @@ onMounted(() => {
                     </div>
 
                     <!-- Download buttons per platform -->
-                    <div class="text-body-2 font-weight-bold mb-2">下载:</div>
+                    <div class="text-body-2 font-weight-bold mb-2">{{ t('pluginDownload.download') }}</div>
                     <div class="d-flex flex-wrap ga-2">
                         <v-btn v-for="asset in plugin.assets" :key="asset.name" :href="mirrorUrl(asset.downloadUrl)"
                             target="_blank" variant="tonal" size="small"

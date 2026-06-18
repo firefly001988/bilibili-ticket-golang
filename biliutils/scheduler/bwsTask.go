@@ -288,8 +288,8 @@ func (t *BWSTask) bwsReservationFunc() {
 	loopDelayMs := t.config.LoopDelayMs
 	t.mutex.RUnlock()
 
-	t.sendLog(LogInfo, fmt.Sprintf("BWS任务开始 — 活动:%s (ID:%d) 日期:%s 票号:%s",
-		activityTitle, activityID, reserveDate, ticketNo))
+	t.sendLog(LogInfo, i18n.T("bws.task_started", map[string]interface{}{
+		"Activity": activityTitle, "ActivityID": activityID, "Date": reserveDate, "TicketNo": ticketNo}))
 
 	// Step 1: wait until the reservation time (with NTP calibration)
 	t.waitForReserveTime(startDelayMs, activityTitle)
@@ -452,7 +452,7 @@ func (t *BWSTask) startReservationLoop(loopDelayMs int, activityID int, ticketNo
 				return
 
 			default:
-				t.sendLog(LogWarn, fmt.Sprintf("[%d] 未知响应: %s", code, msg))
+				t.sendLog(LogWarn, i18n.T("bws.unknown_response", map[string]interface{}{"Code": code, "Msg": msg}))
 			}
 		}
 
