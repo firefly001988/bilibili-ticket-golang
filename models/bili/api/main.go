@@ -106,6 +106,46 @@ type TicketProjectInformationStruct struct {
 	} `json:"screen_list"`
 }
 
+// TicketProjectInformationNewStruct is the response data from mall.bilibili.com/mall-search-items/items_detail/info.
+// Unlike the getV2 API, this endpoint uses a floor-based layout and different field names.
+type TicketProjectInformationNewStruct struct {
+	ProjectId     int    `json:"projectId"`
+	ProjectName   string `json:"projectName"`
+	EndTime       int64  `json:"endTime"`
+	CurrentTime   int64  `json:"currentTime"`
+	HotProject    bool   `json:"hotProject"`
+	IdBind        int    `json:"idBind"`
+	ContactNotice int    `json:"contactNotice"`
+	BuyerInfo     string `json:"buyerInfo"` // "idBind,needContact" e.g. "2,1"
+	ScreenList    []struct {
+		SaleFlag struct {
+			Number      int    `json:"number"`
+			DisplayName string `json:"display_name"`
+		} `json:"saleFlag"`
+		ScreenId     int64  `json:"id"`
+		StartTime    int64  `json:"start_time"`
+		Name         string `json:"name"`
+		Type         int    `json:"type"`
+		TicketType   int    `json:"ticket_type"`
+		ScreenType   int    `json:"screen_type"`
+		DeliveryType int    `json:"delivery_type"`
+		PickSeat     int    `json:"pick_seat"`
+		TicketList   []struct {
+			Price     int    `json:"price"`
+			Desc      string `json:"desc"`
+			SaleStart int64  `json:"saleStart"`
+			SaleEnd   int64  `json:"saleEnd"`
+			IsSale    int    `json:"is_sale"`
+			SkuId     int64  `json:"id"`
+			SaleFlag  struct {
+				Number      int    `json:"number"`
+				DisplayName string `json:"display_name"`
+			} `json:"sale_flag"`
+			ScreenName string `json:"screen_name"`
+		} `json:"ticket_list"`
+	} `json:"screenList"`
+}
+
 type VoucherStruct struct {
 	Voucher string `json:"v_voucher"`
 }

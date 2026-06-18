@@ -14,6 +14,85 @@ import (
 	"time"
 )
 
+func (c *BiliClient) GetProjectInformationNew(projectID string) (*r.ProjectInformation, error) {
+	resp, err := c.client.R().SetBodyJsonMarshal(map[string]any{
+		"itemsId":             utils.ParseInt64OrDefault(projectID, 0),
+		"itemsDetailPageType": 3,
+	}).Post("https://mall.bilibili.com/mall-search-items/items_detail/info")
+	if err != nil {
+		return nil, err
+	}
+
+	var apiResp api.MainApiDataRoot[api.TicketProjectInformationNewStruct]
+	err = resp.Unmarshal(&apiResp)
+	if err != nil {
+		return nil, err
+	}
+	if err = apiResp.CheckValid(); err != nil {
+		return nil, err
+	}
+
+	// This API has no top-level start_time; derive it from the earliest screen.
+	var startTime int64
+	for _, screen := range apiResp.Data.ScreenList {
+		if startTime == 0 || screen.StartTime < startTime {
+			startTime = screen.StartTime
+		}
+	}
+
+	return &r.ProjectInformation{
+		ProjectID:       projectID,
+		StartTime:       time.Unix(startTime, 0),
+		EndTime:         time.Unix(apiResp.Data.EndTime, 0),
+		IsHotProject:    apiResp.Data.HotProject,
+		IsNeedContact:   apiResp.Data.IdBind == 0,
+		IsForceRealName: apiResp.Data.IdBind != 0,
+		ProjectName:     apiResp.Data.ProjectName,
+	}, nil
+}
+
+// GetTicketSkuIDsByProjectIDNew returns all ticket SKU/screen pairs for a project
+// using the mall-search-items/items_detail/info API (floor-based layout).
+func (c *BiliClient) GetTicketSkuIDsByProjectIDNew(projectID string) ([]r.TicketSkuScreenID, error) {
+	resp, err := c.client.R().SetBodyJsonMarshal(map[string]any{
+		"itemsId":             utils.ParseInt64OrDefault(projectID, 0),
+		"itemsDetailPageType": 3,
+	}).Post("https://mall.bilibili.com/mall-search-items/items_detail/info")
+	if err != nil {
+		return nil, err
+	}
+	var apiResp api.MainApiDataRoot[api.TicketProjectInformationNewStruct]
+	err = resp.Unmarshal(&apiResp)
+	if err != nil {
+		return nil, err
+	}
+	if err = apiResp.CheckValid(); err != nil {
+		return nil, err
+	}
+	tickets := make([]r.TicketSkuScreenID, 0)
+	for _, screen := range apiResp.Data.ScreenList {
+		for _, skuInfo := range screen.TicketList {
+			ticket := r.TicketSkuScreenID{
+				ScreenID: screen.ScreenId,
+				SkuID:    skuInfo.SkuId,
+				Name:     skuInfo.ScreenName,
+				Desc:     skuInfo.Desc,
+				Price:    skuInfo.Price,
+				Flags: r.SaleFlagInfo{
+					Number:      skuInfo.SaleFlag.Number,
+					DisplayName: skuInfo.SaleFlag.DisplayName,
+				},
+				SaleStat: r.SaleTimeRange{
+					Start: time.Unix(skuInfo.SaleStart, 0),
+					End:   time.Unix(skuInfo.SaleEnd, 0),
+				},
+			}
+			tickets = append(tickets, ticket)
+		}
+	}
+	return tickets, nil
+}
+
 // GetProjectInformation fetches project info from the ticket mall.
 // Returns project name, sale time range, hot/real-name flags, etc.
 func (c *BiliClient) GetProjectInformation(projectID string) (*r.ProjectInformation, error) {

@@ -337,7 +337,7 @@ func (tt *TicketTask) ticketFunc() {
 		"Project": tt.ticket.ProjectName, "Screen": tt.ticket.ScreenName, "Sku": tt.ticket.SkuName, "Buyer": tt.ticket.Buyer.String()}))
 
 	// 1. Get project info
-	projectInfo, err := tt.client.GetProjectInformation(pidString)
+	projectInfo, err := tt.client.GetProjectInformationNew(pidString)
 	if err != nil {
 		tt.sendLog(LogError, i18n.T("task.error.fetch_project", map[string]interface{}{"Error": err.Error()}))
 		tt.setError(err)
@@ -358,7 +358,7 @@ func (tt *TicketTask) ticketFunc() {
 	}
 
 	// 3. Get all ticket SKU/screen combos and match target
-	allTickets, err := tt.client.GetTicketSkuIDsByProjectID(pidString)
+	allTickets, err := tt.client.GetTicketSkuIDsByProjectIDNew(pidString)
 	if err != nil {
 		tt.sendLog(LogError, i18n.T("task.error.fetch_sku_list", map[string]interface{}{"Error": err.Error()}))
 		tt.setError(err)

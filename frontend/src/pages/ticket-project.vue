@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { GetProjectInformation, GetTicketSkuIDsByProjectID } from '../../wailsjs/go/biliutils/BiliClient';
+import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../wailsjs/go/biliutils/BiliClient';
 import { AddTicket, AddTicketTask, FetchRealNameBuyers } from '../../wailsjs/go/scheduler/SchedulerService';
 import type { _return } from '../../wailsjs/go/models';
 import { useMessagesStore } from '@/stores/snackbar';
@@ -79,8 +79,8 @@ async function lookupProject() {
     filterStatus.value = 'all';
     try {
         const [info, tks] = await Promise.all([
-            GetProjectInformation(projectId.value.trim()),
-            GetTicketSkuIDsByProjectID(projectId.value.trim()),
+            GetProjectInformationNew(projectId.value.trim()),
+            GetTicketSkuIDsByProjectIDNew(projectId.value.trim()),
         ]);
 
         debugGroup(`[DEBUG] Project Lookup: ${projectId.value}`, () => {
@@ -262,7 +262,7 @@ function formatPrice(price: number): string {
                 </template>
                 <template #subtitle>
                     {{ t('ticketProject.sku') }}: {{ t_item.skuId }} | {{ t('ticketProject.screen') }}: {{
-                    t_item.screenId }} | {{ t('ticketProject.price') }}: ¥{{ formatPrice(t_item.price) }}
+                        t_item.screenId }} | {{ t('ticketProject.price') }}: ¥{{ formatPrice(t_item.price) }}
                 </template>
                 <template #append>
                     <v-btn icon="mdi-plus-circle-outline" size="x-small" variant="text" color="primary"
