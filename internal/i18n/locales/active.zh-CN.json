@@ -30,7 +30,10 @@
         "other": "项目信息: {{.Name}} (热门={{.Hot}}, 实名={{.RealName}})"
     },
     "task.rate_limited": {
-        "other": "请求被限流 (429)，等待 5 分钟后重试"
+        "other": "请求被限流，等待 5 分钟后重试"
+    },
+    "task.flow_control": {
+        "other": "请求被流控"
     },
     "task.using_ctoken": {
         "other": "使用 CToken 生成器 (热门项目)"

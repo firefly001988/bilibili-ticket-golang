@@ -3,6 +3,7 @@ package biliutils
 import (
 	"bilibili-ticket-golang/biliutils/token"
 	"bilibili-ticket-golang/global"
+	"bilibili-ticket-golang/internal/i18n"
 	"bilibili-ticket-golang/models/bili/api"
 	r "bilibili-ticket-golang/models/bili/response"
 	"bilibili-ticket-golang/models/errors"
@@ -308,8 +309,16 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 			PayMoney:        -1,
 		},
 	}
-	if resp.GetStatusCode() != 200 {
-		return nil, resp.GetStatusCode(), "Http Error", api.TicketOrderStruct{}
+	statusCode := resp.GetStatusCode()
+	if statusCode != 200 {
+		var msg = fmt.Sprintf("HTTP error: %d", statusCode)
+		switch statusCode {
+		case 412:
+			msg = i18n.T("task.rate_limit", nil)
+		case 429:
+			msg = i18n.T("task.flow_control", nil)
+		}
+		return nil, statusCode, msg, api.TicketOrderStruct{}
 	}
 	err = resp.Unmarshal(&apiResp)
 	if err != nil {

@@ -522,7 +522,7 @@ func (tt *TicketTask) ticketFunc() {
 					tt.sendLog(LogInfo, i18n.T("task.out_of_stock", nil))
 				case 211:
 					tt.sendLog(LogInfo, i18n.T("task.elbow_failed", nil))
-				case 429:
+				case 412:
 					tt.sendLog(LogWarn, i18n.T("task.rate_limited", nil))
 					submitCount = global.MaxTokenRefreshCount // trigger token refresh on next loop
 					select {
@@ -530,7 +530,6 @@ func (tt *TicketTask) ticketFunc() {
 						return
 					case <-time.After(5 * time.Minute):
 					}
-
 				}
 				tt.sendLog(LogDebug, i18n.T("task.debug_submit", map[string]interface{}{"Count": submitCount + 1, "Msg": msg, "Code": code}))
 			}

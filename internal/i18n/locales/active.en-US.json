@@ -30,7 +30,10 @@
         "other": "Project info: {{.Name}} (Hot={{.Hot}}, RealName={{.RealName}})"
     },
     "task.rate_limited": {
-        "other": "Rate limited (429), waiting 5 minutes before retry"
+        "other": "Rate limited, waiting 5 minutes before retry"
+    },
+    "task.flow_control": {
+        "other": "Flow control."
     },
     "task.using_ctoken": {
         "other": "Using CToken generator (hot project)"
