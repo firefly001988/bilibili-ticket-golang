@@ -134,3 +134,31 @@ type BuyerNoSensitiveStruct struct {
 	VerifyStatus int    `json:"verifyStatus"`
 	Status       int    `json:"status"`
 }
+
+// BuyerNoSensitiveInfoNewApiStruct is the response data from the new
+// buyerinfo/list API, which returns the list directly (not wrapped in vo)
+// along with max_limit and isDynamic fields.
+type BuyerNoSensitiveInfoNewApiStruct struct {
+	MaxLimit  int                         `json:"max_limit"`
+	IsDynamic int                         `json:"isDynamic"`
+	List      []BuyerNoSensitiveNewStruct `json:"list"`
+}
+
+// BuyerNoSensitiveNewStruct extends BuyerNoSensitiveStruct with additional
+// fields returned by the new buyerinfo/list API (def, cardImgFront,
+// cardImgBack, defaultImgUrl, editImgUrl).
+type BuyerNoSensitiveNewStruct struct {
+	Id            int64  `json:"id"`
+	Uid           int64  `json:"uid"`
+	Name          string `json:"name"`
+	PersonalId    string `json:"personal_id"`
+	IdType        int    `json:"idType"`
+	Tel           string `json:"tel"`
+	ViewType      string `json:"viewType"`
+	DefaultImgUrl string `json:"defaultImgUrl"`
+	VerifyStatus  int    `json:"verifyStatus"`
+}
+
+type OrderStatusStruct struct {
+	OrderId string `json:"order_id"`
+}

@@ -463,10 +463,11 @@ func (tt *TicketTask) ticketFunc() {
 			orderTokens, err = tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku)
 			if err != nil {
 				tt.sendLog(LogWarn, i18n.T("task.token_refresh_failed", map[string]interface{}{"Error": err.Error()}))
+				goto LoopInterval
 			} else {
 				tt.sendLog(LogDebug, i18n.T("task.token_refreshed", nil))
+				submitCount = 0
 			}
-			submitCount = 0
 		} else {
 			var (
 				err         error
@@ -477,19 +478,23 @@ func (tt *TicketTask) ticketFunc() {
 
 			err, code, msg, orderResult = tt.client.SubmitOrder(tokenGen, whenGenPtoken, orderTokens, pidString, *targetSku, buyerData, tt.ticket.Buyer.BuyerType, confirmInfo)
 			if err != nil {
-				tt.sendLog(LogWarn, i18n.T("task.submit_failed", map[string]interface{}{"Error": err.Error()}))
+				tt.sendLog(LogWarn, i18n.T("task.submit_failed", map[string]interface{}{}))
 			} else {
 				// Success: OrderId is non-zero and code is 0, 100048, or 100079
-				if (code == 0 || code == 100048 || code == 100079) && orderResult.OrderId != 0 {
-					successMsg := i18n.T("task.success", map[string]interface{}{"OrderID": orderResult.OrderId})
-					if tt.notifyFn != nil {
-						tt.notifyFn(i18n.T("task.notify_success", map[string]interface{}{
-							"Project": tt.ticket.ProjectName, "Screen": tt.ticket.ScreenName, "Sku": tt.ticket.SkuName,
-							"Buyer": tt.ticket.Buyer.String(), "User": tt.username, "UID": tt.userid}))
+				if code == 0 || code == 100048 || code == 100079 {
+					if err, f := tt.client.GetOrderStatus(pidString, orderResult.Token, orderResult.OrderId); err != nil || !f {
+						tt.sendLog(LogWarn, i18n.T("task.order_status_check_failed", map[string]interface{}{"Error": err.Error()}))
+					} else {
+						successMsg := i18n.T("task.success", map[string]interface{}{"OrderID": orderResult.OrderId})
+						if tt.notifyFn != nil {
+							tt.notifyFn(i18n.T("task.notify_success", map[string]interface{}{
+								"Project": tt.ticket.ProjectName, "Screen": tt.ticket.ScreenName, "Sku": tt.ticket.SkuName,
+								"Buyer": tt.ticket.Buyer.String(), "User": tt.username, "UID": tt.userid}))
+						}
+						tt.sendLog(LogSuccess, successMsg)
+						tt.setStat(StatSuccess)
+						return
 					}
-					tt.sendLog(LogSuccess, successMsg)
-					tt.setStat(StatSuccess)
-					return
 				}
 
 				// Handle specific error codes
@@ -517,14 +522,22 @@ func (tt *TicketTask) ticketFunc() {
 					tt.sendLog(LogInfo, i18n.T("task.out_of_stock", nil))
 				case 211:
 					tt.sendLog(LogInfo, i18n.T("task.elbow_failed", nil))
+				case 429:
+					tt.sendLog(LogWarn, i18n.T("task.rate_limited", nil))
+					submitCount = global.MaxTokenRefreshCount // trigger token refresh on next loop
+					select {
+					case <-tt.ctx.Done():
+						return
+					case <-time.After(5 * time.Minute):
+					}
+
 				}
-
 				tt.sendLog(LogDebug, i18n.T("task.debug_submit", map[string]interface{}{"Count": submitCount + 1, "Msg": msg, "Code": code}))
-
 			}
 		}
 
 		submitCount++
+	LoopInterval:
 		// Cancellable sleep — respects context cancellation from Stop()
 		select {
 		case <-tt.ctx.Done():

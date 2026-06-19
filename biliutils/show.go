@@ -235,6 +235,7 @@ func (c *BiliClient) GetConfirmInformation(tokens *r.RequestTokenAndPToken, proj
 // Returns: error, API response code, API message, and the order result struct.
 func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Time, tokens *r.RequestTokenAndPToken, projectID string, ticket r.TicketSkuScreenID, buyer interface{}, buyerType r.BuyerType, confirmInfo *api.ConfirmStruct) (error, int, string, api.TicketOrderStruct) {
 	form := map[string]any{
+		"again":          1,
 		"project_id":     utils.ParseInt64OrDefault(projectID, 0),
 		"screen_id":      ticket.ScreenID,
 		"count":          1,
@@ -307,12 +308,38 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 			PayMoney:        -1,
 		},
 	}
+	if resp.GetStatusCode() != 200 {
+		return nil, resp.GetStatusCode(), "Http Error", api.TicketOrderStruct{}
+	}
 	err = resp.Unmarshal(&apiResp)
 	if err != nil {
 		return err, -1, "", api.TicketOrderStruct{}
 	}
 
 	return nil, apiResp.GetCode(), apiResp.GetMessage(), apiResp.Data
+}
+
+func (c *BiliClient) GetOrderStatus(projectID, token string, orderID int64) (error, bool) {
+	if orderID <= 0 {
+		return nil, false
+	}
+	resp, err := c.client.R().SetQueryParams(map[string]string{
+		"token":      token,
+		"project_id": projectID,
+		"orderId":    strconv.FormatInt(orderID, 10),
+	}).Get("https://show.bilibili.com/api/ticket/order/createstatus")
+	if err != nil {
+		return err, false
+	}
+	var apiResp api.ShowApiDataRoot[api.OrderStatusStruct]
+	err = resp.Unmarshal(&apiResp)
+	if err != nil {
+		return err, false
+	}
+	if err = apiResp.CheckValid(); err != nil {
+		return err, false
+	}
+	return nil, orderID == utils.ParseInt64OrDefault(apiResp.Data.OrderId, 0)
 }
 
 // GetRealnameBuyerList fetches the list of buyers for a real-name project, which includes sensitive info like ID numbers.
@@ -342,4 +369,56 @@ func (c *BiliClient) GetRealnameBuyerList() (error, []api.BuyerNoSensitiveStruct
 		return err, nil
 	}
 	return nil, data.Data.Vo.List
+}
+
+// GetRealnameBuyerListNew fetches the list of buyers for a real-name project
+// using the new buyerinfo/list API format, which returns the list directly
+// (not wrapped in vo) along with max_limit and isDynamic fields, and includes
+// additional buyer fields (def, cardImgFront, cardImgBack, etc.).
+//
+// The new API response is mapped back to the original BuyerNoSensitiveStruct
+// so callers can use the same struct as before.
+//
+// Parameters: none
+//
+// Returns: error and list of buyers with non-sensitive info
+func (c *BiliClient) GetRealnameBuyerListNew() (error, []api.BuyerNoSensitiveStruct) {
+	res, err := c.client.R().Get("https://show.bilibili.com/api/ticket/buyer/list")
+	if err != nil {
+		return err, nil
+	}
+	var data api.ShowApiDataRoot[api.BuyerNoSensitiveInfoNewApiStruct]
+	err = res.Unmarshal(&data)
+	if err != nil {
+		return err, nil
+	}
+	if err = data.CheckValid(); err != nil {
+		return err, nil
+	}
+	// Map new API response back to the original BuyerNoSensitiveStruct
+	list := make([]api.BuyerNoSensitiveStruct, 0, len(data.Data.List))
+	for _, b := range data.Data.List {
+		var IdName string
+		switch b.IdType {
+		case 0:
+			IdName = "身份证"
+		case 1:
+			IdName = "护照"
+		default:
+			IdName = "未知证件类型"
+		}
+		list = append(list, api.BuyerNoSensitiveStruct{
+			Id:           b.Id,
+			Uid:          b.Uid,
+			Name:         b.Name,
+			IdType:       b.IdType,
+			IdName:       IdName,
+			IdCard:       b.PersonalId,
+			Tel:          b.Tel,
+			ViewType:     b.ViewType,
+			VerifyStatus: b.VerifyStatus,
+			Status:       b.VerifyStatus,
+		})
+	}
+	return nil, list
 }

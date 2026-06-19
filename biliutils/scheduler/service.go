@@ -325,7 +325,7 @@ func (svc *SchedulerService) ReloadTickets() {
 // Returns a list of verified buyers the user can choose from.
 // Works for both hot and normal projects.
 func (svc *SchedulerService) FetchRealNameBuyers() ([]FrontendBuyer, error) {
-	err, buyers := svc.client.GetRealnameBuyerList()
+	err, buyers := svc.client.GetRealnameBuyerListNew()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", i18n.T("task.error.fetch_buyer", nil), err)
 	}
