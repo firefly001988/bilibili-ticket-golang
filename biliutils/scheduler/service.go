@@ -343,9 +343,21 @@ func (svc *SchedulerService) RemoveTicket(hash string) {
 // ReloadTickets starts tasks for all valid tickets that are not yet scheduled.
 // Call this on startup to recover persisted tickets.
 // Completed tasks (StatSuccess/StatFailed/StatError) are not re-scheduled.
+//
+// For chainable tickets (real-name, same project), only the first waiting
+// ticket (smallest SortOrder) in each chain group is started. The rest are
+// triggered automatically by chain switching when the previous one terminates.
+// Non-chainable tickets (ordinary) are all started independently.
 func (svc *SchedulerService) ReloadTickets() {
 	tickets := svc.tickets.GetTicketsNoMutate()
 	existingMap := svc.scheduler.GetTaskStatus()
+
+	// Collect chainable candidates per chain group key.
+	type chainCandidate struct {
+		hash  string
+		order int
+	}
+	chainGroups := make(map[string][]chainCandidate)
 
 	for i := range tickets {
 		hash := tickets[i].Hash()
@@ -359,7 +371,29 @@ func (svc *SchedulerService) ReloadTickets() {
 		if tickets[i].Stat == int(StatSuccess) || tickets[i].Stat == int(StatFailed) || tickets[i].Stat == int(StatError) {
 			continue
 		}
-		_ = svc.AddTicketTask(hash)
+
+		key := tickets[i].ChainGroupKey()
+		if key == "" {
+			// Non-chainable: start immediately.
+			_ = svc.AddTicketTask(hash)
+		} else {
+			chainGroups[key] = append(chainGroups[key], chainCandidate{
+				hash:  hash,
+				order: tickets[i].SortOrder,
+			})
+		}
+	}
+
+	// For each chain group, start only the first (smallest SortOrder) ticket.
+	// The rest will be started by chain switching when this one terminates.
+	for _, candidates := range chainGroups {
+		best := candidates[0]
+		for _, c := range candidates[1:] {
+			if c.order < best.order {
+				best = c
+			}
+		}
+		_ = svc.AddTicketTask(best.hash)
 	}
 }
 
