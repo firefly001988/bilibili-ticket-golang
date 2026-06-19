@@ -1,4 +1,7 @@
 {
+    "chain.next_failed": {
+        "other": "Chain switch failed, could not auto-start the next ticket: {{.Error}}"
+    },
     "stat.waiting": {
         "other": "Waiting"
     },

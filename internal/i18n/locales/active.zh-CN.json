@@ -1,4 +1,7 @@
 {
+    "chain.next_failed": {
+        "other": "链式切换失败，无法自动启动下一个商品: {{.Error}}"
+    },
     "stat.waiting": {
         "other": "等待中"
     },

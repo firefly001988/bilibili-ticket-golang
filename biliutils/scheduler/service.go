@@ -169,11 +169,12 @@ func (svc *SchedulerService) AddTicketTask(hash string) error {
 		}
 	}
 
-	task, err := NewTicketTask(svc.client, *ticket, notifyFn, interval, logCh, func(stat RunningStat) {
+	task, err := NewTicketTask(svc.client, *ticket, notifyFn, interval, logCh, func(stat RunningStat, userStopped bool) {
 		svc.tickets.UpdateTicketStat(hash, int(stat))
 
-		// Chain switching: auto-start the next ticket in the same buyer group
+		// Chain switching: auto-start the next ticket in the same chain group
 		// when the termination state matches the configured ChainTrigger.
+		// This applies to both natural termination and user-initiated stops.
 		trigger := svc.store.ChainTrigger
 		shouldSwitch := false
 		switch trigger {
@@ -195,12 +196,19 @@ func (svc *SchedulerService) AddTicketTask(hash string) error {
 		if svc.scheduler.HasTask(nextHash) {
 			return
 		}
-		svc.logBroker.CreateStream(nextHash)
-		if err := svc.AddTicketTask(nextHash); err != nil {
-			fmt.Printf("[chain] failed to start next ticket %s after %s: %v\n", nextHash, hash, err)
-		} else {
-			fmt.Printf("[chain] started next ticket %s after %s (trigger=%s, stat=%d)\n", nextHash, hash, trigger, stat)
-		}
+		// Run asynchronously to avoid blocking the task's termination goroutine
+		// (AddTicketTask does a network call via NewTicketTask).
+		go func() {
+			if err := svc.AddTicketTask(nextHash); err != nil {
+				fmt.Printf("[chain] failed to start next ticket %s after %s: %v\n", nextHash, hash, err)
+				// Notify the user that the chain was broken.
+				if svc.notifier != nil && svc.notifier.Count() > 0 {
+					svc.notifier.Notify(i18n.T("chain.next_failed", map[string]interface{}{"Error": err.Error()}))
+				}
+			} else {
+				fmt.Printf("[chain] started next ticket %s after %s (trigger=%s, stat=%d)\n", nextHash, hash, trigger, stat)
+			}
+		}()
 	})
 	if err != nil {
 		return fmt.Errorf("create task: %w", err)
@@ -788,7 +796,7 @@ func (svc *SchedulerService) AddBWSTask(hash string) error {
 		}
 	}
 
-	task, err := NewBWSTask(svc.client, *entry, notifyFn, logCh, func(stat RunningStat) {
+	task, err := NewBWSTask(svc.client, *entry, notifyFn, logCh, func(stat RunningStat, userStopped bool) {
 		svc.bwsData.UpdateEntryStat(hash, int(stat))
 	})
 	if err != nil {

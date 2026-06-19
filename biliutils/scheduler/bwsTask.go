@@ -32,11 +32,12 @@ type BWSTask struct {
 	stat        RunningStat
 	ctx         context.Context
 	cancelFunc  context.CancelFunc
-	onComplete  func(stat RunningStat)
+	onComplete  func(stat RunningStat, userStopped bool)
+	userStopped bool
 }
 
 // NewBWSTask creates a new BWSTask.
-func NewBWSTask(client *biliutils.BiliClient, config configuration.BWSEntry, notifyFn func(string), logCh chan<- LogEntry, onComplete func(RunningStat)) (*BWSTask, error) {
+func NewBWSTask(client *biliutils.BiliClient, config configuration.BWSEntry, notifyFn func(string), logCh chan<- LogEntry, onComplete func(RunningStat, bool)) (*BWSTask, error) {
 	if !config.Valid() {
 		return nil, fmt.Errorf("bws config is invalid: %+v", config)
 	}
@@ -100,6 +101,7 @@ func (t *BWSTask) Stop() {
 		t.mutex.Unlock()
 		return
 	}
+	t.userStopped = true
 	select {
 	case <-t.stopChan:
 		// already closed
@@ -187,7 +189,7 @@ func (t *BWSTask) setStat(stat RunningStat) {
 	}
 	t.statLock.Unlock()
 	if !wasTerminal && stat > StatPending && t.onComplete != nil {
-		t.onComplete(stat)
+		t.onComplete(stat, t.userStopped)
 	}
 }
 
@@ -199,7 +201,7 @@ func (t *BWSTask) setError(err error) {
 	t.statLock.Unlock()
 	t.cancelFunc()
 	if !wasTerminal && t.onComplete != nil {
-		t.onComplete(StatError)
+		t.onComplete(StatError, t.userStopped)
 	}
 }
 

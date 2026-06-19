@@ -39,12 +39,15 @@ type TicketTask struct {
 	startDelay  time.Duration
 	ctx         context.Context
 	cancelFunc  context.CancelFunc
-	onComplete  func(stat RunningStat) // called when task terminates (persist hook)
+	onComplete  func(stat RunningStat, userStopped bool) // called when task terminates (persist hook)
+	userStopped bool                                     // true when Stop() was called by the user
 }
 
 // NewTicketTask creates a new TicketTask.
-// onComplete is called with the final RunningStat when the task terminates (may be nil).
-func NewTicketTask(client *biliutils.BiliClient, ticket configuration.TicketEntry, notifyFn func(string), interval time.Duration, logCh chan<- LogEntry, onComplete func(RunningStat)) (*TicketTask, error) {
+// onComplete is called with the final RunningStat and a userStopped flag when
+// the task terminates (may be nil). userStopped is true when the task was
+// cancelled via Stop() rather than terminating naturally.
+func NewTicketTask(client *biliutils.BiliClient, ticket configuration.TicketEntry, notifyFn func(string), interval time.Duration, logCh chan<- LogEntry, onComplete func(RunningStat, bool)) (*TicketTask, error) {
 	if !ticket.Valid() {
 		return nil, definedErrors.NewRoutineCreateError("ticket data is invalid")
 	}
@@ -118,7 +121,8 @@ func (tt *TicketTask) ForceStart() {
 	go tt.executeAndStop()
 }
 
-// Stop stops the task.
+// Stop stops the task. It marks the task as user-stopped so that the
+// onComplete callback knows not to trigger chain switching.
 func (tt *TicketTask) Stop() {
 	tt.mutex.Lock()
 
@@ -127,6 +131,8 @@ func (tt *TicketTask) Stop() {
 		tt.mutex.Unlock()
 		return
 	}
+
+	tt.userStopped = true
 
 	select {
 	case <-tt.stopChan:
@@ -160,7 +166,7 @@ func (tt *TicketTask) setStat(stat RunningStat) {
 	}
 	tt.statLock.Unlock()
 	if !wasTerminal && stat > StatPending && tt.onComplete != nil {
-		tt.onComplete(stat)
+		tt.onComplete(stat, tt.userStopped)
 	}
 }
 
@@ -194,7 +200,7 @@ func (tt *TicketTask) setError(err error) {
 	tt.statLock.Unlock()
 	tt.cancelFunc()
 	if !wasTerminal && tt.onComplete != nil {
-		tt.onComplete(StatError)
+		tt.onComplete(StatError, tt.userStopped)
 	}
 }
 
