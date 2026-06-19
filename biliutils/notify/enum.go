@@ -10,6 +10,7 @@ const (
 	Gotify
 	PushPlus
 	Bark
+	Ntfy
 )
 
 // ConvertNotificationType converts a string name to a NotificationType.
@@ -21,6 +22,8 @@ func ConvertNotificationType(name string) NotificationType {
 		return PushPlus
 	case "bark", "Bark":
 		return Bark
+	case "ntfy":
+		return Ntfy
 	default:
 		return None
 	}
@@ -101,6 +104,34 @@ func GetNotifyChannelTypes() []NotifyChannelTypeMeta {
 					Type:        "password",
 					Placeholder: i18n.T("notify.field.token_placeholder_bark", nil),
 					Required:    true,
+				},
+			},
+		},
+		{
+			Type:  "ntfy",
+			Label: "ntfy",
+			Fields: []NotifyChannelFieldMeta{
+				{
+					Key:         "endpoint",
+					Label:       i18n.T("notify.field.endpoint", nil),
+					Type:        "url",
+					Placeholder: "https://ntfy.sh",
+					Required:    true,
+					Default:     "https://ntfy.sh",
+				},
+				{
+					Key:         "topic",
+					Label:       "Topic",
+					Type:        "text",
+					Placeholder: i18n.T("notify.field.topic_placeholder_ntfy", nil),
+					Required:    true,
+				},
+				{
+					Key:         "token",
+					Label:       "Token (可选)",
+					Type:        "password",
+					Placeholder: i18n.T("notify.field.token_placeholder_ntfy", nil),
+					Required:    false,
 				},
 			},
 		},

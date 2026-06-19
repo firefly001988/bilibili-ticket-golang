@@ -25,6 +25,8 @@ func (nc *NotifyChannel) ToNotifier() (notify.Notifier, error) {
 		return notify.NewPushplus(params), nil
 	case notify.Bark:
 		return notify.NewBark(params), nil
+	case notify.Ntfy:
+		return notify.NewNtfy(params), nil
 	default:
 		return nil, fmt.Errorf("unsupported notification type: %s", nc.Type)
 	}

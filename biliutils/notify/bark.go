@@ -25,9 +25,11 @@ func (b *BarkNotifier) Notify(message string) (bool, string) {
 		return false, "Missing token or endpoint"
 	}
 	body := map[string]any{
-		"title": "Bili-Ticket-Go 抢票通知",
-		"body":  message,
-		"level": "critical",
+		"title":  "Bili-Ticket-Go 抢票通知",
+		"body":   message,
+		"level":  "critical",
+		"call":   1,
+		"volume": 10,
 	}
 	jsonBody, _ := json.Marshal(body)
 	req, err := http.NewRequest("POST", b.endpoint+"/"+b.token, bytes.NewBuffer(jsonBody))

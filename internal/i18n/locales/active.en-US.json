@@ -29,6 +29,9 @@
     "task.project_info": {
         "other": "Project info: {{.Name}} (Hot={{.Hot}}, RealName={{.RealName}})"
     },
+    "task.rate_limited": {
+        "other": "Rate limited (429), waiting 5 minutes before retry"
+    },
     "task.using_ctoken": {
         "other": "Using CToken generator (hot project)"
     },
@@ -79,6 +82,9 @@
     },
     "task.too_frequent": {
         "other": "Too many requests — {{.Msg}} ({{.Code}})"
+    },
+    "task.order_status_check_failed": {
+        "other": "Order status check failed: {{.Error}}"
     },
     "task.out_of_stock": {
         "other": "Out of stock"
@@ -202,6 +208,12 @@
     },
     "notify.field.token_placeholder_bark": {
         "other": "Enter Bark Token"
+    },
+    "notify.field.topic_placeholder_ntfy": {
+        "other": "Enter ntfy Topic Name"
+    },
+    "notify.field.token_placeholder_ntfy": {
+        "other": "Enter Access Token (optional)"
     },
     "plugin.geetest_desc": {
         "other": "Geetest CAPTCHA auto-solve plugin"

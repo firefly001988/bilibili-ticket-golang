@@ -29,6 +29,9 @@
     "task.project_info": {
         "other": "项目信息: {{.Name}} (热门={{.Hot}}, 实名={{.RealName}})"
     },
+    "task.rate_limited": {
+        "other": "请求被限流 (429)，等待 5 分钟后重试"
+    },
     "task.using_ctoken": {
         "other": "使用 CToken 生成器 (热门项目)"
     },
@@ -76,6 +79,9 @@
     },
     "task.too_frequent": {
         "other": "请求过于频繁 — {{.Msg}} ({{.Code}})"
+    },
+    "task.order_status_check_failed": {
+        "other": "订单状态检查失败: {{.Error}}"
     },
     "task.out_of_stock": {
         "other": "库存不足"
@@ -163,6 +169,12 @@
     },
     "notify.field.token_placeholder_bark": {
         "other": "输入 Bark Token"
+    },
+    "notify.field.topic_placeholder_ntfy": {
+        "other": "输入 ntfy Topic 名称"
+    },
+    "notify.field.token_placeholder_ntfy": {
+        "other": "输入 Access Token（可选）"
     },
     "plugin.geetest_desc": {
         "other": "极验验证码自动识别插件"
