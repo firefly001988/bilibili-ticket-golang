@@ -421,8 +421,10 @@ onUnmounted(() => {
                                 </span>
                             </div>
                             <!-- Draggable ticket list within chain group (real-name only) -->
+                            <!-- Each group uses a unique group name so items can only be dragged
+                                 within the same buyer+project chain, never across chains. -->
                             <draggable v-if="group.chainable" :list="group.items" item-key="hash" handle=".drag-handle"
-                                :animation="150" group="tickets" @end="onDragEnd(group)">
+                                :animation="150" :group="group.key" @end="onDragEnd(group)">
                                 <template #item="{ element: tk, index }">
                                     <v-list-item :key="tk.hash" :active="selectedHash === tk.hash" lines="two"
                                         @click="selectedHash = tk.hash">
@@ -501,7 +503,8 @@ onUnmounted(() => {
                                             <template v-if="tk.status && tk.status.stat === StatWaiting">
                                                 · {{ t('scheduler.remaining', {
                                                     time:
-                                                formatRemaining(tk.status.remainingMs) }) }}
+                                                        formatRemaining(tk.status.remainingMs)
+                                                }) }}
                                             </template>
                                         </span>
                                     </template>
