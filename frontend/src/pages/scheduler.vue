@@ -39,6 +39,52 @@ const pollInterval = 2000
 const chainTrigger = ref<'success' | 'any'>('success')
 const chainTriggerLoading = ref(false)
 
+// Track which group is currently being dragged from, so other groups can
+// show a 'not-allowed' cursor during cross-group drag attempts.
+const draggingGroupKey = ref<string | null>(null)
+
+// vuedraggable group config: each chain group has a unique name so items
+// can only be dragged within the same buyer+project chain. pull/put are
+// true to allow same-group reordering; cross-group is blocked by name mismatch.
+function makeDragGroupConfig(key: string) {
+    return {
+        name: key,
+        pull: true,
+        put: true,
+    }
+}
+
+// move callback: return false to forbid the drop. This fires on every
+// drag-over; returning false prevents cross-group sorting entirely.
+function onDragMove(evt: any, group: GroupedTickets) {
+    // Only allow within the same group (vuedraggable already enforces this
+    // via group name, but move gives us a hook to set the cursor state).
+    if (evt.to && evt.from && evt.to !== evt.from) {
+        return false
+    }
+    return true
+}
+
+function onDragStart(group: GroupedTickets) {
+    draggingGroupKey.value = group.key
+}
+
+function onDragEndGlobal() {
+    draggingGroupKey.value = null
+}
+
+async function onDragChange(group: GroupedTickets) {
+    const orderedHashes = group.items.map(i => i.hash)
+    try {
+        await ReorderTickets(orderedHashes)
+        messages.add({ text: t('scheduler.orderSaved'), color: 'success', timeout: 2000 })
+        await refresh()
+    } catch (e: any) {
+        messages.add({ text: t('scheduler.orderSaveFailed', { error: String(e) }), color: 'error', timeout: 4000 })
+        await refresh() // revert to persisted order on failure
+    }
+}
+
 // ── Add ticket form ────────────────────────────────────
 const form = ref({
     projectId: 0,
@@ -162,18 +208,6 @@ const buyerGroups = computed<GroupedTickets[]>(() => {
         a.buyerName.localeCompare(b.buyerName) || a.projectName.localeCompare(b.projectName))
     return groups
 })
-
-async function onDragEnd(group: GroupedTickets) {
-    const orderedHashes = group.items.map(i => i.hash)
-    try {
-        await ReorderTickets(orderedHashes)
-        messages.add({ text: t('scheduler.orderSaved'), color: 'success', timeout: 2000 })
-        await refresh()
-    } catch (e: any) {
-        messages.add({ text: t('scheduler.orderSaveFailed', { error: String(e) }), color: 'error', timeout: 4000 })
-        await refresh() // revert to persisted order on failure
-    }
-}
 
 async function loadChainTrigger() {
     try {
@@ -422,9 +456,14 @@ onUnmounted(() => {
                             </div>
                             <!-- Draggable ticket list within chain group (real-name only) -->
                             <!-- Each group uses a unique group name so items can only be dragged
-                                 within the same buyer+project chain, never across chains. -->
+                                 within the same buyer+project chain, never across chains.
+                                 The :move callback forbids cross-group drops; draggingGroupKey
+                                 tracks the active drag so other groups show a not-allowed cursor. -->
                             <draggable v-if="group.chainable" :list="group.items" item-key="hash" handle=".drag-handle"
-                                :animation="150" :group="group.key" @end="onDragEnd(group)">
+                                :animation="150" :group="makeDragGroupConfig(group.key)"
+                                :move="(evt: any) => onDragMove(evt, group)" :force-fallback="true"
+                                @start="onDragStart(group)" @end="onDragEndGlobal" @change="onDragChange(group)"
+                                :class="{ 'drag-target-forbidden': draggingGroupKey && draggingGroupKey !== group.key }">
                                 <template #item="{ element: tk, index }">
                                     <v-list-item :key="tk.hash" :active="selectedHash === tk.hash" lines="two"
                                         @click="selectedHash = tk.hash">
@@ -432,7 +471,7 @@ onUnmounted(() => {
                                             <v-icon class="drag-handle" icon="mdi-drag-vertical" size="18"
                                                 color="grey-lighten-1" />
                                             <v-chip size="x-small" variant="outlined" class="mr-2">{{ index + 1
-                                            }}</v-chip>
+                                                }}</v-chip>
                                             <v-icon :color="statColor(tk.displayStat)" size="18">
                                                 {{ tk.displayStat === 0 ? 'mdi-clock-outline' :
                                                     tk.displayStat === 1 ? 'mdi-progress-clock' :
@@ -562,7 +601,7 @@ onUnmounted(() => {
                         <div v-if="selectedTicket.start">
                             <span class="text-grey">{{ t('scheduler.saleTime') }}</span>
                             <strong>{{ formatTime(new Date(selectedTicket.start * 1000).toLocaleString('zh-CN'))
-                            }}</strong>
+                                }}</strong>
                         </div>
                         <div v-if="selectedStatus && selectedStatus.error" class="w-100">
                             <span class="text-grey">{{ t('scheduler.errorLabel') }}</span>
@@ -663,5 +702,25 @@ onUnmounted(() => {
 
 .border-b {
     border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+</style>
+
+<!-- Global (non-scoped) styles for drag cursor control.
+     Sortable.js manipulates DOM outside the component tree during drag,
+     so scoped styles can't reach the drag ghost/fallback elements. -->
+<style>
+/* When dragging from another group, force not-allowed cursor on all
+   children of the forbidden target, overriding Sortable.js's inline styles. */
+.drag-target-forbidden,
+.drag-target-forbidden *,
+.drag-target-forbidden .v-list-item,
+.drag-target-forbidden .drag-handle {
+    cursor: not-allowed !important;
+}
+
+/* Also force not-allowed on the Sortable fallback ghost when hovering
+   over a forbidden target (Sortable adds .sortable-drag to the clone). */
+.sortable-drag {
+    cursor: grabbing !important;
 }
 </style>

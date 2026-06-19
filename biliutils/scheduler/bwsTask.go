@@ -115,6 +115,34 @@ func (t *BWSTask) Stop() {
 	t.setStat(StatFailed)
 }
 
+// StopSilent stops the task without triggering onComplete, so the persisted
+// stat is NOT updated. Used by ReorderTickets when swapping the running task.
+func (t *BWSTask) StopSilent() {
+	t.mutex.Lock()
+	stat := t.GetStat()
+	if stat != StatWaiting && stat != StatPending {
+		t.mutex.Unlock()
+		return
+	}
+	select {
+	case <-t.stopChan:
+		// already closed
+	default:
+		close(t.stopChan)
+	}
+	if t.timer != nil {
+		t.timer.Stop()
+	}
+	t.mutex.Unlock()
+
+	// Cancel context and set stat to Failed in-memory only, but skip onComplete
+	// so the persisted Stat stays as-is (Waiting).
+	t.statLock.Lock()
+	t.stat = StatFailed
+	t.cancelFunc()
+	t.statLock.Unlock()
+}
+
 func (t *BWSTask) GetStat() RunningStat {
 	t.statLock.Lock()
 	defer t.statLock.Unlock()

@@ -296,9 +296,12 @@ func (td *TicketData) ReorderInGroup(orderedHashes []string) error {
 //   - Chaining applies only to real-name buyers within the same project
 //     (ChainGroupKey). Ordinary tickets are never chained.
 //   - The next ticket must share the same ChainGroupKey as the current ticket.
-//   - The next ticket must have SortOrder strictly greater than the current
-//     ticket's SortOrder.
-//   - The next ticket must be Valid() and still waiting (Stat == 0).
+//   - Tickets with Stat == StatSuccess or Stat == StatError are skipped
+//     (already done or unrecoverable). Failed tickets are retried.
+//   - The next ticket must be Valid() (not expired).
+//   - Search starts from SortOrder > current, wrapping around to the
+//     beginning if needed (circular). The search terminates after one full
+//     cycle through the group without finding an eligible ticket.
 //   - Among candidates, the one with the smallest SortOrder wins.
 //
 // Returns ("", false) when there is no eligible successor.
@@ -322,29 +325,54 @@ func (td *TicketData) GetNextInChain(hash string) (string, bool) {
 		// Ordinary (non-real-name) tickets are never chained.
 		return "", false
 	}
-	curOrder := current.SortOrder
 
-	var best *TicketEntry
+	// Collect all same-group tickets sorted by SortOrder ascending.
+	var groupTickets []*TicketEntry
 	for i := range td.Tickets {
-		t := &td.Tickets[i]
-		if t.ChainGroupKey() != groupKey {
-			continue
-		}
-		if t.SortOrder <= curOrder {
-			continue
-		}
-		if t.Stat != 0 { // only waiting tickets
-			continue
-		}
-		if !t.Valid() {
-			continue
-		}
-		if best == nil || t.SortOrder < best.SortOrder {
-			best = t
+		if td.Tickets[i].ChainGroupKey() == groupKey {
+			groupTickets = append(groupTickets, &td.Tickets[i])
 		}
 	}
-	if best == nil {
+	if len(groupTickets) == 0 {
 		return "", false
 	}
-	return best.Hash(), true
+	// Sort by SortOrder (simple insertion sort — groups are small).
+	for i := 1; i < len(groupTickets); i++ {
+		for j := i; j > 0 && groupTickets[j].SortOrder < groupTickets[j-1].SortOrder; j-- {
+			groupTickets[j], groupTickets[j-1] = groupTickets[j-1], groupTickets[j]
+		}
+	}
+
+	// Find the index of the current ticket in the sorted slice.
+	curIdx := -1
+	for i, t := range groupTickets {
+		if t.Hash() == hash {
+			curIdx = i
+			break
+		}
+	}
+	if curIdx == -1 {
+		return "", false
+	}
+
+	// isEligible checks whether a ticket can be (re)started: not successful,
+	// not error, and not expired. The current ticket itself is never eligible
+	// (we're looking for the NEXT one, not itself).
+	isEligible := func(t *TicketEntry) bool {
+		return t.Hash() != hash && // never return the current ticket itself
+			t.Stat != int(2) /* StatSuccess */ && t.Stat != int(4) /* StatError */ && t.Valid()
+	}
+
+	// Search forward from curIdx+1, wrapping around circularly.
+	// Stop after checking every ticket in the group exactly once.
+	n := len(groupTickets)
+	for offset := 1; offset <= n; offset++ {
+		idx := (curIdx + offset) % n
+		t := groupTickets[idx]
+		if isEligible(t) {
+			return t.Hash(), true
+		}
+	}
+
+	return "", false
 }

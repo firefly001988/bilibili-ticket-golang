@@ -329,7 +329,75 @@ func (svc *SchedulerService) AddTicket(ticket FrontendTicket) (string, error) {
 	fmt.Printf("[DEBUG] AddTicket: hash=%s expire=%d start=%d buyerType=%d buyer=%+v\n",
 		hash, entry.Expire, entry.Start, entry.Buyer.BuyerType, entry.Buyer)
 
+	// Auto-start: if this ticket belongs to a chain group and no other task
+	// in the same group is currently running, start it immediately. This
+	// handles the case where all previous tasks in the chain are already
+	// done and the newly added ticket should begin running on its own.
+	if entry.ChainGroupKey() != "" {
+		svc.autoStartChainIfIdle(hash)
+	}
+
 	return hash, nil
+}
+
+// autoStartChainIfIdle checks whether any task in the same chain group as
+// the given hash is currently running. If none is running, starts the first
+// eligible ticket (by SortOrder) in the group — which may be the given hash
+// itself or an earlier one if the new ticket was inserted at a lower order.
+func (svc *SchedulerService) autoStartChainIfIdle(hash string) {
+	tickets := svc.tickets.GetTicketsNoMutate()
+
+	// Find the chain group key and collect same-group tickets.
+	var groupKey string
+	var groupTickets []*configuration.TicketEntry
+	for i := range tickets {
+		if tickets[i].Hash() == hash {
+			groupKey = tickets[i].ChainGroupKey()
+		}
+	}
+	if groupKey == "" {
+		return
+	}
+
+	for i := range tickets {
+		if tickets[i].ChainGroupKey() == groupKey {
+			groupTickets = append(groupTickets, &tickets[i])
+		}
+	}
+
+	// If any task in the group is already running, do nothing — the chain
+	// will proceed naturally via onComplete switching.
+	for _, t := range groupTickets {
+		if svc.scheduler.HasTask(t.Hash()) {
+			return
+		}
+	}
+
+	// No task is running. Find the first eligible ticket (smallest SortOrder,
+	// not Success/Error, not expired) and start it.
+	var best *configuration.TicketEntry
+	for _, t := range groupTickets {
+		if t.Stat == int(StatSuccess) || t.Stat == int(StatError) {
+			continue
+		}
+		if !t.Valid() {
+			continue
+		}
+		if best == nil || t.SortOrder < best.SortOrder {
+			best = t
+		}
+	}
+	if best == nil {
+		return
+	}
+
+	go func() {
+		if err := svc.AddTicketTask(best.Hash()); err != nil {
+			fmt.Printf("[chain] auto-start failed for %s: %v\n", best.Hash(), err)
+		} else {
+			fmt.Printf("[chain] auto-started %s (group was idle)\n", best.Hash())
+		}
+	}()
 }
 
 // RemoveTicket removes a ticket from storage and its associated task (if any).
@@ -367,8 +435,9 @@ func (svc *SchedulerService) ReloadTickets() {
 		if !tickets[i].Valid() {
 			continue
 		}
-		// Skip tasks that already finished
-		if tickets[i].Stat == int(StatSuccess) || tickets[i].Stat == int(StatFailed) || tickets[i].Stat == int(StatError) {
+		// Skip only successful tasks; failed/error/waiting are all eligible
+		// for restart as long as the ticket hasn't expired.
+		if tickets[i].Stat == int(StatSuccess) {
 			continue
 		}
 
@@ -423,6 +492,10 @@ func (svc *SchedulerService) FetchRealNameBuyers() ([]FrontendBuyer, error) {
 // identified by orderedHashes so they form an ascending chain within the
 // buyer group of the first hash. The change is persisted to disk.
 // Pass the full ordered list of hashes for the group (in the desired order).
+//
+// If the reorder changes which task should be currently running (the first
+// waiting ticket in the new order differs from the currently running one),
+// the previously running task is stopped and the new first one is started.
 func (svc *SchedulerService) ReorderTickets(orderedHashes []string) error {
 	if len(orderedHashes) == 0 {
 		return errors.New("orderedHashes is empty")
@@ -430,7 +503,64 @@ func (svc *SchedulerService) ReorderTickets(orderedHashes []string) error {
 	if err := svc.tickets.ReorderInGroup(orderedHashes); err != nil {
 		return fmt.Errorf("reorder: %w", err)
 	}
-	return svc.store.Save()
+	if err := svc.store.Save(); err != nil {
+		return fmt.Errorf("persist: %w", err)
+	}
+
+	// Determine which task should be running now: the first ticket in the
+	// new order that is not already successful and is still valid (not expired).
+	// This includes Waiting, Failed, and Error stats — any non-success ticket
+	// that hasn't expired can be (re)started.
+	tickets := svc.tickets.GetTicketsNoMutate()
+	ticketMap := make(map[string]*configuration.TicketEntry, len(tickets))
+	for i := range tickets {
+		ticketMap[tickets[i].Hash()] = &tickets[i]
+	}
+
+	var shouldRunHash string
+	for _, h := range orderedHashes {
+		t, ok := ticketMap[h]
+		if !ok {
+			continue
+		}
+		// Skip only successful tickets; failed/error/waiting are all eligible
+		// as long as the ticket hasn't expired.
+		if t.Stat != int(StatSuccess) && t.Valid() {
+			shouldRunHash = h
+			break
+		}
+	}
+
+	// Find any currently running task in this chain group.
+	var runningHash string
+	for _, h := range orderedHashes {
+		if svc.scheduler.HasTask(h) {
+			runningHash = h
+			break
+		}
+	}
+
+	// If the running task is already the one that should run, nothing to do.
+	if runningHash == shouldRunHash {
+		return nil
+	}
+
+	// Stop the previously running task silently — don't mark it as Failed
+	// in persistent storage, since this is a reorder swap, not a real failure.
+	if runningHash != "" {
+		svc.scheduler.RemoveTaskSilent(runningHash, func() {
+			svc.logBroker.CloseStream(runningHash)
+		})
+	}
+
+	// Start the new first task (if any).
+	if shouldRunHash != "" {
+		if err := svc.AddTicketTask(shouldRunHash); err != nil {
+			return fmt.Errorf("start first task after reorder: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // GetChainTrigger returns the current chain-switch trigger mode.

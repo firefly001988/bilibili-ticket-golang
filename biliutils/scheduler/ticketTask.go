@@ -150,6 +150,42 @@ func (tt *TicketTask) Stop() {
 	tt.setStat(StatFailed)
 }
 
+// StopSilent stops the task without triggering onComplete, so the persisted
+// stat is NOT updated. Used by ReorderTickets when swapping the running task:
+// the old task is cancelled but should remain Stat=Waiting (not Failed).
+func (tt *TicketTask) StopSilent() {
+	tt.mutex.Lock()
+
+	stat := tt.GetStat()
+	if stat != StatWaiting && stat != StatPending {
+		tt.mutex.Unlock()
+		return
+	}
+
+	select {
+	case <-tt.stopChan:
+		// already closed
+	default:
+		close(tt.stopChan)
+	}
+
+	if tt.timer != nil {
+		tt.timer.Stop()
+	}
+
+	tt.mutex.Unlock()
+
+	// Cancel context and set stat to Failed in-memory only, but skip onComplete
+	// so the persisted Stat stays as-is (Waiting).
+	tt.statLock.Lock()
+	wasTerminal := tt.stat > StatPending
+	tt.stat = StatFailed
+	tt.cancelFunc()
+	skipCallback := wasTerminal // if already terminal, onComplete wouldn't fire anyway
+	tt.statLock.Unlock()
+	_ = skipCallback
+}
+
 // GetStat returns the current task status.
 func (tt *TicketTask) GetStat() RunningStat {
 	tt.statLock.Lock()

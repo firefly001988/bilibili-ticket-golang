@@ -103,6 +103,22 @@ func (ds *DynamicScheduler) RemoveTaskAndStream(taskID string, onRemove func()) 
 	}
 }
 
+// RemoveTaskSilent removes a task by ID using StopSilent (no onComplete, no
+// persisted stat update) and invokes onRemove after deletion. Used by
+// ReorderTickets to swap the running task without marking it as Failed.
+func (ds *DynamicScheduler) RemoveTaskSilent(taskID string, onRemove func()) {
+	ds.mutex.Lock()
+	defer ds.mutex.Unlock()
+
+	if task, exists := ds.tasks[taskID]; exists {
+		task.StopSilent()
+		delete(ds.tasks, taskID)
+	}
+	if onRemove != nil {
+		onRemove()
+	}
+}
+
 // GetTaskStatus returns status for all tasks.
 func (ds *DynamicScheduler) GetTaskStatus() map[string]TaskStatus {
 	ds.mutex.RLock()

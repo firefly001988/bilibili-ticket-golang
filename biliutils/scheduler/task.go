@@ -20,6 +20,7 @@ type ITask interface {
 	Start(globalOffset time.Duration)
 	ForceStart()
 	Stop()
+	StopSilent() // stop without triggering onComplete (no stat persistence)
 	GetStat() RunningStat
 	GetError() error
 	UpdateInterval(newInterval time.Duration)
