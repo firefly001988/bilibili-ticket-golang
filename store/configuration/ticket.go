@@ -25,6 +25,13 @@ type TicketEntry struct {
 	// 0=Waiting, 1=Pending, 2=Success, 3=Failed, 4=Error.
 	// On app restart, completed tasks (Success/Failed/Error) are NOT re-scheduled.
 	Stat int `json:"stat"`
+
+	// SortOrder is the chain order within the same buyer group.
+	// Tickets of the same buyer are chained by ascending SortOrder: when the
+	// task at order N terminates (per ChainTrigger), the scheduler starts the
+	// next valid ticket with order > N. New tickets are appended with
+	// max(group)+1. Zero/missing values are treated as the smallest order.
+	SortOrder int `json:"sortOrder"`
 }
 
 func (t TicketEntry) String() string {
@@ -33,6 +40,19 @@ func (t TicketEntry) String() string {
 		time.Unix(t.Expire, 0).Format("2006-01-02 15:04:05"),
 		time.Unix(t.Start, 0).Format("2006-01-02 15:04:05"),
 	)
+}
+
+// ChainGroupKey returns the chain-group key used for ticket chaining.
+//
+// Chaining is restricted to real-name buyers within the same project: a
+// real-name buyer grabbing multiple SKUs/screens of one project forms a single
+// chain ordered by SortOrder. Ordinary (non-real-name) tickets return "" and
+// are never chained.
+func (t TicketEntry) ChainGroupKey() string {
+	if t.Buyer.BuyerType != _return.ForceRealName {
+		return ""
+	}
+	return fmt.Sprintf("r:%d:p:%d", t.Buyer.ID, t.ProjectID)
 }
 
 // Hash returns a SHA256-based unique identifier for this ticket.
@@ -74,6 +94,8 @@ func (td *TicketData) SetChangeCallback(cb func(ticket TicketEntry)) {
 // AddTicket adds a ticket (deduplicated by buyer + project + sku + screen).
 // Returns true if the ticket was actually added, false if a duplicate exists.
 // Expired duplicates are silently replaced.
+// SortOrder is auto-assigned as max(existing same-group order)+1 when the
+// incoming ticket has a non-positive SortOrder.
 func (td *TicketData) AddTicket(data TicketEntry) bool {
 	td.mutex.Lock()
 
@@ -94,6 +116,20 @@ func (td *TicketData) AddTicket(data TicketEntry) bool {
 		n++
 	}
 	td.Tickets = td.Tickets[:n]
+
+	// Auto-assign chain order within the buyer+project group (real-name only).
+	if data.SortOrder <= 0 {
+		groupKey := data.ChainGroupKey()
+		maxOrder := 0
+		if groupKey != "" {
+			for _, t := range td.Tickets {
+				if t.ChainGroupKey() == groupKey && t.SortOrder > maxOrder {
+					maxOrder = t.SortOrder
+				}
+			}
+		}
+		data.SortOrder = maxOrder + 1
+	}
 
 	td.Tickets = append(td.Tickets, data)
 	cb := td.ticketChangeCallback
@@ -198,4 +234,117 @@ func (td *TicketData) RemoveTicketByIndex(index int64) bool {
 		go (*cb)(old)
 	}
 	return true
+}
+
+// ReorderInGroup rewrites SortOrder for the tickets identified by
+// orderedHashes so that they form an ascending chain (1,2,3,...) within the
+// buyer group of the first hash. Hashes not belonging to the same group are
+// ignored. Returns an error if orderedHashes is empty or the first hash is
+// not found.
+//
+// The caller is responsible for persisting the change (e.g. store.Save()).
+func (td *TicketData) ReorderInGroup(orderedHashes []string) error {
+	if len(orderedHashes) == 0 {
+		return fmt.Errorf("orderedHashes is empty")
+	}
+
+	td.mutex.Lock()
+	defer td.mutex.Unlock()
+
+	// Locate the chain-group key from the first hash.
+	var groupKey string
+	foundFirst := false
+	for _, t := range td.Tickets {
+		if t.Hash() == orderedHashes[0] {
+			groupKey = t.ChainGroupKey()
+			foundFirst = true
+			break
+		}
+	}
+	if !foundFirst {
+		return fmt.Errorf("ticket not found: %s", orderedHashes[0])
+	}
+	if groupKey == "" {
+		return fmt.Errorf("ticket is not real-name, chaining is not applicable")
+	}
+
+	// Build hash → new order mapping (1-based).
+	orderMap := make(map[string]int, len(orderedHashes))
+	for i, h := range orderedHashes {
+		orderMap[h] = i + 1
+	}
+
+	// Apply new order to same-chain-group tickets; reset others in the group
+	// that are not in the mapping to a high value so they sort after the chain.
+	for i := range td.Tickets {
+		if td.Tickets[i].ChainGroupKey() != groupKey {
+			continue
+		}
+		if newOrder, ok := orderMap[td.Tickets[i].Hash()]; ok {
+			td.Tickets[i].SortOrder = newOrder
+		}
+		// Tickets in the group but not in orderedHashes keep their existing
+		// SortOrder (they are simply not part of the reordered subset).
+	}
+	return nil
+}
+
+// GetNextInChain returns the hash of the next ticket to start after the ticket
+// identified by `hash` terminates, according to the chain group.
+//
+// Rules:
+//   - Chaining applies only to real-name buyers within the same project
+//     (ChainGroupKey). Ordinary tickets are never chained.
+//   - The next ticket must share the same ChainGroupKey as the current ticket.
+//   - The next ticket must have SortOrder strictly greater than the current
+//     ticket's SortOrder.
+//   - The next ticket must be Valid() and still waiting (Stat == 0).
+//   - Among candidates, the one with the smallest SortOrder wins.
+//
+// Returns ("", false) when there is no eligible successor.
+func (td *TicketData) GetNextInChain(hash string) (string, bool) {
+	td.mutex.Lock()
+	defer td.mutex.Unlock()
+
+	var current *TicketEntry
+	for i := range td.Tickets {
+		if td.Tickets[i].Hash() == hash {
+			current = &td.Tickets[i]
+			break
+		}
+	}
+	if current == nil {
+		return "", false
+	}
+
+	groupKey := current.ChainGroupKey()
+	if groupKey == "" {
+		// Ordinary (non-real-name) tickets are never chained.
+		return "", false
+	}
+	curOrder := current.SortOrder
+
+	var best *TicketEntry
+	for i := range td.Tickets {
+		t := &td.Tickets[i]
+		if t.ChainGroupKey() != groupKey {
+			continue
+		}
+		if t.SortOrder <= curOrder {
+			continue
+		}
+		if t.Stat != 0 { // only waiting tickets
+			continue
+		}
+		if !t.Valid() {
+			continue
+		}
+		if best == nil || t.SortOrder < best.SortOrder {
+			best = t
+		}
+	}
+	if best == nil {
+		return "", false
+	}
+	return best.Hash(), true
 }

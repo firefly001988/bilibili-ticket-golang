@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useMessagesStore } from '@/stores/snackbar'
 import TaskLogViewer from '@/components/TaskLogViewer.vue'
+import draggable from 'vuedraggable'
 import {
     GetAllTickets,
     AddTicket,
@@ -12,6 +13,9 @@ import {
     RemoveTask,
     ForceStartTask,
     GetTaskStatuses,
+    ReorderTickets,
+    GetChainTrigger,
+    SetChainTrigger,
 } from '../../wailsjs/go/scheduler/SchedulerService'
 import type { FrontendTicket, FrontendTaskStatus } from '@/composables/schedulerTypes'
 import { statColor, statLabel, StatWaiting, StatPending } from '@/composables/schedulerTypes'
@@ -30,6 +34,10 @@ const selectedHash = ref('')
 const loading = ref(false)
 const showAddDialog = ref(false)
 const pollInterval = 2000
+
+// ── Chain switching ───────────────────────────────────
+const chainTrigger = ref<'success' | 'any'>('success')
+const chainTriggerLoading = ref(false)
 
 // ── Add ticket form ────────────────────────────────────
 const form = ref({
@@ -97,6 +105,93 @@ const mergedList = computed(() => {
 function isTaskActive(hash: string): boolean {
     const s = taskStatuses.value.find(x => x.taskID === hash)
     return s ? (s.stat === StatWaiting || s.stat === StatPending) : false
+}
+
+// ── Chain grouping & ordering ──────────────────────────
+// Chain group key mirrors the Go TicketEntry.ChainGroupKey():
+//   real-name + same project → "r:" + buyerId + ":p:" + projectId
+//   ordinary (non-real-name) → "" (never chained, shown individually)
+function chainGroupKey(t: FrontendTicket): string {
+    return (t.buyerId ?? 0) > 0 ? `r:${t.buyerId}:p:${t.projectId}` : ''
+}
+
+// Tickets grouped into chains. Real-name tickets sharing the same buyer +
+// project form a draggable chain group; ordinary tickets are placed in
+// single-item groups (no drag, no chain).
+interface GroupedTickets {
+    key: string
+    buyerName: string
+    projectName: string
+    chainable: boolean
+    items: Array<FrontendTicket & { status?: FrontendTaskStatus; displayStat: number; displayError: string | null }>
+}
+
+const buyerGroups = computed<GroupedTickets[]>(() => {
+    const map = new Map<string, GroupedTickets>()
+    const statusMap = new Map(taskStatuses.value.map(s => [s.taskID, s]))
+    for (const t of tickets.value) {
+        const key = chainGroupKey(t)
+        const liveStatus = statusMap.get(t.hash)
+        const item = {
+            ...t,
+            status: liveStatus,
+            displayStat: liveStatus ? liveStatus.stat : (t.stat ?? 0),
+            displayError: liveStatus?.error || null,
+        }
+        // Real-name: group by chain key; ordinary: unique key per ticket.
+        const groupKey = key || `single:${t.hash}`
+        let g = map.get(groupKey)
+        if (!g) {
+            g = {
+                key: groupKey,
+                buyerName: t.buyerName,
+                projectName: t.projectName,
+                chainable: key !== '',
+                items: [],
+            }
+            map.set(groupKey, g)
+        }
+        g.items.push(item)
+    }
+    const groups = Array.from(map.values())
+    for (const g of groups) {
+        g.items.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    }
+    // Sort groups by buyer name then project name for stable display
+    groups.sort((a, b) =>
+        a.buyerName.localeCompare(b.buyerName) || a.projectName.localeCompare(b.projectName))
+    return groups
+})
+
+async function onDragEnd(group: GroupedTickets) {
+    const orderedHashes = group.items.map(i => i.hash)
+    try {
+        await ReorderTickets(orderedHashes)
+        messages.add({ text: t('scheduler.orderSaved'), color: 'success', timeout: 2000 })
+        await refresh()
+    } catch (e: any) {
+        messages.add({ text: t('scheduler.orderSaveFailed', { error: String(e) }), color: 'error', timeout: 4000 })
+        await refresh() // revert to persisted order on failure
+    }
+}
+
+async function loadChainTrigger() {
+    try {
+        const mode = await GetChainTrigger()
+        chainTrigger.value = mode === 'any' ? 'any' : 'success'
+    } catch { /* ignore */ }
+}
+
+async function onChainTriggerChange(mode: 'success' | 'any') {
+    chainTriggerLoading.value = true
+    try {
+        await SetChainTrigger(mode)
+        messages.add({ text: t('scheduler.chainTriggerSaved'), color: 'success', timeout: 2000 })
+    } catch (e: any) {
+        messages.add({ text: t('scheduler.chainTriggerSaveFailed', { error: String(e) }), color: 'error', timeout: 4000 })
+    } finally {
+        chainTriggerLoading.value = false
+    }
 }
 
 // ── Actions ────────────────────────────────────────────
@@ -212,6 +307,7 @@ async function submitAddTicket() {
             buyerTel: form.value.buyerTel,
             buyerId: Number(form.value.buyerId),
             stat: 0,
+            sortOrder: 0,
         })
 
         debugLog('[submitAddTicket] AddTicket returned hash:', hash);
@@ -248,7 +344,7 @@ let timer: ReturnType<typeof setInterval> | null = null
 onMounted(async () => {
     await auth.checkLoginStatus()
     if (auth.isLogin) {
-        await refresh()
+        await Promise.all([refresh(), loadChainTrigger()])
         timer = setInterval(refresh, pollInterval)
     }
 })
@@ -277,8 +373,23 @@ onUnmounted(() => {
         </v-card>
 
         <template v-else>
+            <!-- Chain trigger toggle -->
+            <v-card variant="outlined" class="mb-4 pa-3">
+                <div class="d-flex align-center flex-wrap ga-3">
+                    <v-icon icon="mdi-link-variant" size="small" />
+                    <span class="text-body-2">{{ t('scheduler.chainTrigger') }}</span>
+                    <v-btn-toggle v-model="chainTrigger" mandatory color="primary" density="compact"
+                        :loading="chainTriggerLoading"
+                        @update:model-value="(v: string) => onChainTriggerChange(v === 'any' ? 'any' : 'success')">
+                        <v-btn value="success" size="small">{{ t('scheduler.chainTriggerSuccess') }}</v-btn>
+                        <v-btn value="any" size="small">{{ t('scheduler.chainTriggerAny') }}</v-btn>
+                    </v-btn-toggle>
+                    <span class="text-caption text-grey">{{ t('scheduler.chainTriggerHint') }}</span>
+                </div>
+            </v-card>
+
             <!-- Main content: ticket list + log viewer (vertical) -->
-            <!-- Ticket list -->
+            <!-- Ticket list grouped by buyer with drag-to-reorder -->
             <v-card variant="outlined" class="mb-4">
                 <v-card-title class="d-flex align-center py-2 px-3">
                     <span class="text-body-medium">{{ t('scheduler.ticketList', { count: mergedList.length }) }}</span>
@@ -291,49 +402,126 @@ onUnmounted(() => {
                         {{ t('scheduler.emptyTickets') }}
                         <router-link to="/ticket-project">{{ t('nav.projectLookup') }}</router-link>
                     </div>
-                    <v-list v-else density="compact" lines="two">
-                        <v-list-item v-for="tk in mergedList" :key="tk.hash" :active="selectedHash === tk.hash"
-                            @click="selectedHash = tk.hash">
-                            <template #prepend>
-                                <v-icon :color="statColor(tk.displayStat)" size="18">
-                                    {{ tk.displayStat === 0 ? 'mdi-clock-outline' :
-                                        tk.displayStat === 1 ? 'mdi-progress-clock' :
-                                            tk.displayStat === 2 ? 'mdi-check-circle' :
-                                                tk.displayStat === 3 ? 'mdi-close-circle' : 'mdi-alert-circle' }}
-                                </v-icon>
-                            </template>
-
-                            <template #title>
-                                <span class="text-body-2">{{ tk.projectName }}</span>
-                                <v-chip :color="statColor(tk.displayStat)" size="x-small" variant="tonal" class="ml-1">
-                                    {{ statLabel(tk.displayStat) }}
-                                </v-chip>
-                            </template>
-
-                            <template #subtitle>
-                                <span class="text-caption text-grey">
-                                    {{ tk.screenName }} · {{ tk.skuName }} · {{ tk.buyerName }}
-                                    <template v-if="tk.status && tk.status.stat === StatWaiting">
-                                        · {{ t('scheduler.remaining', { time: formatRemaining(tk.status.remainingMs) })
-                                        }}
-                                    </template>
+                    <div v-else>
+                        <div v-for="group in buyerGroups" :key="group.key" class="border-b">
+                            <!-- Group header -->
+                            <div class="d-flex align-center px-3 py-2">
+                                <v-icon icon="mdi-account" size="small" class="mr-2" />
+                                <span class="text-body-2 font-weight-bold">{{ group.buyerName }}</span>
+                                <v-icon v-if="group.chainable" icon="mdi-link-variant" size="x-small" class="mx-1"
+                                    color="primary" />
+                                <span v-if="group.chainable" class="text-caption text-grey ml-1">
+                                    {{ group.projectName }}
                                 </span>
-                            </template>
+                                <v-chip size="x-small" variant="tonal" class="ml-2">
+                                    {{ group.items.length }}
+                                </v-chip>
+                                <span v-if="group.chainable" class="text-caption text-grey ml-2">
+                                    {{ t('scheduler.dragHint') }}
+                                </span>
+                            </div>
+                            <!-- Draggable ticket list within chain group (real-name only) -->
+                            <draggable v-if="group.chainable" :list="group.items" item-key="hash" handle=".drag-handle"
+                                :animation="150" group="tickets" @end="onDragEnd(group)">
+                                <template #item="{ element: tk, index }">
+                                    <v-list-item :key="tk.hash" :active="selectedHash === tk.hash" lines="two"
+                                        @click="selectedHash = tk.hash">
+                                        <template #prepend>
+                                            <v-icon class="drag-handle" icon="mdi-drag-vertical" size="18"
+                                                color="grey-lighten-1" />
+                                            <v-chip size="x-small" variant="outlined" class="mr-2">{{ index + 1
+                                            }}</v-chip>
+                                            <v-icon :color="statColor(tk.displayStat)" size="18">
+                                                {{ tk.displayStat === 0 ? 'mdi-clock-outline' :
+                                                    tk.displayStat === 1 ? 'mdi-progress-clock' :
+                                                        tk.displayStat === 2 ? 'mdi-check-circle' :
+                                                            tk.displayStat === 3 ? 'mdi-close-circle' : 'mdi-alert-circle' }}
+                                            </v-icon>
+                                        </template>
 
-                            <template #append>
-                                <div class="d-flex ga-0">
-                                    <v-btn v-if="!isTaskActive(tk.hash)" icon="mdi-play" size="x-small" variant="text"
-                                        color="success" @click.stop="startTask(tk.hash)" />
-                                    <v-btn v-else icon="mdi-stop" size="x-small" variant="text" color="error"
-                                        @click.stop="stopTask(tk.hash)" />
-                                    <v-btn icon="mdi-lightning-bolt" size="x-small" variant="text" color="warning"
-                                        @click.stop="forceStart(tk.hash)" />
-                                    <v-btn icon="mdi-delete-outline" size="x-small" variant="text" color="grey"
-                                        @click.stop="deleteTicket(tk.hash)" />
-                                </div>
-                            </template>
-                        </v-list-item>
-                    </v-list>
+                                        <template #title>
+                                            <span class="text-body-2">{{ tk.projectName }}</span>
+                                            <v-chip :color="statColor(tk.displayStat)" size="x-small" variant="tonal"
+                                                class="ml-1">
+                                                {{ statLabel(tk.displayStat) }}
+                                            </v-chip>
+                                        </template>
+
+                                        <template #subtitle>
+                                            <span class="text-caption text-grey">
+                                                {{ tk.screenName }} · {{ tk.skuName }}
+                                                <template v-if="tk.status && tk.status.stat === StatWaiting">
+                                                    · {{ t('scheduler.remaining', {
+                                                        time:
+                                                            formatRemaining(tk.status.remainingMs)
+                                                    }) }}
+                                                </template>
+                                            </span>
+                                        </template>
+
+                                        <template #append>
+                                            <div class="d-flex ga-0">
+                                                <v-btn v-if="!isTaskActive(tk.hash)" icon="mdi-play" size="x-small"
+                                                    variant="text" color="success" @click.stop="startTask(tk.hash)" />
+                                                <v-btn v-else icon="mdi-stop" size="x-small" variant="text"
+                                                    color="error" @click.stop="stopTask(tk.hash)" />
+                                                <v-btn icon="mdi-lightning-bolt" size="x-small" variant="text"
+                                                    color="warning" @click.stop="forceStart(tk.hash)" />
+                                                <v-btn icon="mdi-delete-outline" size="x-small" variant="text"
+                                                    color="grey" @click.stop="deleteTicket(tk.hash)" />
+                                            </div>
+                                        </template>
+                                    </v-list-item>
+                                </template>
+                            </draggable>
+                            <!-- Non-chainable (ordinary) tickets: plain list, no drag -->
+                            <v-list v-else density="compact" lines="two">
+                                <v-list-item v-for="tk in group.items" :key="tk.hash" :active="selectedHash === tk.hash"
+                                    @click="selectedHash = tk.hash">
+                                    <template #prepend>
+                                        <v-icon :color="statColor(tk.displayStat)" size="18">
+                                            {{ tk.displayStat === 0 ? 'mdi-clock-outline' :
+                                                tk.displayStat === 1 ? 'mdi-progress-clock' :
+                                                    tk.displayStat === 2 ? 'mdi-check-circle' :
+                                                        tk.displayStat === 3 ? 'mdi-close-circle' : 'mdi-alert-circle' }}
+                                        </v-icon>
+                                    </template>
+
+                                    <template #title>
+                                        <span class="text-body-2">{{ tk.projectName }}</span>
+                                        <v-chip :color="statColor(tk.displayStat)" size="x-small" variant="tonal"
+                                            class="ml-1">
+                                            {{ statLabel(tk.displayStat) }}
+                                        </v-chip>
+                                    </template>
+
+                                    <template #subtitle>
+                                        <span class="text-caption text-grey">
+                                            {{ tk.screenName }} · {{ tk.skuName }} · {{ tk.buyerName }}
+                                            <template v-if="tk.status && tk.status.stat === StatWaiting">
+                                                · {{ t('scheduler.remaining', {
+                                                    time:
+                                                formatRemaining(tk.status.remainingMs) }) }}
+                                            </template>
+                                        </span>
+                                    </template>
+
+                                    <template #append>
+                                        <div class="d-flex ga-0">
+                                            <v-btn v-if="!isTaskActive(tk.hash)" icon="mdi-play" size="x-small"
+                                                variant="text" color="success" @click.stop="startTask(tk.hash)" />
+                                            <v-btn v-else icon="mdi-stop" size="x-small" variant="text" color="error"
+                                                @click.stop="stopTask(tk.hash)" />
+                                            <v-btn icon="mdi-lightning-bolt" size="x-small" variant="text"
+                                                color="warning" @click.stop="forceStart(tk.hash)" />
+                                            <v-btn icon="mdi-delete-outline" size="x-small" variant="text" color="grey"
+                                                @click.stop="deleteTicket(tk.hash)" />
+                                        </div>
+                                    </template>
+                                </v-list-item>
+                            </v-list>
+                        </div>
+                    </div>
                 </v-card-text>
             </v-card>
 
@@ -460,5 +648,17 @@ onUnmounted(() => {
 <style scoped>
 .v-list-item {
     cursor: pointer;
+}
+
+.drag-handle {
+    cursor: grab;
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+.border-b {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.12);
 }
 </style>

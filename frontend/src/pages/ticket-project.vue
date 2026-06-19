@@ -186,6 +186,7 @@ async function submitCreateAndStart() {
             buyerTel: buyerForm.value.buyerTel,
             buyerId: Number(buyerForm.value.buyerId),
             stat: 0,
+            sortOrder: 0,
         });
 
         debugLog('[AddTicket] hash:', hash);

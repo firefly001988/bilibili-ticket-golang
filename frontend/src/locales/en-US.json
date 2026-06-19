@@ -162,7 +162,16 @@
         "formBuyerTelLabel": "Buyer Phone",
         "formBuyerIdLabel": "Real-name ID (0=ordinary)",
         "formBuyerIdHint": "0 = ordinary buyer, >0 = forced real-name",
-        "addBtn": "Add"
+        "addBtn": "Add",
+        "chainTrigger": "Chain switch: auto-start the next ticket for the same buyer & project after the current one is grabbed (real-name only)",
+        "chainTriggerSuccess": "Switch on success",
+        "chainTriggerAny": "Switch on any end",
+        "chainTriggerHint": "Real-name tickets of the same buyer & project are queued below; drag to reorder",
+        "dragHint": "Drag ⠿ to reorder",
+        "orderSaved": "Order saved",
+        "orderSaveFailed": "Failed to save order: {error}",
+        "chainTriggerSaved": "Switch mode saved",
+        "chainTriggerSaveFailed": "Failed to save switch mode: {error}"
     },
     "notify": {
         "title": "Notification Channels",

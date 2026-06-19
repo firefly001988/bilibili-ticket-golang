@@ -24,6 +24,14 @@ type DataStorage struct {
 	StartDelayMs    int                       `json:"startDelayMs"`
 	Locale          string                    `json:"locale"`
 
+	// ChainTrigger controls when the scheduler auto-starts the next ticket in
+	// a buyer group's chain after the current task terminates.
+	//   "success" (default): only start the next ticket when the current task
+	//     succeeds (StatSuccess).
+	//   "any": start the next ticket on any terminal state (success, failed,
+	//     error).
+	ChainTrigger string `json:"chainTrigger"`
+
 	saveMu sync.Mutex
 }
 
@@ -35,6 +43,7 @@ func NewDataStorage() *DataStorage {
 		NotifyChData:    NewNotifyChannelData(),
 		RetryIntervalMs: 500, // default 500ms
 		StartDelayMs:    50,  // default 50ms
+		ChainTrigger:    "success",
 	}
 }
 

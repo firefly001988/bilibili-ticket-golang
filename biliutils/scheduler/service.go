@@ -47,6 +47,8 @@ type FrontendTicket struct {
 	BuyerID     int64  `json:"buyerId,omitempty"`
 	// Stat persists the task execution result (RunningStat).
 	Stat int `json:"stat"`
+	// SortOrder is the chain order within the same buyer group.
+	SortOrder int `json:"sortOrder"`
 }
 
 // FrontendBWSEntry mirrors BWSEntry for Wails serialization.
@@ -169,6 +171,36 @@ func (svc *SchedulerService) AddTicketTask(hash string) error {
 
 	task, err := NewTicketTask(svc.client, *ticket, notifyFn, interval, logCh, func(stat RunningStat) {
 		svc.tickets.UpdateTicketStat(hash, int(stat))
+
+		// Chain switching: auto-start the next ticket in the same buyer group
+		// when the termination state matches the configured ChainTrigger.
+		trigger := svc.store.ChainTrigger
+		shouldSwitch := false
+		switch trigger {
+		case "any":
+			// Any terminal state (success/failed/error) triggers the switch.
+			shouldSwitch = stat == StatSuccess || stat == StatFailed || stat == StatError
+		default: // "success"
+			shouldSwitch = stat == StatSuccess
+		}
+		if !shouldSwitch {
+			return
+		}
+
+		nextHash, ok := svc.tickets.GetNextInChain(hash)
+		if !ok {
+			return
+		}
+		// Avoid re-scheduling an already-running task.
+		if svc.scheduler.HasTask(nextHash) {
+			return
+		}
+		svc.logBroker.CreateStream(nextHash)
+		if err := svc.AddTicketTask(nextHash); err != nil {
+			fmt.Printf("[chain] failed to start next ticket %s after %s: %v\n", nextHash, hash, err)
+		} else {
+			fmt.Printf("[chain] started next ticket %s after %s (trigger=%s, stat=%d)\n", nextHash, hash, trigger, stat)
+		}
 	})
 	if err != nil {
 		return fmt.Errorf("create task: %w", err)
@@ -245,6 +277,7 @@ func (svc *SchedulerService) GetAllTickets() []FrontendTicket {
 			BuyerTel:    t.Buyer.Tel,
 			BuyerID:     t.Buyer.ID,
 			Stat:        t.Stat,
+			SortOrder:   t.SortOrder,
 		}
 		result[i] = ft
 	}
@@ -262,6 +295,7 @@ func (svc *SchedulerService) AddTicket(ticket FrontendTicket) (string, error) {
 		SkuName:     ticket.SkuName,
 		ScreenID:    ticket.ScreenID,
 		ScreenName:  ticket.ScreenName,
+		SortOrder:   ticket.SortOrder,
 		Buyer: r.TicketBuyer{
 			Name: ticket.BuyerName,
 			Tel:  ticket.BuyerTel,
@@ -341,6 +375,43 @@ func (svc *SchedulerService) FetchRealNameBuyers() ([]FrontendBuyer, error) {
 		}
 	}
 	return result, nil
+}
+
+// ReorderTickets rewrites the chain order (SortOrder) of the tickets
+// identified by orderedHashes so they form an ascending chain within the
+// buyer group of the first hash. The change is persisted to disk.
+// Pass the full ordered list of hashes for the group (in the desired order).
+func (svc *SchedulerService) ReorderTickets(orderedHashes []string) error {
+	if len(orderedHashes) == 0 {
+		return errors.New("orderedHashes is empty")
+	}
+	if err := svc.tickets.ReorderInGroup(orderedHashes); err != nil {
+		return fmt.Errorf("reorder: %w", err)
+	}
+	return svc.store.Save()
+}
+
+// GetChainTrigger returns the current chain-switch trigger mode.
+// "success" = only switch to the next ticket on success;
+// "any" = switch on any terminal state.
+func (svc *SchedulerService) GetChainTrigger() string {
+	t := svc.store.ChainTrigger
+	if t == "" {
+		return "success"
+	}
+	return t
+}
+
+// SetChainTrigger updates the chain-switch trigger mode and persists it.
+// Accepts "success" or "any"; any other value is normalized to "success".
+func (svc *SchedulerService) SetChainTrigger(mode string) error {
+	switch mode {
+	case "any":
+		svc.store.ChainTrigger = "any"
+	default:
+		svc.store.ChainTrigger = "success"
+	}
+	return svc.store.Save()
 }
 
 func statName(s RunningStat) string {

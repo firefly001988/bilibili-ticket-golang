@@ -162,7 +162,16 @@
         "formBuyerTelLabel": "购票人电话",
         "formBuyerIdLabel": "实名 ID (0=普通)",
         "formBuyerIdHint": "0 为普通购票，>0 为强实名",
-        "addBtn": "添加"
+        "addBtn": "添加",
+        "chainTrigger": "链式切换：抢到当前商品后自动切换到同购票人同项目的下一个商品（仅实名项目）",
+        "chainTriggerSuccess": "仅成功时切换",
+        "chainTriggerAny": "任何终态都切换",
+        "chainTriggerHint": "同一实名购票人在同一项目下的多个商品按顺序排队，拖拽调整顺序",
+        "dragHint": "拖拽 ⠿ 调整抢购顺序",
+        "orderSaved": "抢购顺序已保存",
+        "orderSaveFailed": "顺序保存失败: {error}",
+        "chainTriggerSaved": "切换模式已保存",
+        "chainTriggerSaveFailed": "切换模式保存失败: {error}"
     },
     "notify": {
         "title": "通知渠道",
