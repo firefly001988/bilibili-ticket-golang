@@ -177,7 +177,28 @@
         "other": "输入 ntfy Topic 名称"
     },
     "notify.field.token_placeholder_ntfy": {
-        "other": "输入 Access Token（可选）"
+        "other": "输入 Access Token"
+    },
+    "notify.field.auth_method": {
+        "other": "认证方式"
+    },
+    "notify.field.auth_none": {
+        "other": "无认证"
+    },
+    "notify.field.auth_basic": {
+        "other": "用户名+密码 (Basic Auth)"
+    },
+    "notify.field.username": {
+        "other": "用户名"
+    },
+    "notify.field.password": {
+        "other": "密码"
+    },
+    "notify.field.username_placeholder_ntfy": {
+        "other": "输入 ntfy 用户名"
+    },
+    "notify.field.password_placeholder_ntfy": {
+        "other": "输入 ntfy 密码"
     },
     "plugin.geetest_desc": {
         "other": "极验验证码自动识别插件"

@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,19 +11,30 @@ import (
 // NtfyNotifier sends notifications via an ntfy server.
 // ntfy is a simple HTTP-based pub-sub notification service.
 // See: https://ntfy.sh/
+//
+// Authentication: supports two mutually exclusive methods:
+//   - Access Token (Bearer): set "token" param
+//   - Username + Password (Basic): set "username" and "password" params
+//
+// If both are provided, Basic auth takes precedence.
 type NtfyNotifier struct {
 	endpoint string // ntfy server URL, e.g. "https://ntfy.sh"
 	topic    string // ntfy topic name
-	token    string // optional access token for protected topics
+	token    string // access token for Bearer auth
+	username string // username for Basic auth
+	password string // password for Basic auth
 }
 
 // NewNtfy creates a new Ntfy notifier from a params map.
-// Expected keys: "endpoint", "topic", "token" (optional).
+// Expected keys: "endpoint", "topic", "token" (optional, Bearer auth),
+// "username" + "password" (optional, Basic auth).
 func NewNtfy(params map[string]string) *NtfyNotifier {
 	return &NtfyNotifier{
 		endpoint: params["endpoint"],
 		topic:    params["topic"],
 		token:    params["token"],
+		username: params["username"],
+		password: params["password"],
 	}
 }
 
@@ -39,14 +51,15 @@ func (n *NtfyNotifier) Notify(message string) (bool, string) {
 	if err != nil {
 		return false, err.Error()
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	// ntfy
 	req.Header.Set("Title", "Bili-Ticket-Go 抢票通知")
-	req.Header.Set("Priority", "5") // max priority
+	req.Header.Set("Priority", "5") // max priority (1-5)
 
-	// If a token is provided, use Bearer auth
-	if n.token != "" {
+	// Authentication: Basic auth takes precedence over Bearer token
+	if n.username != "" {
+		auth := base64.StdEncoding.EncodeToString([]byte(n.username + ":" + n.password))
+		req.Header.Set("Authorization", "Basic "+auth)
+	} else if n.token != "" {
 		req.Header.Set("Authorization", "Bearer "+n.token)
 	}
 

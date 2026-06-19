@@ -31,15 +31,29 @@ func ConvertNotificationType(name string) NotificationType {
 
 // ── Form field metadata (drives the frontend notify form) ──────────────
 
+// SelectOption defines an option item in a select/dropdown field.
+type SelectOption struct {
+	Label string `json:"label"` // display text, e.g. "Access Token"
+	Value string `json:"value"` // option value, e.g. "token"
+}
+
+// FieldCondition defines when a field should be visible (depends on another field's value).
+type FieldCondition struct {
+	Key   string `json:"key"`   // the field key to watch
+	Value string `json:"value"` // show this field when the watched field equals this value
+}
+
 // NotifyChannelFieldMeta describes a single form field for a notify channel type.
 type NotifyChannelFieldMeta struct {
-	Key         string `json:"key"`         // params key, e.g. "endpoint", "token"
-	Label       string `json:"label"`       // display label, e.g. "服务器地址"
-	Type        string `json:"type"`        // HTML input type: "text", "password", "url", "number"
-	Placeholder string `json:"placeholder"` // placeholder text
-	Required    bool   `json:"required"`    // whether the field is required
-	Hint        string `json:"hint"`        // optional hint below the field
-	Default     string `json:"default"`     // optional default value
+	Key         string          `json:"key"`         // params key, e.g. "endpoint", "token"
+	Label       string          `json:"label"`       // display label, e.g. "服务器地址"
+	Type        string          `json:"type"`        // input type: "text", "password", "url", "number", "select"
+	Placeholder string          `json:"placeholder"` // placeholder text
+	Required    bool            `json:"required"`    // whether the field is required
+	Hint        string          `json:"hint"`        // optional hint below the field
+	Default     string          `json:"default"`     // optional default value
+	Options     []SelectOption  `json:"options"`     // options for "select" type fields
+	DependsOn   *FieldCondition `json:"dependsOn"`   // show this field only when condition is met
 }
 
 // NotifyChannelTypeMeta describes a notification channel type and its form fields.
@@ -127,11 +141,40 @@ func GetNotifyChannelTypes() []NotifyChannelTypeMeta {
 					Required:    true,
 				},
 				{
+					Key:   "auth_method",
+					Label: i18n.T("notify.field.auth_method", nil),
+					Type:  "select",
+					Options: []SelectOption{
+						{Label: i18n.T("notify.field.auth_none", nil), Value: ""},
+						{Label: "Access Token (Bearer)", Value: "token"},
+						{Label: i18n.T("notify.field.auth_basic", nil), Value: "basic"},
+					},
+					Default:  "",
+					Required: false,
+				},
+				{
 					Key:         "token",
-					Label:       "Token (可选)",
+					Label:       "Access Token",
 					Type:        "password",
 					Placeholder: i18n.T("notify.field.token_placeholder_ntfy", nil),
 					Required:    false,
+					DependsOn:   &FieldCondition{Key: "auth_method", Value: "token"},
+				},
+				{
+					Key:         "username",
+					Label:       i18n.T("notify.field.username", nil),
+					Type:        "text",
+					Placeholder: i18n.T("notify.field.username_placeholder_ntfy", nil),
+					Required:    false,
+					DependsOn:   &FieldCondition{Key: "auth_method", Value: "basic"},
+				},
+				{
+					Key:         "password",
+					Label:       i18n.T("notify.field.password", nil),
+					Type:        "password",
+					Placeholder: i18n.T("notify.field.password_placeholder_ntfy", nil),
+					Required:    false,
+					DependsOn:   &FieldCondition{Key: "auth_method", Value: "basic"},
 				},
 			},
 		},

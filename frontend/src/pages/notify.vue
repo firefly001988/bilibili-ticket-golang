@@ -172,6 +172,30 @@ function channelSubtitle(ch: FrontendNotifyChannel): string {
     return vals.length > 0 ? vals.join(' · ') : t('notify.noParams')
 }
 
+/** Check whether a form field should be visible based on dependsOn condition. */
+function isFieldVisible(field: NotifyChannelFieldMeta): boolean {
+    if (!field.dependsOn) return true
+    const watchedValue = formParams.value[field.dependsOn.key] ?? ''
+    return watchedValue === field.dependsOn.value
+}
+
+/** Compute the list of currently visible fields for the selected channel type. */
+const visibleFields = computed(() => {
+    if (!currentTypeMeta.value) return []
+    return currentTypeMeta.value.fields.filter(f => isFieldVisible(f))
+})
+
+/** Auto-clear dependent field values when the watched field no longer matches. */
+watch(formParams, () => {
+    if (!currentTypeMeta.value) return
+    for (const field of currentTypeMeta.value.fields) {
+        if (!field.dependsOn) continue
+        if (!isFieldVisible(field) && formParams.value[field.key]) {
+            formParams.value[field.key] = ''
+        }
+    }
+}, { deep: true })
+
 // ── Lifecycle ──────────────────────────────────────────
 onMounted(async () => {
     await loadTypes()
@@ -242,10 +266,18 @@ onMounted(async () => {
                         </v-col>
                         <!-- Dynamic fields from Go metadata -->
                         <template v-if="currentTypeMeta">
-                            <v-col v-for="field in currentTypeMeta.fields" :key="field.key" cols="12">
-                                <v-text-field v-model="formParams[field.key]" :label="field.label" :type="field.type"
-                                    :placeholder="field.placeholder" :hint="field.hint" :persistent-hint="!!field.hint"
-                                    :required="field.required" variant="outlined" density="compact" />
+                            <v-col v-for="field in visibleFields" :key="field.key" cols="12">
+                                <!-- Select / dropdown -->
+                                <v-select v-if="field.type === 'select'" v-model="formParams[field.key]"
+                                    :label="field.label" :hint="field.hint" :persistent-hint="!!field.hint"
+                                    :required="field.required"
+                                    :items="(field.options ?? []).map(o => ({ title: o.label, value: o.value }))"
+                                    variant="outlined" density="compact" />
+                                <!-- Text / password / url / number input -->
+                                <v-text-field v-else v-model="formParams[field.key]" :label="field.label"
+                                    :type="field.type" :placeholder="field.placeholder" :hint="field.hint"
+                                    :persistent-hint="!!field.hint" :required="field.required" variant="outlined"
+                                    density="compact" />
                             </v-col>
                         </template>
                     </v-row>

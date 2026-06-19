@@ -216,7 +216,28 @@
         "other": "Enter ntfy Topic Name"
     },
     "notify.field.token_placeholder_ntfy": {
-        "other": "Enter Access Token (optional)"
+        "other": "Enter Access Token"
+    },
+    "notify.field.auth_method": {
+        "other": "Authentication Method"
+    },
+    "notify.field.auth_none": {
+        "other": "No Authentication"
+    },
+    "notify.field.auth_basic": {
+        "other": "Username + Password (Basic Auth)"
+    },
+    "notify.field.username": {
+        "other": "Username"
+    },
+    "notify.field.password": {
+        "other": "Password"
+    },
+    "notify.field.username_placeholder_ntfy": {
+        "other": "Enter ntfy username"
+    },
+    "notify.field.password_placeholder_ntfy": {
+        "other": "Enter ntfy password"
     },
     "plugin.geetest_desc": {
         "other": "Geetest CAPTCHA auto-solve plugin"
