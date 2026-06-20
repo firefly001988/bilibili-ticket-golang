@@ -25,8 +25,11 @@ export interface MacroSummary {
   id: string
   taskGroupId: string
   projectId: number
+  projectName?: string
   screenId: number
+  screenName?: string
   skuId: number
+  skuName?: string
   eventDay: string
   eventDayConfirmed: boolean
   needsReview: boolean

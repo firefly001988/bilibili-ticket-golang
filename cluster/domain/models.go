@@ -96,8 +96,11 @@ type MacroTask struct {
 	ID                string         `json:"id"`
 	TaskGroupID       string         `json:"taskGroupId"`
 	ProjectID         int64          `json:"projectId"`
+	ProjectName       string         `json:"projectName,omitempty"`
 	ScreenID          int64          `json:"screenId"`
+	ScreenName        string         `json:"screenName,omitempty"`
 	SKUID             int64          `json:"skuId"`
+	SKUName           string         `json:"skuName,omitempty"`
 	EventDay          string         `json:"eventDay"`
 	EventDayConfirmed bool           `json:"eventDayConfirmed"`
 	NeedsReview       bool           `json:"needsReview"`

@@ -10,7 +10,7 @@ const snapshot = ref<ClusterSnapshot>({ taskGroups: [], accounts: [], buyers: []
 const accountJSON = ref('')
 const worker = ref({ id: '', name: '', baseUrl: 'http://127.0.0.1:18080', key: '', role: 'primary' as ResourceRole })
 const taskGroup = ref({ name: '' })
-const macro = ref({ id: '', taskGroupId: '', projectId: 0, screenId: 0, skuId: 0, eventDay: '', orderCapacity: 4, capacitySource: 'default', smartMerge: false, priority: 0, desiredReplicas: 1, hardConcurrency: 1, startAt: '', deadline: '' })
+const macro = ref({ id: '', taskGroupId: '', projectId: 0, projectName: '', screenId: 0, screenName: '', skuId: 0, skuName: '', eventDay: '', orderCapacity: 4, capacitySource: 'default', smartMerge: false, priority: 0, desiredReplicas: 1, hardConcurrency: 1, startAt: '', deadline: '' })
 const purchase = ref({ macroTaskId: '', allowSplit: false, buyerIds: [] as string[] })
 const login = ref({ name: '', role: 'primary' as ResourceRole, sessionId: '', url: '', message: '' })
 const projectId = ref('')
@@ -98,7 +98,7 @@ function chooseSKU(ticket: CatalogSKU) {
   selectedSKU.value = ticket
   eventDayConfirmed.value = false
   const eventDay = ticket.eventTime ? ticket.eventTime.slice(0, 10) : ''
-  Object.assign(macro.value, { id: `macro-${project.value?.id}-${ticket.skuId}-${Date.now()}`, taskGroupId: macro.value.taskGroupId || snapshot.value.taskGroups[0]?.id || '', projectId: Number(project.value?.id), screenId: ticket.screenId, skuId: ticket.skuId, eventDay, orderCapacity: ticket.orderCapacity || 4, capacitySource: ticket.orderCapacity > 0 ? 'api' : 'default', startAt: localDateTime(ticket.saleStart || project.value?.start), deadline: localDateTime(ticket.saleEnd || project.value?.end) })
+  Object.assign(macro.value, { id: `macro-${project.value?.id}-${ticket.skuId}-${Date.now()}`, taskGroupId: macro.value.taskGroupId || snapshot.value.taskGroups[0]?.id || '', projectId: Number(project.value?.id), projectName: project.value?.name || '', screenId: ticket.screenId, screenName: ticket.screenName, skuId: ticket.skuId, skuName: ticket.skuName, eventDay, orderCapacity: ticket.orderCapacity || 4, capacitySource: ticket.orderCapacity > 0 ? 'api' : 'default', startAt: localDateTime(ticket.saleStart || project.value?.start), deadline: localDateTime(ticket.saleEnd || project.value?.end) })
 }
 
 async function syncBuyers(accountId: string) {
@@ -143,7 +143,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
             <thead><tr><th>项目 / SKU</th><th>活动日</th><th>容量</th><th>副本</th><th>优先级</th><th>阶段 / 审核</th><th>操作</th></tr></thead>
             <tbody>
               <tr v-for="item in snapshot.macros" :key="item.id">
-                <td>{{ item.projectId }} / {{ item.skuId }}</td><td>{{ item.eventDay || '未设置' }}</td><td>{{ item.orderCapacity }}</td>
+                <td><div>{{ item.projectName || `项目 ${item.projectId}` }}</div><div class="text-caption text-medium-emphasis">{{ item.screenName || item.screenId }} — {{ item.skuName || item.skuId }}</div></td><td>{{ item.eventDay || '未设置' }}</td><td>{{ item.orderCapacity }}</td>
                 <td>{{ item.desiredReplicas }} / {{ item.hardConcurrency }}</td><td>{{ item.priority }}</td>
                 <td><v-chip size="small" :color="item.needsReview ? 'warning' : 'success'">{{ item.phase }} · {{ item.needsReview ? '待确认' : '可调度' }}</v-chip></td>
                 <td><v-btn size="small" :disabled="item.needsReview || !item.eventDayConfirmed" @click="invoke('StartMacro', item.id)">启动准点</v-btn></td>
@@ -151,7 +151,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
             </tbody>
           </v-table>
           <v-expansion-panels class="mt-5">
-            <v-expansion-panel title="创建任务组"><v-expansion-panel-text><div class="mb-2">现有：{{ snapshot.taskGroups.map(g => `${g.name} (${g.id})`).join('、') || '暂无' }}</div><v-text-field v-model="taskGroup.name" label="任务组名称" /><v-btn color="primary" @click="saveTaskGroup">保存任务组</v-btn></v-expansion-panel-text></v-expansion-panel>
+            <v-expansion-panel title="创建任务组"><v-expansion-panel-text><div class="mb-2">现有：{{ snapshot.taskGroups.map(g => g.name).join('、') || '暂无' }}</div><v-text-field v-model="taskGroup.name" label="任务组名称" /><v-btn color="primary" @click="saveTaskGroup">保存任务组</v-btn></v-expansion-panel-text></v-expansion-panel>
             <v-expansion-panel title="创建或更新宏任务"><v-expansion-panel-text>
               <div class="d-flex ga-2 mb-3"><v-text-field v-model="projectId" label="Bilibili 项目 ID" hide-details @keyup.enter="loadProject" /><v-btn color="primary" :loading="projectLoading" @click="loadProject">读取项目</v-btn></div>
               <v-alert v-if="project" type="info" variant="tonal" class="mb-3"><strong>{{ project.name }}</strong><span class="ml-2">{{ project.forceRealName ? '实名制项目' : '非强制实名项目' }}</span></v-alert>
@@ -166,7 +166,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
               </template>
             </v-expansion-panel-text></v-expansion-panel>
             <v-expansion-panel title="添加购票组"><v-expansion-panel-text>
-              <v-select v-model="purchase.macroTaskId" :items="snapshot.macros" :item-title="item => `${item.projectId} / ${item.skuId} (${item.id})`" item-value="id" label="宏任务" />
+              <v-select v-model="purchase.macroTaskId" :items="snapshot.macros" :item-title="item => `${item.projectName || `项目 ${item.projectId}`} · ${item.screenName || item.screenId} · ${item.skuName || item.skuId}`" item-value="id" label="宏任务" />
               <v-switch v-model="purchase.allowSplit" label="回流阶段允许拆成单人订单" color="warning" />
               <v-alert v-if="snapshot.buyers.length === 0" type="warning" variant="tonal" class="mb-3">尚未同步购票人。请先到“账号池”对至少一个账号执行“同步购票人”。</v-alert>
               <v-select v-model="purchase.buyerIds" :items="snapshot.buyers" item-title="name" item-value="logicalId" label="选择购票人" multiple chips closable-chips><template #item="{ props, item }"><v-list-item v-bind="props" :subtitle="`${item.tel || '无手机号'} · ${item.idCard || '无证件信息'}`" /></template></v-select>
