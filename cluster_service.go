@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -28,6 +30,7 @@ import (
 type ClusterSnapshot struct {
 	TaskGroups []domain.TaskGroup `json:"taskGroups"`
 	Accounts   []AccountSummary   `json:"accounts"`
+	Buyers     []domain.Buyer     `json:"buyers"`
 	Workers    []WorkerSummary    `json:"workers"`
 	Macros     []MacroSummary     `json:"macros"`
 	Attempts   []AttemptSummary   `json:"attempts"`
@@ -86,6 +89,55 @@ type SKUInspection struct {
 	CapacitySource domain.CapacitySource `json:"capacitySource"`
 	SaleStart      time.Time             `json:"saleStart"`
 	SaleEnd        time.Time             `json:"saleEnd"`
+}
+
+type ProjectCatalog struct {
+	ID            string       `json:"id"`
+	Name          string       `json:"name"`
+	ForceRealName bool         `json:"forceRealName"`
+	Start         time.Time    `json:"start"`
+	End           time.Time    `json:"end"`
+	Tickets       []CatalogSKU `json:"tickets"`
+}
+
+type CatalogSKU struct {
+	ScreenID      int64     `json:"screenId"`
+	SKUID         int64     `json:"skuId"`
+	ScreenName    string    `json:"screenName"`
+	SKUName       string    `json:"skuName"`
+	Price         int       `json:"price"`
+	Status        string    `json:"status"`
+	EventTime     time.Time `json:"eventTime"`
+	SaleStart     time.Time `json:"saleStart"`
+	SaleEnd       time.Time `json:"saleEnd"`
+	OrderCapacity int       `json:"orderCapacity"`
+}
+
+func (s *ClusterService) LoadProject(projectID string) (ProjectCatalog, error) {
+	if s.catalog == nil {
+		return ProjectCatalog{}, fmt.Errorf("catalog client is unavailable")
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return ProjectCatalog{}, fmt.Errorf("project id is required")
+	}
+	info, err := s.catalog.GetProjectInformationNew(projectID)
+	if err != nil {
+		return ProjectCatalog{}, err
+	}
+	tickets, err := s.catalog.GetTicketSkuIDsByProjectIDNew(projectID)
+	if err != nil {
+		return ProjectCatalog{}, err
+	}
+	result := ProjectCatalog{ID: info.ProjectID, Name: info.ProjectName, ForceRealName: info.IsForceRealName, Start: info.StartTime, End: info.EndTime}
+	for _, ticket := range tickets {
+		capacity := ticket.BuyLimit
+		if capacity <= 0 {
+			capacity = 4
+		}
+		result.Tickets = append(result.Tickets, CatalogSKU{ScreenID: ticket.ScreenID, SKUID: ticket.SkuID, ScreenName: ticket.Name, SKUName: ticket.Desc, Price: ticket.Price, Status: ticket.Flags.DisplayName, EventTime: ticket.EventTime, SaleStart: ticket.SaleStat.Start, SaleEnd: ticket.SaleStat.End, OrderCapacity: capacity})
+	}
+	return result, nil
 }
 
 func (s *ClusterService) InspectSKU(projectID, screenID, skuID int64) (SKUInspection, error) {
@@ -244,7 +296,11 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	if err != nil {
 		return ClusterSnapshot{}, err
 	}
-	result := ClusterSnapshot{TaskGroups: taskGroups}
+	buyers, err := s.repository.ListLogicalBuyers(ctx)
+	if err != nil {
+		return ClusterSnapshot{}, err
+	}
+	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyers}
 	for _, account := range accountList {
 		result.Accounts = append(result.Accounts, AccountSummary{ID: account.ID, Name: account.Name, Role: account.Role, Enabled: account.Enabled, CooldownUntil: account.CooldownUntil, CredentialVersion: account.Credentials.Version})
 	}
@@ -351,6 +407,9 @@ func (s *ClusterService) PollAccountLogin(sessionID string) (AccountLoginPoll, e
 	if err := s.repository.PutAccount(context.Background(), account, nil); err != nil {
 		return result, err
 	}
+	// Best-effort import of the account's existing buyers. Login remains
+	// successful if Bilibili's buyer endpoint is temporarily unavailable.
+	_, _ = s.accounts.SyncBuyers(context.Background(), accountID)
 	s.mu.Lock()
 	delete(s.loginSessions, sessionID)
 	s.mu.Unlock()
@@ -388,6 +447,17 @@ func (s *ClusterService) ImportAccount(document string) error {
 		err = s.refreshResources(context.Background())
 	}
 	return err
+}
+
+func (s *ClusterService) SyncAccountBuyers(accountID string) ([]domain.Buyer, error) {
+	buyers, err := s.accounts.SyncBuyers(context.Background(), accountID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.refreshResources(context.Background()); err != nil {
+		return nil, err
+	}
+	return buyers, nil
 }
 
 func (s *ClusterService) AddWorker(document string) error {
@@ -579,6 +649,9 @@ func (r buyerResolver) Resolve(ctx context.Context, accountID string, buyers []d
 	for i := range result {
 		mapping, err := r.repository.BuyerMapping(ctx, accountID, result[i].LogicalID)
 		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, fmt.Errorf("%w: buyer %s on account %s", dispatcher.ErrBuyerUnavailable, result[i].LogicalID, accountID)
+			}
 			return nil, fmt.Errorf("buyer %s is not provisioned on account %s: %w", result[i].LogicalID, accountID, err)
 		}
 		result[i].BuyerID = mapping.BuyerID

@@ -3,11 +3,13 @@ package accounts
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
@@ -66,6 +68,51 @@ func (m *Manager) Import(ctx context.Context, data []byte) (domain.Account, erro
 	return account, nil
 }
 
+// SyncBuyers imports an account's existing Bilibili buyers and assigns stable,
+// opaque logical IDs. Users never need to create or manage these IDs.
+func (m *Manager) SyncBuyers(ctx context.Context, accountID string) ([]domain.Buyer, error) {
+	account, err := m.repository.Account(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	remote, credentials, err := m.provisioner.ListBuyers(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.Buyer, 0, len(remote))
+	for _, buyer := range remote {
+		if buyer.BuyerID <= 0 {
+			continue
+		}
+		buyer.LogicalID = logicalBuyerID(buyer)
+		logical := buyer
+		logical.BuyerID = 0
+		if err := m.repository.PutLogicalBuyer(ctx, logical); err != nil {
+			return nil, err
+		}
+		mapping := domain.AccountBuyerMapping{AccountID: account.ID, LogicalBuyerID: buyer.LogicalID, BuyerID: buyer.BuyerID, UpdatedAt: time.Now()}
+		if err := m.repository.PutBuyerMapping(ctx, mapping); err != nil {
+			return nil, err
+		}
+		result = append(result, logical)
+	}
+	old := account.Credentials.Version
+	if credentials.Version <= old {
+		credentials.Version = old + 1
+	}
+	account.Credentials = credentials
+	if err := m.repository.PutAccount(ctx, account, &old); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func logicalBuyerID(buyer domain.Buyer) string {
+	identity := strings.ToLower(strings.TrimSpace(buyer.Name)) + "\x00" + strings.TrimSpace(buyer.Tel) + "\x00" + strings.ToUpper(strings.TrimSpace(buyer.IDCard)) + fmt.Sprintf("\x00%d", buyer.Type)
+	sum := sha256.Sum256([]byte(identity))
+	return "buyer-" + hex.EncodeToString(sum[:12])
+}
+
 // EnsureBuyer never mutates a Bilibili account without explicit confirmation.
 func (m *Manager) EnsureBuyer(ctx context.Context, accountID string, buyer domain.Buyer, confirmed bool) (domain.AccountBuyerMapping, error) {
 	if buyer.LogicalID == "" {
@@ -105,7 +152,9 @@ func (m *Manager) saveMapping(ctx context.Context, account domain.Account, buyer
 	if buyerID <= 0 {
 		return domain.AccountBuyerMapping{}, fmt.Errorf("invalid provisioned buyer id")
 	}
-	if err := m.repository.PutLogicalBuyer(ctx, buyer); err != nil {
+	logical := buyer
+	logical.BuyerID = 0
+	if err := m.repository.PutLogicalBuyer(ctx, logical); err != nil {
 		return domain.AccountBuyerMapping{}, err
 	}
 	mapping := domain.AccountBuyerMapping{AccountID: account.ID, LogicalBuyerID: buyer.LogicalID, BuyerID: buyerID, UpdatedAt: time.Now()}

@@ -15,6 +15,15 @@ type client struct {
 	failWorker string
 }
 
+type selectiveResolver struct{ unavailable map[string]bool }
+
+func (r selectiveResolver) Resolve(_ context.Context, accountID string, buyers []domain.Buyer) ([]domain.Buyer, error) {
+	if r.unavailable[accountID] {
+		return nil, ErrBuyerUnavailable
+	}
+	return buyers, nil
+}
+
 func (c *client) Submit(_ context.Context, worker domain.WorkerNode, spec domain.ExecutionSpec) error {
 	c.submitted = append(c.submitted, spec)
 	if worker.ID == c.failWorker {
@@ -176,5 +185,23 @@ func TestAmbiguousSubmitFailureIsolatesAccountAndUsesStandby(t *testing.T) {
 	}
 	if first.value.AccountID == second.value.AccountID || second.value.WorkerID != "wspare" {
 		t.Fatalf("unsafe failover resources: first=%#v second=%#v", first.value, second.value)
+	}
+}
+
+func TestAccountWithoutBuyerMappingIsSkipped(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, selectiveResolver{unavailable: map[string]bool{"a1": true}})
+	accounts, workers := resources()
+	d.SetResources(accounts, workers)
+	d.Add(IntentPlan{Macro: dispatchMacro("m", 1, 1), Intent: dispatchIntent("i", "m", "buyer")})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.submitted) != 1 {
+		t.Fatalf("expected one attempt, got %#v", c.submitted)
+	}
+	attempt := d.attempts[c.submitted[0].AttemptID].value
+	if attempt.AccountID != "a2" {
+		t.Fatalf("account without buyer mapping was selected: %#v", attempt)
 	}
 }

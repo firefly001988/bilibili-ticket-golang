@@ -182,6 +182,27 @@ func (r *Repository) PutLogicalBuyer(ctx context.Context, value domain.Buyer) er
 	return err
 }
 
+func (r *Repository) ListLogicalBuyers(ctx context.Context) ([]domain.Buyer, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM logical_buyers ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.Buyer
+	for rows.Next() {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return nil, err
+		}
+		var buyer domain.Buyer
+		if err := json.Unmarshal(payload, &buyer); err != nil {
+			return nil, err
+		}
+		result = append(result, buyer)
+	}
+	return result, rows.Err()
+}
+
 func (r *Repository) PutBuyerMapping(ctx context.Context, value domain.AccountBuyerMapping) error {
 	b, err := marshal(value)
 	if err != nil {

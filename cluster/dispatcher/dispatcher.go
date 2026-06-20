@@ -33,6 +33,8 @@ type MappingResolver interface {
 	Resolve(context.Context, string, []domain.Buyer) ([]domain.Buyer, error)
 }
 
+var ErrBuyerUnavailable = errors.New("buyer is unavailable on account")
+
 type IntentPlan struct {
 	Macro  domain.MacroTask
 	Intent domain.LogicalOrderIntent
@@ -175,7 +177,10 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 			desired = hard
 		}
 		for d.activeCount(plan.Intent.ID) < desired {
-			account, worker, ok := d.pickResources()
+			account, worker, ok, err := d.pickResources(ctx, plan)
+			if err != nil {
+				return err
+			}
 			if !ok {
 				break
 			}
@@ -324,7 +329,7 @@ func (d *Dispatcher) activeCount(intentID string) int {
 	return count
 }
 
-func (d *Dispatcher) pickResources() (domain.Account, domain.WorkerNode, bool) {
+func (d *Dispatcher) pickResources(ctx context.Context, plan *IntentPlan) (domain.Account, domain.WorkerNode, bool, error) {
 	accounts := make([]domain.Account, 0, len(d.accounts))
 	recoveredAccounts := make([]domain.Account, 0)
 	workers := make([]domain.WorkerNode, 0, len(d.workers))
@@ -358,7 +363,6 @@ func (d *Dispatcher) pickResources() (domain.Account, domain.WorkerNode, bool) {
 		}
 		workers = append(workers, value)
 	}
-	sort.Slice(accounts, func(i, j int) bool { return accounts[i].ID < accounts[j].ID })
 	sort.Slice(workers, func(i, j int) bool { return workers[i].ID < workers[j].ID })
 	if len(accounts) == 0 && d.degraded {
 		for _, value := range d.accounts {
@@ -370,10 +374,26 @@ func (d *Dispatcher) pickResources() (domain.Account, domain.WorkerNode, bool) {
 	if len(accounts) == 0 {
 		accounts = append(accounts, recoveredAccounts...)
 	}
+	sort.Slice(accounts, func(i, j int) bool { return accounts[i].ID < accounts[j].ID })
 	if len(accounts) == 0 || len(workers) == 0 {
-		return domain.Account{}, domain.WorkerNode{}, false
+		return domain.Account{}, domain.WorkerNode{}, false, nil
 	}
-	return accounts[0], workers[0], true
+	if d.resolver != nil {
+		eligible := accounts[:0]
+		for _, account := range accounts {
+			if _, err := d.resolver.Resolve(ctx, account.ID, plan.Intent.Buyers); errors.Is(err, ErrBuyerUnavailable) {
+				continue
+			} else if err != nil {
+				return domain.Account{}, domain.WorkerNode{}, false, err
+			}
+			eligible = append(eligible, account)
+		}
+		accounts = eligible
+	}
+	if len(accounts) == 0 {
+		return domain.Account{}, domain.WorkerNode{}, false, nil
+	}
+	return accounts[0], workers[0], true, nil
 }
 
 func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account domain.Account, worker domain.WorkerNode) error {
