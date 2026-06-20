@@ -24,12 +24,17 @@
   "leaseDurationSec": 180,
   "workerId": "worker-01",
   "version": "build-version",
+  "pluginDir": "./plugins",
+  "captchaPlugin": "captcha-plugin",
+  "calibrateClock": true,
   "pluginVersion": "captcha-plugin-version",
   "algorithmVersion": "ticket-algorithm-version"
 }
 ```
 
 轮询间隔必须为 10–60 秒。有效租约至少为 `max(180 秒, 3 × 轮询间隔)`；状态查询会续租。租约或任务 deadline 到期时，Worker 自行取消任务。
+
+`serve` 模式会启用 Bilibili 时钟校准。配置 `captchaPlugin` 后，Worker 从 `pluginDir` 加载与桌面端相同协议的验证码插件，并在健康接口报告插件版本；插件不可用时 Worker 拒绝启动，避免运行到验证码阶段才静默失效。
 
 Worker 仅提供 HTTP。远程部署必须用可信反向代理终止 HTTPS，并通过防火墙或私网限制监听地址。有控制密钥即能完全控制对应 Worker。
 
