@@ -23,7 +23,14 @@ let loginTimer: number | undefined
 
 async function refresh() {
   try {
-    snapshot.value = await clusterCall<ClusterSnapshot>('Snapshot')
+    const next = await clusterCall<ClusterSnapshot>('Snapshot')
+    next.taskGroups ||= []
+    next.accounts ||= []
+    next.buyers ||= []
+    next.workers ||= []
+    next.macros ||= []
+    next.attempts ||= []
+    snapshot.value = next
     error.value = ''
   } catch (e) { error.value = String(e) }
 }

@@ -300,6 +300,9 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	if err != nil {
 		return ClusterSnapshot{}, err
 	}
+	if buyers == nil {
+		buyers = make([]domain.Buyer, 0)
+	}
 	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyers}
 	for _, account := range accountList {
 		result.Accounts = append(result.Accounts, AccountSummary{ID: account.ID, Name: account.Name, Role: account.Role, Enabled: account.Enabled, CooldownUntil: account.CooldownUntil, CredentialVersion: account.Credentials.Version})

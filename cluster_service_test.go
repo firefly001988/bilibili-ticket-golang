@@ -56,3 +56,14 @@ func TestClusterServiceValidatesRunnableMacroAndPurchaseShape(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestClusterSnapshotUsesEmptyBuyerArray(t *testing.T) {
+	service := testClusterService(t)
+	snapshot, err := service.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Buyers == nil {
+		t.Fatal("empty buyers must be represented as an empty array, not null")
+	}
+}
