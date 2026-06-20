@@ -14,7 +14,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Test Go packages with race detector
+        run: go test -race ./...
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
   build:
+    needs: verify
     strategy:
       fail-fast: true
       matrix:
@@ -100,7 +122,7 @@ jobs:
             librsvg2-dev
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       - name: Skip anti-scalper prompt (CI only)
         run: |
@@ -121,6 +143,12 @@ jobs:
             wails build -clean -nopackage -ldflags "-X bilibili-ticket-golang/global.GitCommit=${COMMIT} -X bilibili-ticket-golang/global.BuildTime=${BUILD_TIME}"
           fi
 
+      - name: Build ticket worker
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+        run: go build -trimpath -o "build/bin/ticket-worker${{ matrix.ext }}" ./cmd/ticket-worker
+
       - name: Package artifact
         shell: bash
         run: |
@@ -128,10 +156,13 @@ jobs:
           mkdir -p release
           BIN_NAME="bilibili-ticket-golang"
           SOURCE_FILE="build/bin/${BIN_NAME}${{ matrix.ext }}"
+          WORKER_NAME="ticket-worker"
+          WORKER_SOURCE="build/bin/${WORKER_NAME}${{ matrix.ext }}"
           TARGET_BASE="${BIN_NAME}_${{ matrix.platform }}_${{ matrix.arch }}_${COMMIT}"
           cp "$SOURCE_FILE" "release/${BIN_NAME}${{ matrix.ext }}"
-          tar -C release -czf "release/${TARGET_BASE}.tar.gz" "${BIN_NAME}${{ matrix.ext }}"
-          rm -f "release/${BIN_NAME}${{ matrix.ext }}"
+          cp "$WORKER_SOURCE" "release/${WORKER_NAME}${{ matrix.ext }}"
+          tar -C release -czf "release/${TARGET_BASE}.tar.gz" "${BIN_NAME}${{ matrix.ext }}" "${WORKER_NAME}${{ matrix.ext }}"
+          rm -f "release/${BIN_NAME}${{ matrix.ext }}" "release/${WORKER_NAME}${{ matrix.ext }}"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
