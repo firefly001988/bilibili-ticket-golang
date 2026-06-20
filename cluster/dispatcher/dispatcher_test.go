@@ -9,13 +9,17 @@ import (
 )
 
 type client struct {
-	submitted []domain.ExecutionSpec
-	states    map[string]WorkerStatus
-	stopped   []string
+	submitted  []domain.ExecutionSpec
+	states     map[string]WorkerStatus
+	stopped    []string
+	failWorker string
 }
 
-func (c *client) Submit(_ context.Context, _ domain.WorkerNode, spec domain.ExecutionSpec) error {
+func (c *client) Submit(_ context.Context, worker domain.WorkerNode, spec domain.ExecutionSpec) error {
 	c.submitted = append(c.submitted, spec)
+	if worker.ID == c.failWorker {
+		return context.DeadlineExceeded
+	}
 	return nil
 }
 func (c *client) Status(_ context.Context, _ domain.WorkerNode, id string) (WorkerStatus, error) {
@@ -150,5 +154,27 @@ func TestRestoreAttemptReservesResourcesAndKeepsWorkerResult(t *testing.T) {
 	got := d.attempts[restored.ID].value.Result
 	if got.Reason != domain.FailureDeadline || got.Credentials.Version != 0 {
 		t.Fatalf("unexpected persisted result: %#v", got)
+	}
+}
+
+func TestAmbiguousSubmitFailureIsolatesAccountAndUsesStandby(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus), failWorker: "w1"}
+	d := New(c, nil, nil)
+	accounts, workers := resources()
+	d.SetResources(accounts, []domain.WorkerNode{workers[0], workers[2]})
+	d.Add(IntentPlan{Macro: dispatchMacro("m", 1, 1), Intent: dispatchIntent("i", "m", "buyer")})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.submitted) != 2 {
+		t.Fatalf("expected immediate standby retry, got %#v", c.submitted)
+	}
+	first := d.attempts[c.submitted[0].AttemptID]
+	second := d.attempts[c.submitted[1].AttemptID]
+	if first.value.State != domain.AttemptFailed || first.value.Result.Reason != domain.FailureWorkerLost {
+		t.Fatalf("ambiguous attempt was not retained: %#v", first.value)
+	}
+	if first.value.AccountID == second.value.AccountID || second.value.WorkerID != "wspare" {
+		t.Fatalf("unsafe failover resources: first=%#v second=%#v", first.value, second.value)
 	}
 }

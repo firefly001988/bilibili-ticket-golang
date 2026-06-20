@@ -392,11 +392,23 @@ func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account dom
 		mode = domain.StartScheduled
 	}
 	spec := domain.ExecutionSpec{AttemptID: id, IntentID: plan.Intent.ID, ProjectID: plan.Macro.ProjectID, ScreenID: plan.Macro.ScreenID, SKUID: plan.Macro.SKUID, Buyers: buyers, StartMode: mode, StartAt: plan.Macro.StartAt, Deadline: plan.Macro.Deadline, IntervalMS: 500, Credentials: account.Credentials}
-	if err := d.client.Submit(ctx, worker, spec); err != nil {
-		return err
-	}
 	now := d.now()
 	value := domain.ExecutionAttempt{ID: id, IntentID: plan.Intent.ID, SpecHash: spec.Hash(), AccountID: account.ID, WorkerID: worker.ID, State: domain.AttemptWaiting, CreatedAt: now, UpdatedAt: now}
+	if err := d.client.Submit(ctx, worker, spec); err != nil {
+		// A transport error does not prove that the worker rejected the task.
+		// Retain the attempt for audit and isolate its account until the old
+		// worker lease plus safety margin has expired.
+		value.State = domain.AttemptFailed
+		value.Result = domain.ExecutionResult{AttemptID: id, IntentID: plan.Intent.ID, SpecHash: spec.Hash(), State: domain.AttemptFailed, Reason: domain.FailureWorkerLost, Message: err.Error(), FinishedAt: now}
+		d.attempts[id] = &attempt{value: value, planID: plan.Intent.ID, isolatedUntil: now.Add(195 * time.Second)}
+		d.failedWorkers[worker.ID] = now
+		d.quarantinedAccounts[account.ID] = now.Add(195 * time.Second)
+		d.degraded = true
+		if d.repository != nil {
+			return d.repository.PutAttempt(ctx, value)
+		}
+		return nil
+	}
 	d.attempts[id] = &attempt{value: value, planID: plan.Intent.ID}
 	d.accountBusy[account.ID], d.workerBusy[worker.ID] = id, id
 	if d.repository != nil {
