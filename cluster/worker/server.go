@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	biliclock "bilibili-ticket-golang/biliutils/clock"
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/executor"
 )
@@ -29,6 +30,9 @@ type Config struct {
 	Version          string        `json:"version"`
 	PluginVersion    string        `json:"pluginVersion,omitempty"`
 	AlgorithmVersion string        `json:"algorithmVersion,omitempty"`
+	PluginDir        string        `json:"pluginDir,omitempty"`
+	CaptchaPlugin    string        `json:"captchaPlugin,omitempty"`
+	CalibrateClock   bool          `json:"calibrateClock,omitempty"`
 }
 
 func (c *Config) Normalize() error {
@@ -132,7 +136,7 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
 	active := s.active
 	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{"workerId": s.config.WorkerID, "version": s.config.Version, "pluginVersion": s.config.PluginVersion, "algorithmVersion": s.config.AlgorithmVersion, "activeAttemptId": active})
+	writeJSON(w, http.StatusOK, map[string]any{"workerId": s.config.WorkerID, "version": s.config.Version, "pluginVersion": s.config.PluginVersion, "algorithmVersion": s.config.AlgorithmVersion, "captchaPlugin": s.config.CaptchaPlugin, "clockCalibration": s.config.CalibrateClock, "activeAttemptId": active})
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +189,15 @@ func (s *Server) run(ctx context.Context, t *task) {
 		t.state = domain.AttemptRunning
 	}
 	s.mu.Unlock()
-	result := (executor.Engine{Backend: backend}).Run(ctx, t.spec)
+	var executionClock executor.Clock
+	if s.config.CalibrateClock {
+		if offset, err := biliclock.GetBilibiliClockOffset(); err == nil {
+			executionClock = executor.OffsetClock{Offset: offset}
+		} else {
+			_ = WriteRedactedLog(s.config.DataDir, "clock calibration failed: "+err.Error())
+		}
+	}
+	result := (executor.Engine{Backend: backend, Clock: executionClock}).Run(ctx, t.spec)
 	if result.Success {
 		if err := s.store.Append(result); err != nil {
 			result.Success, result.State, result.Reason, result.Message = false, domain.AttemptFailed, domain.FailureInternal, "persist success: "+err.Error()

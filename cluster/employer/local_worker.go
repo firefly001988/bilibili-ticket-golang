@@ -24,10 +24,12 @@ type LocalWorkerManager struct {
 }
 
 type LocalWorkerOptions struct {
-	BinaryPath string
-	DataDir    string
-	Listen     string
-	Version    string
+	BinaryPath    string
+	DataDir       string
+	Listen        string
+	Version       string
+	PluginDir     string
+	CaptchaPlugin string
 }
 
 func (m *LocalWorkerManager) Start(ctx context.Context, client *WorkerClient, options LocalWorkerOptions) (domain.WorkerNode, error) {
@@ -61,7 +63,7 @@ func (m *LocalWorkerManager) Start(ctx context.Context, client *WorkerClient, op
 	if err := os.WriteFile(keyPath, []byte(key), 0600); err != nil {
 		return domain.WorkerNode{}, err
 	}
-	config := worker.Config{Listen: options.Listen, BearerKey: key, DataDir: options.DataDir, WorkerID: "local", Version: options.Version, PollIntervalSec: 15}
+	config := worker.Config{Listen: options.Listen, BearerKey: key, DataDir: options.DataDir, WorkerID: "local", Version: options.Version, PollIntervalSec: 15, PluginDir: options.PluginDir, CaptchaPlugin: options.CaptchaPlugin}
 	configData, _ := json.MarshalIndent(config, "", "  ")
 	configPath := filepath.Join(options.DataDir, "worker.json")
 	if err := os.WriteFile(configPath, configData, 0600); err != nil {

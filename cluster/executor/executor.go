@@ -58,6 +58,13 @@ type Clock interface {
 
 type realClock struct{}
 
+type OffsetClock struct{ Offset time.Duration }
+
+func (c OffsetClock) Now() time.Time { return time.Now().Add(c.Offset) }
+func (c OffsetClock) Sleep(ctx context.Context, duration time.Duration) error {
+	return realClock{}.Sleep(ctx, duration)
+}
+
 func (realClock) Now() time.Time { return time.Now() }
 func (realClock) Sleep(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)

@@ -14,6 +14,7 @@ import (
 	"bilibili-ticket-golang/biliutils"
 	"bilibili-ticket-golang/biliutils/token"
 	"bilibili-ticket-golang/cluster/domain"
+	"bilibili-ticket-golang/global"
 	api "bilibili-ticket-golang/models/bili/api"
 	response "bilibili-ticket-golang/models/bili/response"
 	"bilibili-ticket-golang/store/cookiejar"
@@ -33,9 +34,14 @@ type BilibiliBackend struct {
 	sku         response.TicketSkuScreenID
 	confirm     *api.ConfirmStruct
 	buyers      []response.TicketBuyer
+	submitCount uint16
 }
 
 func NewBilibiliBackend(credentials domain.Credentials) (*BilibiliBackend, error) {
+	return NewBilibiliBackendWithSolver(credentials, nil)
+}
+
+func NewBilibiliBackendWithSolver(credentials domain.Credentials, solver biliutils.CaptchaSolverFn) (*BilibiliBackend, error) {
 	jar := cookiejar.New(nil)
 	for _, saved := range credentials.CookieJar {
 		host := strings.TrimPrefix(saved.Domain, ".")
@@ -73,6 +79,9 @@ func NewBilibiliBackend(credentials domain.Credentials) (*BilibiliBackend, error
 		return nil, err
 	}
 	client.SetRefreshToken(credentials.RefreshToken)
+	if solver != nil {
+		client.SetCaptchaSolver(solver)
+	}
 	if len(credentials.DeviceProfile) == 0 {
 		credentials.DeviceProfile, _ = json.Marshal(client.ExportDeviceProfile())
 	}
@@ -104,12 +113,17 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 	if err := ctx.Err(); err != nil {
 		return Outcome{Err: err}
 	}
+	if b.submitCount >= global.MaxTokenRefreshCount {
+		b.prepared = false
+		b.submitCount = 0
+	}
 	if !b.prepared {
 		if out := b.prepare(spec); out.Err != nil || out.Code != 0 {
 			return out
 		}
 	}
 	err, code, message, order := b.client.SubmitOrder(b.tokenGen, b.generatedAt, b.tokens, strconv.FormatInt(spec.ProjectID, 10), b.sku, b.buyers, b.confirm)
+	b.submitCount++
 	if err != nil {
 		return Outcome{Code: code, Message: message, Err: err}
 	}
