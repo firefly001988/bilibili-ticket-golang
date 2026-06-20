@@ -46,6 +46,11 @@ jobs:
             os: macos-14
             ext: ""
             cgo: 1
+          - platform: darwin
+            arch: amd64
+            os: macos-14
+            ext: ""
+            cgo: 1
     runs-on: ${{ matrix.os }}
     outputs:
       commit_short: ${{ steps.set_commit.outputs.short }}
@@ -178,7 +183,7 @@ jobs:
 
           # 获取上一个 release 的 tag
           preTag=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
-            sed -nE 's/.*"tag_name": "([^"]+)".*/\1/p')
+            sed -nE 's/.*"tag_name": "([^\"]+)".*/\1/p')
 
           if [ -n "$preTag" ] && git rev-parse "$preTag" >/dev/null 2>&1; then
             echo "上一版本: $preTag → 当前: $COMMIT"
