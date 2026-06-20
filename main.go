@@ -4,6 +4,7 @@ import (
 	"bilibili-ticket-golang/biliutils"
 	"bilibili-ticket-golang/biliutils/notify"
 	"bilibili-ticket-golang/biliutils/scheduler"
+	clusterstorage "bilibili-ticket-golang/cluster/storage"
 	"bilibili-ticket-golang/internal/i18n"
 	"bilibili-ticket-golang/models/bili/api"
 	gcaptcha "bilibili-ticket-golang/models/bili/captcha"
@@ -129,6 +130,15 @@ func main() {
 	if err != nil {
 		panic("Failed to load data:" + err.Error())
 	}
+	clusterRepository, err := clusterstorage.Open("data/employer.db")
+	if err != nil {
+		panic("Failed to open cluster database:" + err.Error())
+	}
+	if err = clusterRepository.MigrateLegacy(context.Background(), store); err != nil {
+		panic("Failed to migrate legacy tickets:" + err.Error())
+	}
+	clusterSvc := NewClusterService(clusterRepository)
+	clusterSvc.Start(context.Background())
 
 	// Restore saved locale or leave empty for first-startup detection
 	if store.Locale != "" {
@@ -178,13 +188,13 @@ func main() {
 	app := NewAppWithClientAndStore(c, store)
 
 	defer func() {
+		clusterSvc.Close()
 		schedSvc.StopClockCalibration()
 		c.PersistCookies()
 		logBroker.FlushLogs()
 	}()
 
-	// Auto-restart persisted tasks on launch
-	schedSvc.ReloadTickets()
+	// Membership ticket execution is owned by ClusterService. BWS remains local.
 	schedSvc.ReloadBWSTasks()
 
 	// Start periodic clock calibration against Bilibili server (every 10s)
@@ -276,6 +286,7 @@ func main() {
 		},
 		Bind: []interface{}{
 			app,
+			clusterSvc,
 			c,
 			logBroker,
 			schedSvc,

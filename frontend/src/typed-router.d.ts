@@ -51,6 +51,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/cluster-scheduler': RouteRecordInfo<
+      '/cluster-scheduler',
+      '/cluster-scheduler',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/notify': RouteRecordInfo<
       '/notify',
       '/notify',
@@ -135,6 +142,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/bws-reservation.vue': {
       routes:
         | '/bws-reservation'
+      views:
+        | never
+    }
+    'src/pages/cluster-scheduler.vue': {
+      routes:
+        | '/cluster-scheduler'
       views:
         | never
     }

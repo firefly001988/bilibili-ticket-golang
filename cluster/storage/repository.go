@@ -56,6 +56,7 @@ func (r *Repository) init(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS logical_buyers (id TEXT PRIMARY KEY, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS account_buyer_mappings (account_id TEXT NOT NULL, logical_buyer_id TEXT NOT NULL, buyer_id INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(account_id, logical_buyer_id), FOREIGN KEY(account_id) REFERENCES accounts(id))`,
 		`CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, role TEXT NOT NULL, enabled INTEGER NOT NULL, payload BLOB NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS worker_keys (worker_id TEXT PRIMARY KEY, control_key BLOB NOT NULL, FOREIGN KEY(worker_id) REFERENCES workers(id))`,
 		`CREATE TABLE IF NOT EXISTS leases (id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, account_id TEXT NOT NULL UNIQUE, worker_id TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS buyer_day_occupancy (buyer_id TEXT NOT NULL, event_day TEXT NOT NULL, intent_id TEXT NOT NULL, PRIMARY KEY(buyer_id, event_day))`,
 		`CREATE TABLE IF NOT EXISTS execution_results (attempt_id TEXT PRIMARY KEY, success INTEGER NOT NULL, payload BLOB NOT NULL)`,
@@ -127,6 +128,17 @@ func (r *Repository) PutWorker(ctx context.Context, value domain.WorkerNode) err
 	}
 	_, err = r.db.ExecContext(ctx, `INSERT INTO workers(id,role,enabled,payload) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role,enabled=excluded.enabled,payload=excluded.payload`, value.ID, value.Role, value.Enabled, b)
 	return err
+}
+
+func (r *Repository) PutWorkerKey(ctx context.Context, workerID, key string) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO worker_keys(worker_id,control_key) VALUES(?,?) ON CONFLICT(worker_id) DO UPDATE SET control_key=excluded.control_key`, workerID, []byte(key))
+	return err
+}
+
+func (r *Repository) WorkerKey(ctx context.Context, workerID string) (string, error) {
+	var key []byte
+	err := r.db.QueryRowContext(ctx, `SELECT control_key FROM worker_keys WHERE worker_id=?`, workerID).Scan(&key)
+	return string(key), err
 }
 
 func (r *Repository) PutAccount(ctx context.Context, value domain.Account, expectedVersion *int64) error {
@@ -225,6 +237,90 @@ func (r *Repository) ListMacroTasks(ctx context.Context) ([]domain.MacroTask, er
 			return nil, err
 		}
 		var value domain.MacroTask
+		if err := json.Unmarshal(b, &value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
+func (r *Repository) ListAccounts(ctx context.Context) ([]domain.Account, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM accounts ORDER BY role,id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.Account
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		var value domain.Account
+		if err := json.Unmarshal(b, &value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
+func (r *Repository) ListWorkers(ctx context.Context) ([]domain.WorkerNode, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM workers ORDER BY role,id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.WorkerNode
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		var value domain.WorkerNode
+		if err := json.Unmarshal(b, &value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
+func (r *Repository) ListPurchaseGroups(ctx context.Context, macroID string) ([]domain.PurchaseGroup, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM purchase_groups WHERE macro_task_id=? ORDER BY id`, macroID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.PurchaseGroup
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		var value domain.PurchaseGroup
+		if err := json.Unmarshal(b, &value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
+func (r *Repository) ListAttempts(ctx context.Context) ([]domain.ExecutionAttempt, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM attempts ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.ExecutionAttempt
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		var value domain.ExecutionAttempt
 		if err := json.Unmarshal(b, &value); err != nil {
 			return nil, err
 		}

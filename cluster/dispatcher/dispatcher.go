@@ -80,6 +80,28 @@ func (d *Dispatcher) Add(plan IntentPlan) {
 	d.plans[plan.Intent.ID] = &plan
 }
 
+func (d *Dispatcher) Attempts() []domain.ExecutionAttempt {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result := make([]domain.ExecutionAttempt, 0, len(d.attempts))
+	for _, current := range d.attempts {
+		result = append(result, current.value)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.Before(result[j].CreatedAt) })
+	return result
+}
+
+func (d *Dispatcher) PunctualStopped() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, current := range d.attempts {
+		if d.plans[current.planID].Intent.Phase == domain.PhasePunctual && !current.value.State.Terminal() {
+			return false
+		}
+	}
+	return true
+}
+
 // Reconcile first observes every active attempt, then fills replica deficits.
 func (d *Dispatcher) Reconcile(ctx context.Context) error {
 	d.mu.Lock()

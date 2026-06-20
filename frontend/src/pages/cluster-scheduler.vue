@@ -66,12 +66,13 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
             <v-btn color="warning" prepend-icon="mdi-swap-horizontal" @click="switchReflow">停止准点并切换回流</v-btn>
           </div>
           <v-table density="compact">
-            <thead><tr><th>项目 / SKU</th><th>活动日</th><th>容量</th><th>副本</th><th>优先级</th><th>阶段 / 审核</th></tr></thead>
+            <thead><tr><th>项目 / SKU</th><th>活动日</th><th>容量</th><th>副本</th><th>优先级</th><th>阶段 / 审核</th><th>操作</th></tr></thead>
             <tbody>
               <tr v-for="item in snapshot.macros" :key="item.id">
                 <td>{{ item.projectId }} / {{ item.skuId }}</td><td>{{ item.eventDay || '未设置' }}</td><td>{{ item.orderCapacity }}</td>
                 <td>{{ item.desiredReplicas }} / {{ item.hardConcurrency }}</td><td>{{ item.priority }}</td>
                 <td><v-chip size="small" :color="item.needsReview ? 'warning' : 'success'">{{ item.phase }} · {{ item.needsReview ? '待确认' : '可调度' }}</v-chip></td>
+                <td><v-btn size="small" :disabled="item.needsReview || !item.eventDayConfirmed" @click="invoke('StartMacro', item.id)">启动准点</v-btn></td>
               </tr>
             </tbody>
           </v-table>
