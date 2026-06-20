@@ -1,5 +1,7 @@
 # Bilibili-ticket-golang
 
+会员购集群模式的部署、协议、调度语义与安全说明见 [docs/cluster.md](docs/cluster.md)。
+
 又一个 Bilibili 会员购抢票辅助工具。
 
 基于 [Wails v2](https://wails.io/) 构建的跨平台桌面应用，使用 Go 后端 + Vue/Vuetify 前端，提供账号管理、场次查询、定时抢票、多渠道消息通知等功能。
