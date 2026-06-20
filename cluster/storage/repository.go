@@ -208,6 +208,7 @@ func (r *Repository) MarkIntentSucceeded(ctx context.Context, intent domain.Logi
 	}
 	defer tx.Rollback()
 	intent.Succeeded = true
+	intent.Terminal = true
 	payload, _ := json.Marshal(intent)
 	if _, err = tx.ExecContext(ctx, `UPDATE intents SET succeeded=1,payload=? WHERE id=? AND succeeded=0`, payload, intent.ID); err != nil {
 		return err
@@ -342,6 +343,27 @@ func (r *Repository) ListAttempts(ctx context.Context) ([]domain.ExecutionAttemp
 			return nil, err
 		}
 		var value domain.ExecutionAttempt
+		if err := json.Unmarshal(b, &value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
+func (r *Repository) ListIntents(ctx context.Context) ([]domain.LogicalOrderIntent, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM intents ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.LogicalOrderIntent
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		var value domain.LogicalOrderIntent
 		if err := json.Unmarshal(b, &value); err != nil {
 			return nil, err
 		}

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"bilibili-ticket-golang/cluster/employer"
 	"bilibili-ticket-golang/cluster/planner"
 	clusterstorage "bilibili-ticket-golang/cluster/storage"
+	"bilibili-ticket-golang/global"
 	"bilibili-ticket-golang/store/cookiejar"
 )
 
@@ -73,6 +75,7 @@ type ClusterService struct {
 	loginSessions map[string]*accountLoginSession
 	catalog       *biliutils.BiliClient
 	cancel        context.CancelFunc
+	notify        func(string)
 }
 
 func (s *ClusterService) SetCatalogClient(client *biliutils.BiliClient) { s.catalog = client }
@@ -114,20 +117,60 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 	service := &ClusterService{repository: repository, client: client, phases: make(map[string]domain.Phase), loginSessions: make(map[string]*accountLoginSession)}
 	service.accounts = accounts.NewManager(repository, biliProvisioner{})
 	service.dispatcher = dispatcher.New(client, repository, buyerResolver{repository: repository})
+	service.dispatcher.SetSuccessHandler(func(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
+		if service.notify != nil {
+			service.notify(fmt.Sprintf("购票成功：Intent %s，订单 %s", intent.ID, result.OrderID))
+		}
+	})
 	return service
 }
 
-func (s *ClusterService) Start(parent context.Context) {
+func (s *ClusterService) SetNotifier(notify func(string)) { s.notify = notify }
+
+func (s *ClusterService) Start(parent context.Context) error {
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
-	accountsList, _ := s.repository.ListAccounts(ctx)
-	workers, _ := s.repository.ListWorkers(ctx)
+	accountsList, err := s.repository.ListAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	workers, err := s.repository.ListWorkers(ctx)
+	if err != nil {
+		return err
+	}
 	for _, node := range workers {
 		if key, err := s.repository.WorkerKey(ctx, node.ID); err == nil {
 			s.client.SetKey(node.ID, key)
 		}
 	}
 	s.dispatcher.SetResources(accountsList, workers)
+	macros, err := s.repository.ListMacroTasks(ctx)
+	if err != nil {
+		return err
+	}
+	macroByID := make(map[string]domain.MacroTask, len(macros))
+	for _, macro := range macros {
+		macroByID[macro.ID] = macro
+	}
+	intents, err := s.repository.ListIntents(ctx)
+	if err != nil {
+		return err
+	}
+	for _, intent := range intents {
+		if macro, ok := macroByID[intent.MacroTaskID]; ok {
+			s.dispatcher.Add(dispatcher.IntentPlan{Macro: macro, Intent: intent})
+			s.phases[macro.ID] = intent.Phase
+		}
+	}
+	attempts, err := s.repository.ListAttempts(ctx)
+	if err != nil {
+		return err
+	}
+	for _, value := range attempts {
+		if err := s.dispatcher.RestoreAttempt(value); err != nil {
+			return err
+		}
+	}
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
@@ -142,7 +185,15 @@ func (s *ClusterService) Start(parent context.Context) {
 		}
 	}()
 	go func() {
-		node, err := s.local.Start(ctx, s.client, employer.LocalWorkerOptions{DataDir: "data/local-worker"})
+		pluginName := ""
+		pluginFile := "plugins/captcha-plugin"
+		if runtime.GOOS == "windows" {
+			pluginFile += ".exe"
+		}
+		if _, statErr := os.Stat(pluginFile); statErr == nil {
+			pluginName = "captcha-plugin"
+		}
+		node, err := s.local.Start(ctx, s.client, employer.LocalWorkerOptions{DataDir: "data/local-worker", PluginDir: "plugins", CaptchaPlugin: pluginName, Version: global.GitCommit})
 		if err == nil {
 			_ = s.repository.PutWorker(ctx, node)
 			if key, readErr := os.ReadFile("data/local-worker/control.key"); readErr == nil {
@@ -151,6 +202,7 @@ func (s *ClusterService) Start(parent context.Context) {
 			_ = s.refreshResources(ctx)
 		}
 	}()
+	return nil
 }
 
 func (s *ClusterService) Close() {
@@ -218,7 +270,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	}
 	s.mu.RUnlock()
 	for _, value := range s.dispatcher.Attempts() {
-		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State})
+		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, Reason: value.Result.Reason})
 	}
 	return result, nil
 }
@@ -396,6 +448,7 @@ func (s *ClusterService) StartMacro(macroID string) error {
 }
 
 func (s *ClusterService) planAndStart(ctx context.Context, macroID string, phase domain.Phase) error {
+	s.dispatcher.ResumePhase(phase)
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
 		return err

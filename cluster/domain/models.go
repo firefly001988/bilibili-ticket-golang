@@ -131,14 +131,16 @@ type PurchaseGroup struct {
 }
 
 type LogicalOrderIntent struct {
-	ID          string        `json:"id"`
-	MacroTaskID string        `json:"macroTaskId"`
-	Phase       Phase         `json:"phase"`
-	Buyers      []Buyer       `json:"buyers"`
-	BuyerDays   []BuyerDayKey `json:"buyerDays"`
-	ShapeHash   string        `json:"shapeHash"`
-	Succeeded   bool          `json:"succeeded"`
-	CreatedAt   time.Time     `json:"createdAt"`
+	ID            string        `json:"id"`
+	MacroTaskID   string        `json:"macroTaskId"`
+	Phase         Phase         `json:"phase"`
+	Buyers        []Buyer       `json:"buyers"`
+	BuyerDays     []BuyerDayKey `json:"buyerDays"`
+	ShapeHash     string        `json:"shapeHash"`
+	Succeeded     bool          `json:"succeeded"`
+	Terminal      bool          `json:"terminal"`
+	FailureReason FailureReason `json:"failureReason,omitempty"`
+	CreatedAt     time.Time     `json:"createdAt"`
 }
 
 func NewIntent(id string, macro MacroTask, phase Phase, buyers []Buyer, now time.Time) (LogicalOrderIntent, error) {
@@ -236,15 +238,16 @@ type Lease struct {
 }
 
 type ExecutionAttempt struct {
-	ID        string       `json:"id"`
-	IntentID  string       `json:"intentId"`
-	SpecHash  string       `json:"specHash"`
-	AccountID string       `json:"accountId"`
-	WorkerID  string       `json:"workerId"`
-	State     AttemptState `json:"state"`
-	Lease     Lease        `json:"lease"`
-	CreatedAt time.Time    `json:"createdAt"`
-	UpdatedAt time.Time    `json:"updatedAt"`
+	ID        string          `json:"id"`
+	IntentID  string          `json:"intentId"`
+	SpecHash  string          `json:"specHash"`
+	AccountID string          `json:"accountId"`
+	WorkerID  string          `json:"workerId"`
+	State     AttemptState    `json:"state"`
+	Result    ExecutionResult `json:"result,omitempty"`
+	Lease     Lease           `json:"lease"`
+	CreatedAt time.Time       `json:"createdAt"`
+	UpdatedAt time.Time       `json:"updatedAt"`
 }
 
 type ExecutionSpec struct {

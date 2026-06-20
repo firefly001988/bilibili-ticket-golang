@@ -138,7 +138,6 @@ func main() {
 		panic("Failed to migrate legacy tickets:" + err.Error())
 	}
 	clusterSvc := NewClusterService(clusterRepository)
-	clusterSvc.Start(context.Background())
 
 	// Restore saved locale or leave empty for first-startup detection
 	if store.Locale != "" {
@@ -180,6 +179,10 @@ func main() {
 		if err == nil {
 			notifier.Add(n)
 		}
+	}
+	clusterSvc.SetNotifier(func(message string) { notifier.Notify(message) })
+	if err := clusterSvc.Start(context.Background()); err != nil {
+		log.Fatalf("[main] Failed to start cluster service: %v", err)
 	}
 
 	// Scheduler service — orchestrates tasks, BiliClient, LogBroker and ticket storage

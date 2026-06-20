@@ -106,3 +106,49 @@ func TestStandbyIsIdleUntilMachineFailure(t *testing.T) {
 		t.Fatalf("standby worker not activated: %#v", second)
 	}
 }
+
+func TestSwitchToReflowDoesNotReplaceStoppedPunctualAttempt(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, nil)
+	accounts, workers := resources()
+	d.SetResources(accounts, workers)
+	d.Add(IntentPlan{Macro: dispatchMacro("m", 1, 1), Intent: dispatchIntent("i", "m", "buyer")})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	id := c.submitted[0].AttemptID
+	if err := d.SwitchToReflow(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	c.states[id] = WorkerStatus{State: domain.AttemptStopped, Result: domain.ExecutionResult{State: domain.AttemptStopped}}
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.submitted) != 1 {
+		t.Fatalf("punctual attempt was recreated after phase switch: %#v", c.submitted)
+	}
+	if !d.PunctualStopped() {
+		t.Fatal("punctual phase should be fully stopped")
+	}
+}
+
+func TestRestoreAttemptReservesResourcesAndKeepsWorkerResult(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, nil)
+	accounts, workers := resources()
+	d.SetResources(accounts, workers)
+	plan := IntentPlan{Macro: dispatchMacro("m", 1, 1), Intent: dispatchIntent("i", "m", "buyer")}
+	d.Add(plan)
+	restored := domain.ExecutionAttempt{ID: "restored", IntentID: plan.Intent.ID, AccountID: "a1", WorkerID: "w1", State: domain.AttemptRunning, CreatedAt: time.Now()}
+	if err := d.RestoreAttempt(restored); err != nil {
+		t.Fatal(err)
+	}
+	c.states[restored.ID] = WorkerStatus{State: domain.AttemptFailed, Result: domain.ExecutionResult{State: domain.AttemptFailed, Reason: domain.FailureDeadline, Message: "expired", Credentials: domain.Credentials{Version: 9}}}
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := d.attempts[restored.ID].value.Result
+	if got.Reason != domain.FailureDeadline || got.Credentials.Version != 0 {
+		t.Fatalf("unexpected persisted result: %#v", got)
+	}
+}

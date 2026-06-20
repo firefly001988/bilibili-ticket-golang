@@ -24,6 +24,7 @@ type WorkerClient interface {
 
 type Repository interface {
 	PutAttempt(context.Context, domain.ExecutionAttempt) error
+	PutIntent(context.Context, domain.LogicalOrderIntent) error
 	PutAccount(context.Context, domain.Account, *int64) error
 	MarkIntentSucceeded(context.Context, domain.LogicalOrderIntent, domain.ExecutionResult) error
 }
@@ -38,8 +39,9 @@ type IntentPlan struct {
 }
 
 type attempt struct {
-	value  domain.ExecutionAttempt
-	planID string
+	value         domain.ExecutionAttempt
+	planID        string
+	isolatedUntil time.Time
 }
 
 type Dispatcher struct {
@@ -58,10 +60,18 @@ type Dispatcher struct {
 	degraded            bool
 	now                 func() time.Time
 	next                uint64
+	onSuccess           func(domain.LogicalOrderIntent, domain.ExecutionResult)
+	stoppedPhases       map[domain.Phase]bool
+}
+
+func (d *Dispatcher) SetSuccessHandler(handler func(domain.LogicalOrderIntent, domain.ExecutionResult)) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.onSuccess = handler
 }
 
 func New(client WorkerClient, repository Repository, resolver MappingResolver) *Dispatcher {
-	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), now: time.Now}
+	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), stoppedPhases: make(map[domain.Phase]bool), now: time.Now}
 }
 
 func (d *Dispatcher) SetResources(accounts []domain.Account, workers []domain.WorkerNode) {
@@ -81,6 +91,20 @@ func (d *Dispatcher) Add(plan IntentPlan) {
 	d.plans[plan.Intent.ID] = &plan
 }
 
+func (d *Dispatcher) RestoreAttempt(value domain.ExecutionAttempt) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if _, ok := d.plans[value.IntentID]; !ok {
+		return fmt.Errorf("cannot restore attempt %s without intent %s", value.ID, value.IntentID)
+	}
+	d.attempts[value.ID] = &attempt{value: value, planID: value.IntentID}
+	if !value.State.Terminal() {
+		d.accountBusy[value.AccountID] = value.ID
+		d.workerBusy[value.WorkerID] = value.ID
+	}
+	return nil
+}
+
 func (d *Dispatcher) Attempts() []domain.ExecutionAttempt {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -96,6 +120,9 @@ func (d *Dispatcher) PunctualStopped() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, current := range d.attempts {
+		if current.isolatedUntil.After(d.now()) && d.plans[current.planID].Intent.Phase == domain.PhasePunctual {
+			return false
+		}
 		if d.plans[current.planID].Intent.Phase == domain.PhasePunctual && !current.value.State.Terminal() {
 			return false
 		}
@@ -112,7 +139,7 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 	}
 	ordered := make([]*IntentPlan, 0, len(d.plans))
 	for _, plan := range d.plans {
-		if !plan.Intent.Succeeded {
+		if !plan.Intent.Succeeded && !plan.Intent.Terminal {
 			ordered = append(ordered, plan)
 		}
 	}
@@ -123,7 +150,17 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 		return ordered[i].Macro.Priority > ordered[j].Macro.Priority
 	})
 	for _, plan := range ordered {
-		if d.now().After(plan.Macro.Deadline) || d.conflicted(plan) {
+		if d.stoppedPhases[plan.Intent.Phase] {
+			continue
+		}
+		if d.now().After(plan.Macro.Deadline) {
+			plan.Intent.Terminal, plan.Intent.FailureReason = true, domain.FailureDeadline
+			if d.repository != nil {
+				_ = d.repository.PutIntent(ctx, plan.Intent)
+			}
+			continue
+		}
+		if d.conflicted(plan) {
 			continue
 		}
 		desired := plan.Macro.DesiredReplicas
@@ -161,13 +198,22 @@ func (d *Dispatcher) poll(ctx context.Context) error {
 			now := d.now()
 			d.failedWorkers[worker.ID] = now
 			d.quarantinedAccounts[current.value.AccountID] = now.Add(195 * time.Second)
+			current.isolatedUntil = now.Add(195 * time.Second)
 			d.degraded = true
 			current.value.State, current.value.UpdatedAt = domain.AttemptFailed, now
 			delete(d.accountBusy, current.value.AccountID)
 			delete(d.workerBusy, current.value.WorkerID)
+			if d.repository != nil {
+				_ = d.repository.PutAttempt(ctx, current.value)
+			}
 			continue
 		}
 		current.value.State, current.value.UpdatedAt = status.State, d.now()
+		current.value.Result = status.Result
+		current.value.Result.Credentials = domain.Credentials{}
+		if d.repository != nil {
+			_ = d.repository.PutAttempt(ctx, current.value)
+		}
 		if !status.State.Terminal() {
 			continue
 		}
@@ -203,11 +249,14 @@ func (d *Dispatcher) win(ctx context.Context, winner *attempt, result domain.Exe
 	if plan.Intent.Succeeded {
 		return nil
 	}
-	plan.Intent.Succeeded = true
+	plan.Intent.Succeeded, plan.Intent.Terminal = true, true
 	if d.repository != nil {
 		if err := d.repository.MarkIntentSucceeded(ctx, plan.Intent, result); err != nil {
 			return err
 		}
+	}
+	if d.onSuccess != nil {
+		go d.onSuccess(plan.Intent, result)
 	}
 	for _, sibling := range d.attempts {
 		if sibling.value.ID == winner.value.ID || sibling.value.State.Terminal() {
@@ -223,6 +272,13 @@ func (d *Dispatcher) win(ctx context.Context, winner *attempt, result domain.Exe
 }
 
 func (d *Dispatcher) applyFailure(ctx context.Context, current *attempt, result domain.ExecutionResult) {
+	if result.Reason == domain.FailureUnrecoverable {
+		plan := d.plans[current.planID]
+		plan.Intent.Terminal, plan.Intent.FailureReason = true, result.Reason
+		if d.repository != nil {
+			_ = d.repository.PutIntent(ctx, plan.Intent)
+		}
+	}
 	switch result.Reason {
 	case domain.FailureCookieInvalid:
 		account := d.accounts[current.value.AccountID]
@@ -330,7 +386,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account dom
 		}
 	}
 	d.next++
-	id := fmt.Sprintf("attempt-%s-%d", plan.Intent.ID, d.next)
+	id := fmt.Sprintf("attempt-%s-%d-%d", plan.Intent.ID, d.now().UnixNano(), d.next)
 	mode := domain.StartImmediate
 	if plan.Macro.StartAt.After(d.now()) {
 		mode = domain.StartScheduled
@@ -352,6 +408,18 @@ func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account dom
 func (d *Dispatcher) SwitchToReflow(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.stoppedPhases[domain.PhasePunctual] = true
+	for _, plan := range d.plans {
+		if plan.Intent.Phase != domain.PhasePunctual || plan.Intent.Succeeded || plan.Intent.Terminal {
+			continue
+		}
+		plan.Intent.Terminal, plan.Intent.FailureReason = true, domain.FailureStopped
+		if d.repository != nil {
+			if err := d.repository.PutIntent(ctx, plan.Intent); err != nil {
+				return err
+			}
+		}
+	}
 	for _, current := range d.attempts {
 		plan := d.plans[current.planID]
 		if plan.Intent.Phase != domain.PhasePunctual || current.value.State.Terminal() {
@@ -363,4 +431,12 @@ func (d *Dispatcher) SwitchToReflow(ctx context.Context) error {
 		current.value.State = domain.AttemptStopping
 	}
 	return nil
+}
+
+// ResumePhase enables explicit planning of a new run. Intents from an earlier
+// stopped phase remain terminal and therefore cannot be restarted.
+func (d *Dispatcher) ResumePhase(phase domain.Phase) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.stoppedPhases, phase)
 }
