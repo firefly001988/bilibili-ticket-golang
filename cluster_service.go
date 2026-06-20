@@ -427,6 +427,24 @@ func (s *ClusterService) SaveMacro(document string) error {
 	if value.ID == "" || value.TaskGroupID == "" {
 		return fmt.Errorf("id and taskGroupId are required")
 	}
+	if value.OrderCapacity <= 0 {
+		value.OrderCapacity = 4
+		value.CapacitySource = domain.CapacityDefault
+	}
+	if value.DesiredReplicas <= 0 {
+		value.DesiredReplicas = 1
+	}
+	if value.HardConcurrency <= 0 {
+		value.HardConcurrency = value.DesiredReplicas
+	}
+	if value.DesiredReplicas > value.HardConcurrency {
+		return fmt.Errorf("desired replicas cannot exceed hard concurrency")
+	}
+	if value.Dispatchable() {
+		if value.StartAt.IsZero() || value.Deadline.IsZero() || !value.Deadline.After(value.StartAt) {
+			return fmt.Errorf("dispatchable macro requires a deadline after startAt")
+		}
+	}
 	return s.repository.PutMacroTask(context.Background(), value)
 }
 func (s *ClusterService) SavePurchaseGroup(document string) error {
@@ -434,8 +452,39 @@ func (s *ClusterService) SavePurchaseGroup(document string) error {
 	if err := json.Unmarshal([]byte(document), &value); err != nil {
 		return err
 	}
-	if value.ID == "" || value.MacroTaskID == "" {
-		return fmt.Errorf("id and macroTaskId are required")
+	if value.MacroTaskID == "" {
+		return fmt.Errorf("macroTaskId is required")
+	}
+	if value.ID == "" {
+		value.ID = randomClusterID("purchase")
+	}
+	macros, err := s.repository.ListMacroTasks(context.Background())
+	if err != nil {
+		return err
+	}
+	capacity := 0
+	for _, macro := range macros {
+		if macro.ID == value.MacroTaskID {
+			capacity = macro.EffectiveCapacity()
+			break
+		}
+	}
+	if capacity == 0 {
+		return fmt.Errorf("macro task not found")
+	}
+	if len(value.Buyers) == 0 || len(value.Buyers) > capacity {
+		return fmt.Errorf("buyer count must be between 1 and %d", capacity)
+	}
+	seen := make(map[string]struct{}, len(value.Buyers))
+	for _, buyer := range value.Buyers {
+		id := strings.TrimSpace(buyer.LogicalID)
+		if id == "" {
+			return fmt.Errorf("every buyer requires a logicalId")
+		}
+		if _, exists := seen[id]; exists {
+			return fmt.Errorf("duplicate logical buyer %s", id)
+		}
+		seen[id] = struct{}{}
 	}
 	if value.CreatedAt.IsZero() {
 		value.CreatedAt = time.Now()
