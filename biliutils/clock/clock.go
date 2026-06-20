@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/beevik/ntp"
-	"github.com/imroc/req/v3"
+	"github.com/bertold/req/v3"
 )
 
 // GetBilibiliClockOffset queries Bilibili's live API to compute clock offset.

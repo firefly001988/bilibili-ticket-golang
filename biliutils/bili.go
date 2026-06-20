@@ -15,7 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/imroc/req/v3"
+	"github.com/bertold/req/v3"
 )
 
 const model = "SM-S9080"

@@ -18,11 +18,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"sync"
 	"time"
 
-	"github.com/go-resty/resty/v2"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -33,24 +33,36 @@ var assets embed.FS
 
 func testCaptchaPlugin(solverFunc func(gt string, challenge string) (string, error), pm *plugins.PluginManager, pluginName string) {
 	go func() {
-		client := resty.New()
-		res, err := client.R().
-			SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36").
-			Get("https://passport.bilibili.com/x/passport-login/captcha?source=main_web")
+		req, reqErr := http.NewRequest("GET", "https://passport.bilibili.com/x/passport-login/captcha?source=main_web", nil)
+		if reqErr != nil {
+			pm.SetTestResult(pluginName, i18n.T("plugin.test.captcha_failed", map[string]interface{}{"Error": reqErr}))
+			return
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+
+		httpClient := &http.Client{}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			pm.SetTestResult(pluginName, i18n.T("plugin.test.captcha_failed", map[string]interface{}{"Error": err}))
+			return
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			pm.SetTestResult(pluginName, i18n.T("plugin.test.captcha_failed", map[string]interface{}{"Error": err}))
 			return
 		}
 
 		var r api.MainApiDataRoot[gcaptcha.RegisterVoucherResponse]
-		err = json.Unmarshal(res.Body(), &r)
+		err = json.Unmarshal(body, &r)
 		if err != nil {
-			pm.SetTestResult(pluginName, i18n.T("plugin.test.parse_failed", map[string]interface{}{"Error": err, "Resp": string(res.Body())}))
+			pm.SetTestResult(pluginName, i18n.T("plugin.test.parse_failed", map[string]interface{}{"Error": err, "Resp": string(body)}))
 			return
 		}
 
 		if r.Code != 0 {
-			pm.SetTestResult(pluginName, i18n.T("plugin.test.api_error", map[string]interface{}{"Resp": string(res.Body())}))
+			pm.SetTestResult(pluginName, i18n.T("plugin.test.api_error", map[string]interface{}{"Resp": string(body)}))
 			return
 		}
 
