@@ -12,6 +12,7 @@
 | Linux | amd64 | [bilibili-ticket-golang_linux_amd64_VERSION.tar.gz](https://github.com/firefly001988/bilibili-ticket-golang/releases/download/VERSION/bilibili-ticket-golang_linux_amd64_VERSION.tar.gz) |
 | Linux | arm64 | [bilibili-ticket-golang_linux_arm64_VERSION.tar.gz](https://github.com/firefly001988/bilibili-ticket-golang/releases/download/VERSION/bilibili-ticket-golang_linux_arm64_VERSION.tar.gz) |
 | macOS | arm64 | [bilibili-ticket-golang_darwin_arm64_VERSION.tar.gz](https://github.com/firefly001988/bilibili-ticket-golang/releases/download/VERSION/bilibili-ticket-golang_darwin_arm64_VERSION.tar.gz) |
+| macOS | amd64 | [bilibili-ticket-golang_darwin_amd64_VERSION.tar.gz](https://github.com/firefly001988/bilibili-ticket-golang/releases/download/VERSION/bilibili-ticket-golang_darwin_amd64_VERSION.tar.gz) |
 
 > 校验文件：[checksums_VERSION.txt](https://github.com/firefly001988/bilibili-ticket-golang/releases/download/VERSION/checksums_VERSION.txt)
 
