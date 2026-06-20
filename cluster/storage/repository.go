@@ -161,6 +161,34 @@ func (r *Repository) Account(ctx context.Context, id string) (domain.Account, er
 	return value, err
 }
 
+func (r *Repository) PutLogicalBuyer(ctx context.Context, value domain.Buyer) error {
+	b, err := marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO logical_buyers(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload`, value.LogicalID, b)
+	return err
+}
+
+func (r *Repository) PutBuyerMapping(ctx context.Context, value domain.AccountBuyerMapping) error {
+	b, err := marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO account_buyer_mappings(account_id,logical_buyer_id,buyer_id,payload) VALUES(?,?,?,?) ON CONFLICT(account_id,logical_buyer_id) DO UPDATE SET buyer_id=excluded.buyer_id,payload=excluded.payload`, value.AccountID, value.LogicalBuyerID, value.BuyerID, b)
+	return err
+}
+
+func (r *Repository) BuyerMapping(ctx context.Context, accountID, logicalBuyerID string) (domain.AccountBuyerMapping, error) {
+	var b []byte
+	if err := r.db.QueryRowContext(ctx, `SELECT payload FROM account_buyer_mappings WHERE account_id=? AND logical_buyer_id=?`, accountID, logicalBuyerID).Scan(&b); err != nil {
+		return domain.AccountBuyerMapping{}, err
+	}
+	var value domain.AccountBuyerMapping
+	err := json.Unmarshal(b, &value)
+	return value, err
+}
+
 func (r *Repository) MarkIntentSucceeded(ctx context.Context, intent domain.LogicalOrderIntent, result domain.ExecutionResult) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

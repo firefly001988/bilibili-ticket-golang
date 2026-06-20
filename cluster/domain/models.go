@@ -200,6 +200,13 @@ type Account struct {
 	Enabled       bool         `json:"enabled"`
 }
 
+type AccountBuyerMapping struct {
+	AccountID      string    `json:"accountId"`
+	LogicalBuyerID string    `json:"logicalBuyerId"`
+	BuyerID        int64     `json:"buyerId"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
 type WorkerNode struct {
 	ID       string       `json:"id"`
 	Name     string       `json:"name"`
