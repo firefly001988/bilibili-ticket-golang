@@ -322,6 +322,21 @@ func (svc *SchedulerService) AddTicket(ticket FrontendTicket) (string, error) {
 		return "", errors.New("ticket is expired or invalid")
 	}
 
+	// Count existing tickets in the same chain group BEFORE adding.
+	// When the group goes 0→1 (first ticket), skip autoStartChainIfIdle:
+	// the frontend will call AddTicketTask explicitly, and auto-starting
+	// from here would race with that call. When the group already has
+	// tickets, auto-start is needed in case no task is running.
+	groupKey := entry.ChainGroupKey()
+	groupCountBefore := 0
+	if groupKey != "" {
+		for _, t := range svc.tickets.GetTicketsNoMutate() {
+			if t.ChainGroupKey() == groupKey {
+				groupCountBefore++
+			}
+		}
+	}
+
 	if !svc.tickets.AddTicket(entry) {
 		return "", fmt.Errorf(i18n.T("ticket.error.duplicate", nil))
 	}
@@ -329,11 +344,9 @@ func (svc *SchedulerService) AddTicket(ticket FrontendTicket) (string, error) {
 	fmt.Printf("[DEBUG] AddTicket: hash=%s expire=%d start=%d buyerType=%d buyer=%+v\n",
 		hash, entry.Expire, entry.Start, entry.Buyer.BuyerType, entry.Buyer)
 
-	// Auto-start: if this ticket belongs to a chain group and no other task
-	// in the same group is currently running, start it immediately. This
-	// handles the case where all previous tasks in the chain are already
-	// done and the newly added ticket should begin running on its own.
-	if entry.ChainGroupKey() != "" {
+	// Auto-start: only when there were already other tickets in the chain
+	// group (not the 0→1 case) and no task is currently running.
+	if groupKey != "" && groupCountBefore > 0 {
 		svc.autoStartChainIfIdle(hash)
 	}
 
@@ -547,10 +560,12 @@ func (svc *SchedulerService) ReorderTickets(orderedHashes []string) error {
 
 	// Stop the previously running task silently — don't mark it as Failed
 	// in persistent storage, since this is a reorder swap, not a real failure.
+	// Reset its persisted Stat to Waiting so it can be restarted later.
 	if runningHash != "" {
 		svc.scheduler.RemoveTaskSilent(runningHash, func() {
 			svc.logBroker.CloseStream(runningHash)
 		})
+		svc.tickets.UpdateTicketStat(runningHash, int(StatWaiting))
 	}
 
 	// Start the new first task (if any).

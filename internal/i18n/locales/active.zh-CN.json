@@ -33,7 +33,7 @@
         "other": "项目信息: {{.Name}} (热门={{.Hot}}, 实名={{.RealName}})"
     },
     "task.rate_limited": {
-        "other": "请求被限流，等待 5 分钟后重试"
+        "other": "请求被限流 (412)，等待 5 分钟后重试"
     },
     "task.flow_control": {
         "other": "请求被流控"

@@ -75,7 +75,7 @@ func (ls *LogStorage) Load() error {
 }
 
 // readAndTruncateLocked reads a JSON-lines log file, keeps only the last
-// maxLinesOnLoad entries, and rewrites the file. Caller must hold the write lock.
+// maxLinesOnLoad entries, will not rewrite the file. Caller must hold the write lock.
 func (ls *LogStorage) readAndTruncateLocked(taskID string) ([]LogEntry, error) {
 	fp := ls.filePath(taskID)
 	file, err := os.Open(fp)
@@ -107,10 +107,6 @@ func (ls *LogStorage) readAndTruncateLocked(taskID string) ([]LogEntry, error) {
 	// Truncate to last maxLinesOnLoad
 	if len(allEntries) > maxLinesOnLoad {
 		allEntries = allEntries[len(allEntries)-maxLinesOnLoad:]
-		// Rewrite truncated file
-		if err := ls.writeAllLocked(taskID, allEntries); err != nil {
-			return nil, err
-		}
 	}
 
 	return allEntries, nil

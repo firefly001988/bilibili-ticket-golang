@@ -423,12 +423,17 @@ func (tt *TicketTask) ticketFunc() {
 	tt.sendLog(LogInfo, i18n.T("task.target_sku", map[string]interface{}{"Name": targetSku.Name, "Desc": targetSku.Desc, "Price": fmt.Sprintf("%.2f", float64(targetSku.Price)/100.0)}))
 
 	// 4. Obtain request token and ptoken
+retryPtoken:
 	whenGenPtoken := time.Now()
 	orderTokens, err := tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku)
 	if err != nil {
 		tt.sendLog(LogError, i18n.T("task.error.get_token", map[string]interface{}{"Error": err.Error()}))
-		tt.setError(err)
-		return
+		select {
+		case <-tt.ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+		goto retryPtoken
 	}
 
 	tt.sendLog(LogInfo, i18n.T("task.token_obtained", nil))
@@ -520,7 +525,9 @@ func (tt *TicketTask) ticketFunc() {
 
 			err, code, msg, orderResult = tt.client.SubmitOrder(tokenGen, whenGenPtoken, orderTokens, pidString, *targetSku, buyerData, tt.ticket.Buyer.BuyerType, confirmInfo)
 			if err != nil {
-				tt.sendLog(LogWarn, i18n.T("task.submit_failed", map[string]interface{}{}))
+				tt.sendLog(LogWarn, i18n.T("task.submit_failed", map[string]interface{}{
+					"Error": err.Error(),
+				}))
 			} else {
 				// Success: OrderId is non-zero and code is 0, 100048, or 100079
 				if code == 0 || code == 100048 || code == 100079 {
@@ -545,7 +552,7 @@ func (tt *TicketTask) ticketFunc() {
 					oldPrice := targetSku.Price
 					targetSku.Price = orderResult.PayMoney
 					tt.sendLog(LogInfo, i18n.T("task.price_changed", map[string]interface{}{"Old": fmt.Sprintf("%.2f", float64(oldPrice)/100.0), "New": fmt.Sprintf("%.2f", float64(targetSku.Price)/100.0)}))
-				case 100017:
+				case 100016:
 					tt.sendLog(LogError, i18n.T("task.not_sellable", map[string]interface{}{"Msg": msg, "Code": code}))
 					tt.setStat(StatFailed)
 					return
@@ -576,7 +583,6 @@ func (tt *TicketTask) ticketFunc() {
 				tt.sendLog(LogDebug, i18n.T("task.debug_submit", map[string]interface{}{"Count": submitCount + 1, "Msg": msg, "Code": code}))
 			}
 		}
-
 		submitCount++
 	LoopInterval:
 		// Cancellable sleep — respects context cancellation from Stop()
