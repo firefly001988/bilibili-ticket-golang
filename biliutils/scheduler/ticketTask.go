@@ -375,8 +375,17 @@ func (tt *TicketTask) ticketFunc() {
 
 	pidString := strconv.FormatInt(tt.ticket.ProjectID, 10)
 
+	buyerCount := len(tt.ticket.Buyers)
+	buyersStr := ""
+	for i, b := range tt.ticket.Buyers {
+		if i > 0 {
+			buyersStr += ", "
+		}
+		buyersStr += b.String()
+	}
 	tt.sendLog(LogInfo, i18n.T("task.started", map[string]interface{}{
-		"Project": tt.ticket.ProjectName, "Screen": tt.ticket.ScreenName, "Sku": tt.ticket.SkuName, "Buyer": tt.ticket.Buyer.String()}))
+		"Project": tt.ticket.ProjectName, "Screen": tt.ticket.ScreenName, "Sku": tt.ticket.SkuName,
+		"Buyer": buyersStr, "Count": buyerCount}))
 
 	// 1. Get project info
 	projectInfo, err := tt.client.GetProjectInformationNew(pidString)
@@ -425,7 +434,7 @@ func (tt *TicketTask) ticketFunc() {
 	// 4. Obtain request token and ptoken
 retryPtoken:
 	whenGenPtoken := time.Now()
-	orderTokens, err := tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku)
+	orderTokens, err := tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku, buyerCount)
 	if err != nil {
 		tt.sendLog(LogError, i18n.T("task.error.get_token", map[string]interface{}{"Error": err.Error()}))
 		select {
@@ -450,45 +459,38 @@ retryPtoken:
 	}
 
 	// 6. Prepare buyer info based on buyer type
-	var buyerData interface{}
+	var buyersForSubmit []r.TicketBuyer
 	confirmInfo, err := tt.client.GetConfirmInformation(orderTokens, pidString)
-	switch tt.ticket.Buyer.BuyerType {
+	switch tt.ticket.Buyers[0].BuyerType {
 	case r.Ordinary:
-		buyerData = map[string]string{
-			"tel":  tt.ticket.Buyer.Tel,
-			"name": tt.ticket.Buyer.Name,
-		}
-		tt.sendLog(LogInfo, i18n.T("task.buyer_ordinary", map[string]interface{}{"Name": tt.ticket.Buyer.Name, "Tel": tt.ticket.Buyer.Tel}))
+		// Ordinary: only supports single buyer
+		buyersForSubmit = tt.ticket.Buyers
+		tt.sendLog(LogInfo, i18n.T("task.buyer_ordinary", map[string]interface{}{"Name": tt.ticket.Buyers[0].Name, "Tel": tt.ticket.Buyers[0].Tel}))
 	case r.ForceRealName:
 		if err != nil {
 			tt.sendLog(LogError, i18n.T("task.error.fetch_buyer", map[string]interface{}{"Error": err.Error()}))
 			tt.setError(err)
 			return
 		}
-		for _, buyer := range confirmInfo.BuyerList.List {
-			if buyer.Id == tt.ticket.Buyer.ID {
-				buyerData = []map[string]any{{
-					"id":                  buyer.Id,
-					"uid":                 buyer.Uid,
-					"accountId":           buyer.AccountId,
-					"name":                buyer.Name,
-					"tel":                 buyer.Tel,
-					"account_channel":     buyer.AccountChannel,
-					"personal_id":         buyer.PersonalId,
-					"id_card_front":       buyer.IdCardFront,
-					"id_card_back":        buyer.IdCardBack,
-					"is_default":          buyer.IsDefault,
-					"id_type":             buyer.IdType,
-					"verify_status":       buyer.VerifyStatus,
-					"isBuyerInfoVerified": buyer.IsBuyerInfoVerified,
-					"isBuyerValid":        buyer.IsBuyerValid,
-				}}
-				tt.sendLog(LogInfo, i18n.T("task.buyer_realname", map[string]interface{}{"Name": buyer.Name, "ID": buyer.Id}))
+		// Match all buyers from confirmInfo list
+		allMatched := true
+		for _, buyer := range tt.ticket.Buyers {
+			found := false
+			for _, info := range confirmInfo.BuyerList.List {
+				if info.Id == buyer.ID {
+					buyersForSubmit = append(buyersForSubmit, buyer)
+					tt.sendLog(LogInfo, i18n.T("task.buyer_realname", map[string]interface{}{"Name": info.Name, "ID": info.Id}))
+					found = true
+					break
+				}
+			}
+			if !found {
+				tt.sendLog(LogError, i18n.T("task.buyer_not_matched", map[string]interface{}{"ID": buyer.ID}))
+				allMatched = false
 			}
 		}
-		if buyerData == nil {
-			tt.sendLog(LogError, i18n.T("task.buyer_not_matched", map[string]interface{}{"ID": tt.ticket.Buyer.ID}))
-			tt.setError(definedErrors.NewBilibiliMallBuyerNotfoundError(tt.ticket.Buyer))
+		if !allMatched {
+			tt.setError(definedErrors.NewBilibiliMallBuyerNotfoundError(tt.ticket.Buyers[0]))
 			return
 		}
 	}
@@ -507,7 +509,7 @@ retryPtoken:
 		// Refresh token every N attempts to avoid rate limiting
 		if submitCount >= global.MaxTokenRefreshCount {
 			whenGenPtoken = time.Now()
-			orderTokens, err = tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku)
+			orderTokens, err = tt.client.GetRequestTokenAndPToken(tokenGen, pidString, *targetSku, buyerCount)
 			if err != nil {
 				tt.sendLog(LogWarn, i18n.T("task.token_refresh_failed", map[string]interface{}{"Error": err.Error()}))
 				goto LoopInterval
@@ -523,7 +525,7 @@ retryPtoken:
 				orderResult api.TicketOrderStruct
 			)
 
-			err, code, msg, orderResult = tt.client.SubmitOrder(tokenGen, whenGenPtoken, orderTokens, pidString, *targetSku, buyerData, tt.ticket.Buyer.BuyerType, confirmInfo)
+			err, code, msg, orderResult = tt.client.SubmitOrder(tokenGen, whenGenPtoken, orderTokens, pidString, *targetSku, buyersForSubmit, confirmInfo)
 			if err != nil {
 				tt.sendLog(LogWarn, i18n.T("task.submit_failed", map[string]interface{}{
 					"Error": err.Error(),
@@ -538,7 +540,7 @@ retryPtoken:
 						if tt.notifyFn != nil {
 							tt.notifyFn(i18n.T("task.notify_success", map[string]interface{}{
 								"Project": tt.ticket.ProjectName, "Screen": tt.ticket.ScreenName, "Sku": tt.ticket.SkuName,
-								"Buyer": tt.ticket.Buyer.String(), "User": tt.username, "UID": tt.userid}))
+								"Buyer": buyersStr, "User": tt.username, "UID": tt.userid}))
 						}
 						tt.sendLog(LogSuccess, successMsg)
 						tt.setStat(StatSuccess)

@@ -11,15 +11,15 @@ import (
 
 // TicketEntry represents a ticket to be purchased.
 type TicketEntry struct {
-	Expire      int64               `json:"expire"`
-	Start       int64               `json:"start"`
-	ProjectID   int64               `json:"projectId"`
-	ProjectName string              `json:"projectName"`
-	SkuID       int64               `json:"skuId"`
-	SkuName     string              `json:"skuName"`
-	ScreenID    int64               `json:"screenId"`
-	ScreenName  string              `json:"screenName"`
-	Buyer       _return.TicketBuyer `json:"buyer"`
+	Expire      int64                 `json:"expire"`
+	Start       int64                 `json:"start"`
+	ProjectID   int64                 `json:"projectId"`
+	ProjectName string                `json:"projectName"`
+	SkuID       int64                 `json:"skuId"`
+	SkuName     string                `json:"skuName"`
+	ScreenID    int64                 `json:"screenId"`
+	ScreenName  string                `json:"screenName"`
+	Buyers      []_return.TicketBuyer `json:"buyers"`
 
 	// Stat persists the task execution result.
 	// 0=Waiting, 1=Pending, 2=Success, 3=Failed, 4=Error.
@@ -34,9 +34,29 @@ type TicketEntry struct {
 	SortOrder int `json:"sortOrder"`
 }
 
+// Count returns the number of buyers (tickets to purchase in one order).
+func (t TicketEntry) Count() int {
+	return len(t.Buyers)
+}
+
+// FirstBuyer returns the first buyer, or an empty TicketBuyer if none.
+func (t TicketEntry) FirstBuyer() _return.TicketBuyer {
+	if len(t.Buyers) == 0 {
+		return _return.TicketBuyer{}
+	}
+	return t.Buyers[0]
+}
+
 func (t TicketEntry) String() string {
-	return fmt.Sprintf("%s - %s - %s - %s (Expire: %s; Start: %s)",
-		t.ProjectName, t.ScreenName, t.SkuName, t.Buyer.String(),
+	buyerStr := ""
+	for i, b := range t.Buyers {
+		if i > 0 {
+			buyerStr += ", "
+		}
+		buyerStr += b.String()
+	}
+	return fmt.Sprintf("%s - %s - %s - [%s] (Expire: %s; Start: %s)",
+		t.ProjectName, t.ScreenName, t.SkuName, buyerStr,
 		time.Unix(t.Expire, 0).Format("2006-01-02 15:04:05"),
 		time.Unix(t.Start, 0).Format("2006-01-02 15:04:05"),
 	)
@@ -44,30 +64,51 @@ func (t TicketEntry) String() string {
 
 // ChainGroupKey returns the chain-group key used for ticket chaining.
 //
-// Chaining is restricted to real-name buyers within the same project: a
-// real-name buyer grabbing multiple SKUs/screens of one project forms a single
-// chain ordered by SortOrder. Ordinary (non-real-name) tickets return "" and
-// are never chained.
+// Chaining is restricted to tickets with exactly one real-name buyer within
+// the same project. Multi-buyer tickets are not chainable (they purchase all
+// at once). Ordinary (non-real-name) tickets return "" and are never chained.
 func (t TicketEntry) ChainGroupKey() string {
-	if t.Buyer.BuyerType != _return.ForceRealName {
+	if len(t.Buyers) != 1 {
 		return ""
 	}
-	return fmt.Sprintf("r:%d:p:%d", t.Buyer.ID, t.ProjectID)
+	if t.Buyers[0].BuyerType != _return.ForceRealName {
+		return ""
+	}
+	return fmt.Sprintf("r:%d:p:%d", t.Buyers[0].ID, t.ProjectID)
 }
 
 // Hash returns a SHA256-based unique identifier for this ticket.
 func (t TicketEntry) Hash() string {
+	buyerPart := ""
+	for i, b := range t.Buyers {
+		if i > 0 {
+			buyerPart += "|"
+		}
+		buyerPart += fmt.Sprintf("Buyer:BuyerType:%d,ID:%d,Name:%s,Tel:%s", b.BuyerType, b.ID, b.Name, b.Tel)
+	}
 	str := fmt.Sprintf(
-		"Buyer:BuyerType:%d,ID:%d,Name:%s,Tel:%s|Expire:%d|Start:%d|ProjectID:%d|ScreenID:%d|SkuID:%d",
-		t.Buyer.BuyerType, t.Buyer.ID, t.Buyer.Name, t.Buyer.Tel, t.Expire, t.Start, t.ProjectID, t.ScreenID, t.SkuID,
+		"%s|Expire:%d|Start:%d|ProjectID:%d|ScreenID:%d|SkuID:%d",
+		buyerPart, t.Expire, t.Start, t.ProjectID, t.ScreenID, t.SkuID,
 	)
 	hash := sha256.Sum256([]byte(str))
 	return hex.EncodeToString(hash[:])
 }
 
-// Valid checks whether the ticket is still valid (not expired).
+// Valid checks whether the ticket is still valid (not expired) and has at
+// least one valid buyer.
 func (t TicketEntry) Valid() bool {
-	return t.Expire > time.Now().Unix() && t.ProjectID > 0 && t.SkuID > 0 && t.ScreenID > 0 && t.Buyer.Valid()
+	if t.Expire <= time.Now().Unix() || t.ProjectID <= 0 || t.SkuID <= 0 || t.ScreenID <= 0 {
+		return false
+	}
+	if len(t.Buyers) == 0 {
+		return false
+	}
+	for _, b := range t.Buyers {
+		if !b.Valid() {
+			return false
+		}
+	}
+	return true
 }
 
 // TicketData wraps a thread-safe ticket list with a change callback.
@@ -91,7 +132,7 @@ func (td *TicketData) SetChangeCallback(cb func(ticket TicketEntry)) {
 	td.ticketChangeCallback = &cb
 }
 
-// AddTicket adds a ticket (deduplicated by buyer + project + sku + screen).
+// AddTicket adds a ticket (deduplicated by all buyers + project + sku + screen).
 // Returns true if the ticket was actually added, false if a duplicate exists.
 // Expired duplicates are silently replaced.
 // SortOrder is auto-assigned as max(existing same-group order)+1 when the
@@ -103,12 +144,26 @@ func (td *TicketData) AddTicket(data TicketEntry) bool {
 
 	// Replace expired duplicates and filter out expired items at the same time
 	n := 0
+	// hasSameBuyers checks whether two tickets have the exact same set of buyers
+	// (same count, same buyer keys in same order).
+	hasSameBuyers := func(a, b []_return.TicketBuyer) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if !a[i].Compare(b[i]) {
+				return false
+			}
+		}
+		return true
+	}
+
 	for _, t := range td.Tickets {
 		if time.Unix(t.Expire, 0).Before(now) {
 			// drop expired ticket
 			continue
 		}
-		if t.Buyer.Compare(data.Buyer) && t.ProjectID == data.ProjectID && t.SkuID == data.SkuID && t.ScreenID == data.ScreenID {
+		if hasSameBuyers(t.Buyers, data.Buyers) && t.ProjectID == data.ProjectID && t.SkuID == data.SkuID && t.ScreenID == data.ScreenID {
 			td.mutex.Unlock()
 			return false // active duplicate found
 		}
@@ -117,7 +172,7 @@ func (td *TicketData) AddTicket(data TicketEntry) bool {
 	}
 	td.Tickets = td.Tickets[:n]
 
-	// Auto-assign chain order within the buyer+project group (real-name only).
+	// Auto-assign chain order within the buyer+project group (single real-name only).
 	if data.SortOrder <= 0 {
 		groupKey := data.ChainGroupKey()
 		maxOrder := 0

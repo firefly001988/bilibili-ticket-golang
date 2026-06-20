@@ -113,6 +113,8 @@ const selectedStatus = computed(() => {
     // Fall back to persisted stat when task is no longer live
     const ticket = tickets.value.find(t => t.hash === selectedHash.value)
     if (ticket) {
+        const buyers = ticket.buyers ?? []
+        const buyerLabel = buyers.length > 0 ? buyers.map(b => b.name).join(', ') : ''
         return {
             taskID: ticket.hash,
             targetTime: '',
@@ -124,7 +126,7 @@ const selectedStatus = computed(() => {
             projectName: ticket.projectName,
             screenName: ticket.screenName,
             skuName: ticket.skuName,
-            buyerName: ticket.buyerName,
+            buyerName: buyerLabel,
         } as FrontendTaskStatus
     }
     return undefined
@@ -155,10 +157,13 @@ function isTaskActive(hash: string): boolean {
 
 // ── Chain grouping & ordering ──────────────────────────
 // Chain group key mirrors the Go TicketEntry.ChainGroupKey():
-//   real-name + same project → "r:" + buyerId + ":p:" + projectId
-//   ordinary (non-real-name) → "" (never chained, shown individually)
+//   real-name + single buyer + same project → "r:" + buyerId + ":p:" + projectId
+//   multi-buyer or ordinary → "" (never chained)
 function chainGroupKey(t: FrontendTicket): string {
-    return (t.buyerId ?? 0) > 0 ? `r:${t.buyerId}:p:${t.projectId}` : ''
+    const buyers = t.buyers ?? []
+    if (buyers.length !== 1) return ''
+    const b = buyers[0]
+    return (b.id ?? 0) > 0 ? `r:${b.id}:p:${t.projectId}` : ''
 }
 
 // Tickets grouped into chains. Real-name tickets sharing the same buyer +
@@ -188,9 +193,11 @@ const buyerGroups = computed<GroupedTickets[]>(() => {
         const groupKey = key || `single:${t.hash}`
         let g = map.get(groupKey)
         if (!g) {
+            const buyers = t.buyers ?? []
+            const buyerName = buyers.length > 0 ? buyers[0].name : ''
             g = {
                 key: groupKey,
-                buyerName: t.buyerName,
+                buyerName,
                 projectName: t.projectName,
                 chainable: key !== '',
                 items: [],
@@ -337,12 +344,16 @@ async function submitAddTicket() {
             skuName: form.value.skuName,
             start: startUnix,
             expire: expireUnix,
-            buyerName: form.value.buyerName,
-            buyerTel: form.value.buyerTel,
-            buyerId: Number(form.value.buyerId),
+            buyers: [{
+                id: Number(form.value.buyerId),
+                name: form.value.buyerName,
+                tel: form.value.buyerTel,
+                personalId: '',
+                idType: 0,
+            }],
             stat: 0,
             sortOrder: 0,
-        })
+        } as any)
 
         debugLog('[submitAddTicket] AddTicket returned hash:', hash);
 
@@ -491,6 +502,9 @@ onUnmounted(() => {
                                         <template #subtitle>
                                             <span class="text-caption text-grey">
                                                 {{ tk.screenName }} · {{ tk.skuName }}
+                                                <template v-if="(tk.buyers ?? []).length > 1">
+                                                    · {{ (tk.buyers ?? []).length }}人
+                                                </template>
                                                 <template v-if="tk.status && tk.status.stat === StatWaiting">
                                                     · {{ t('scheduler.remaining', {
                                                         time:
@@ -538,7 +552,7 @@ onUnmounted(() => {
 
                                     <template #subtitle>
                                         <span class="text-caption text-grey">
-                                            {{ tk.screenName }} · {{ tk.skuName }} · {{ tk.buyerName }}
+                                            {{ tk.screenName }} · {{ tk.skuName }} · {{ (tk.buyers ?? []).map((b: any) => b.name).join(', ') }}
                                             <template v-if="tk.status && tk.status.stat === StatWaiting">
                                                 · {{ t('scheduler.remaining', {
                                                     time:
@@ -589,7 +603,7 @@ onUnmounted(() => {
                         </div>
                         <div>
                             <span class="text-grey">{{ t('scheduler.buyer') }}</span>
-                            <strong>{{ selectedTicket.buyerName }}</strong>
+                            <strong>{{ (selectedTicket.buyers ?? []).map((b: any) => b.name).join(', ') }}</strong>
                         </div>
                         <div>
                             <span class="text-grey">{{ t('scheduler.status') }}</span>

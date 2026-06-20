@@ -33,18 +33,16 @@ type FrontendTaskStatus struct {
 
 // FrontendTicket mirrors TicketEntry for Wails serialization.
 type FrontendTicket struct {
-	Hash        string `json:"hash"`
-	Expire      int64  `json:"expire"`
-	Start       int64  `json:"start"`
-	ProjectID   int64  `json:"projectId"`
-	ProjectName string `json:"projectName"`
-	SkuID       int64  `json:"skuId"`
-	SkuName     string `json:"skuName"`
-	ScreenID    int64  `json:"screenId"`
-	ScreenName  string `json:"screenName"`
-	BuyerName   string `json:"buyerName"`
-	BuyerTel    string `json:"buyerTel,omitempty"`
-	BuyerID     int64  `json:"buyerId,omitempty"`
+	Hash        string          `json:"hash"`
+	Expire      int64           `json:"expire"`
+	Start       int64           `json:"start"`
+	ProjectID   int64           `json:"projectId"`
+	ProjectName string          `json:"projectName"`
+	SkuID       int64           `json:"skuId"`
+	SkuName     string          `json:"skuName"`
+	ScreenID    int64           `json:"screenId"`
+	ScreenName  string          `json:"screenName"`
+	Buyers      []FrontendBuyer `json:"buyers"`
 	// Stat persists the task execution result (RunningStat).
 	Stat int `json:"stat"`
 	// SortOrder is the chain order within the same buyer group.
@@ -259,7 +257,7 @@ func (svc *SchedulerService) GetTaskStatuses() []FrontendTaskStatus {
 			fts.ProjectName = t.ProjectName
 			fts.ScreenName = t.ScreenName
 			fts.SkuName = t.SkuName
-			fts.BuyerName = t.Buyer.String()
+			fts.BuyerName = t.FirstBuyer().String()
 		}
 		result = append(result, fts)
 	}
@@ -281,11 +279,15 @@ func (svc *SchedulerService) GetAllTickets() []FrontendTicket {
 			SkuName:     t.SkuName,
 			ScreenID:    t.ScreenID,
 			ScreenName:  t.ScreenName,
-			BuyerName:   t.Buyer.Name,
-			BuyerTel:    t.Buyer.Tel,
-			BuyerID:     t.Buyer.ID,
 			Stat:        t.Stat,
 			SortOrder:   t.SortOrder,
+		}
+		for _, b := range t.Buyers {
+			ft.Buyers = append(ft.Buyers, FrontendBuyer{
+				ID:   b.ID,
+				Name: b.Name,
+				Tel:  b.Tel,
+			})
 		}
 		result[i] = ft
 	}
@@ -294,6 +296,19 @@ func (svc *SchedulerService) GetAllTickets() []FrontendTicket {
 
 // AddTicket adds a ticket to persistent storage and returns its hash.
 func (svc *SchedulerService) AddTicket(ticket FrontendTicket) (string, error) {
+	buyers := make([]r.TicketBuyer, len(ticket.Buyers))
+	for i, b := range ticket.Buyers {
+		buyers[i] = r.TicketBuyer{
+			Name: b.Name,
+			Tel:  b.Tel,
+			ID:   b.ID,
+		}
+		if b.ID > 0 {
+			buyers[i].BuyerType = r.ForceRealName
+		} else {
+			buyers[i].BuyerType = r.Ordinary
+		}
+	}
 	entry := configuration.TicketEntry{
 		Expire:      ticket.Expire,
 		Start:       ticket.Start,
@@ -304,16 +319,7 @@ func (svc *SchedulerService) AddTicket(ticket FrontendTicket) (string, error) {
 		ScreenID:    ticket.ScreenID,
 		ScreenName:  ticket.ScreenName,
 		SortOrder:   ticket.SortOrder,
-		Buyer: r.TicketBuyer{
-			Name: ticket.BuyerName,
-			Tel:  ticket.BuyerTel,
-			ID:   ticket.BuyerID,
-		},
-	}
-	if ticket.BuyerID > 0 {
-		entry.Buyer.BuyerType = r.ForceRealName
-	} else {
-		entry.Buyer.BuyerType = r.Ordinary
+		Buyers:      buyers,
 	}
 
 	hash := entry.Hash()
@@ -341,8 +347,8 @@ func (svc *SchedulerService) AddTicket(ticket FrontendTicket) (string, error) {
 		return "", fmt.Errorf(i18n.T("ticket.error.duplicate", nil))
 	}
 
-	fmt.Printf("[DEBUG] AddTicket: hash=%s expire=%d start=%d buyerType=%d buyer=%+v\n",
-		hash, entry.Expire, entry.Start, entry.Buyer.BuyerType, entry.Buyer)
+	fmt.Printf("[DEBUG] AddTicket: hash=%s expire=%d start=%d buyers=%d firstBuyer=%+v\n",
+		hash, entry.Expire, entry.Start, len(entry.Buyers), entry.FirstBuyer())
 
 	// Auto-start: only when there were already other tickets in the chain
 	// group (not the 0→1 case) and no task is currently running.

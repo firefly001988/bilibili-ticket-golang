@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../wailsjs/go/biliutils/BiliClient';
+import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew, CreateBuyer } from '../../wailsjs/go/biliutils/BiliClient';
 import { AddTicket, AddTicketTask, FetchRealNameBuyers } from '../../wailsjs/go/scheduler/SchedulerService';
 import type { _return } from '../../wailsjs/go/models';
 import { useMessagesStore } from '@/stores/snackbar';
@@ -53,7 +53,60 @@ const apiEndLabel = ref('');
 // ── Real-name buyer states ────────────────────────────
 const fetchingBuyers = ref(false);
 const buyerList = ref<Array<{ id: number; name: string; tel: string; personalId: string; idType: number }>>([]);
-const selectedBuyerId = ref<number | null>(null);
+const selectedBuyerIds = ref<number[]>([]);
+
+// ── Add buyer dialog ────────────────────────────────
+const showAddBuyerDialog = ref(false)
+const addBuyerForm = ref({
+    name: '',
+    tel: '',
+    idType: 0,
+    personalId: '',
+    isDefault: false,
+})
+const addBuyerSubmitting = ref(false)
+
+const idTypes = [
+    { value: 0, title: '身份证' },
+    { value: 1, title: '护照' },
+    { value: 2, title: '港澳居民往来内地通行证' },
+    { value: 3, title: '台湾居民往来大陆通行证' },
+]
+
+function getPersonalIdHint(idType: number): string {
+    switch (idType) {
+        case 0: return '请输入18位身份证号码'
+        case 1: return '请输入护照号码'
+        case 2: return '请输入港澳通行证号码'
+        case 3: return '请输入台湾通行证号码'
+        default: return '请输入证件号码'
+    }
+}
+
+async function submitAddBuyer() {
+    if (!addBuyerForm.value.name.trim() || !addBuyerForm.value.tel.trim() || !addBuyerForm.value.personalId.trim()) {
+        messages.add({ text: t('ticketProject.addBuyerFormIncomplete'), color: 'warning', timeout: 2000 })
+        return
+    }
+    addBuyerSubmitting.value = true
+    try {
+        await CreateBuyer(
+            addBuyerForm.value.name.trim(),
+            addBuyerForm.value.tel.trim(),
+            addBuyerForm.value.idType,
+            addBuyerForm.value.personalId.trim(),
+            addBuyerForm.value.isDefault,
+        )
+        messages.add({ text: t('ticketProject.addBuyerSuccess'), color: 'success', timeout: 2000 })
+        addBuyerForm.value = { name: '', tel: '', idType: 0, personalId: '', isDefault: false }
+        showAddBuyerDialog.value = false
+        await fetchBuyers()
+    } catch (e: any) {
+        messages.add({ text: t('ticketProject.addBuyerFailed', { error: String(e) }), color: 'error', timeout: 4000 })
+    } finally {
+        addBuyerSubmitting.value = false
+    }
+}
 
 const buyerForm = ref({
     buyerName: '',
@@ -65,7 +118,7 @@ const buyerForm = ref({
 const formValid = computed(() => {
     if (!projectInfo.value || !selectedTicket.value) return false;
     if (projectInfo.value.IsForceRealName) {
-        return selectedBuyerId.value != null;
+        return selectedBuyerIds.value.length > 0;
     }
     return buyerForm.value.buyerName.trim() !== '';
 });
@@ -137,7 +190,7 @@ function openCreateDialog(ticket: _return.TicketSkuScreenID) {
 
     buyerForm.value = { buyerName: '', buyerTel: '', buyerId: 0 };
     buyerList.value = [];
-    selectedBuyerId.value = null;
+    selectedBuyerIds.value = [];
     showCreateDialog.value = true;
 }
 
@@ -158,13 +211,14 @@ async function fetchBuyers() {
     }
 }
 
-function selectBuyer(id: number) {
-    selectedBuyerId.value = id;
-    const b = buyerList.value.find(x => x.id === id);
-    if (b) {
-        buyerForm.value.buyerName = b.name;
-        buyerForm.value.buyerTel = b.tel;
-        buyerForm.value.buyerId = b.id;
+function onBuyersChanged(ids: number[]) {
+    selectedBuyerIds.value = ids;
+    // Update buyerForm with first buyer for backward compat (ordinary fields)
+    const first = buyerList.value.find(x => ids.includes(x.id));
+    if (first) {
+        buyerForm.value.buyerName = first.name;
+        buyerForm.value.buyerTel = first.tel;
+        buyerForm.value.buyerId = first.id;
     }
 }
 
@@ -172,6 +226,22 @@ async function submitCreateAndStart() {
     if (!selectedTicket.value || !projectInfo.value) return;
     creating.value = true;
     try {
+        // Build buyers list from selected real-name IDs, or single ordinary buyer
+        let buyers: Array<{ id: number; name: string; tel: string; personalId: string; idType: number }>
+        if (projectInfo.value.IsForceRealName) {
+            buyers = selectedBuyerIds.value.map(id => {
+                const b = buyerList.value.find(x => x.id === id)!
+                return { id: b.id, name: b.name, tel: b.tel, personalId: b.personalId, idType: b.idType }
+            })
+        } else {
+            buyers = [{
+                id: 0,
+                name: buyerForm.value.buyerName,
+                tel: buyerForm.value.buyerTel,
+                personalId: '',
+                idType: 0,
+            }]
+        }
         const hash = await AddTicket({
             hash: '',
             projectId: Number(projectInfo.value.ProjectID),
@@ -182,12 +252,10 @@ async function submitCreateAndStart() {
             skuName: selectedTicket.value.desc,
             start: apiStartUnix.value,
             expire: apiEndUnix.value,
-            buyerName: buyerForm.value.buyerName,
-            buyerTel: buyerForm.value.buyerTel,
-            buyerId: Number(buyerForm.value.buyerId),
+            buyers,
             stat: 0,
             sortOrder: 0,
-        });
+        } as any);
 
         debugLog('[AddTicket] hash:', hash);
 
@@ -294,6 +362,10 @@ function formatPrice(price: number): string {
                                 variant="tonal" size="small" @click="fetchBuyers">
                                 {{ t('ticketProject.fetchBuyers') }}
                             </v-btn>
+                            <v-btn prepend-icon="mdi-account-plus" color="primary" variant="tonal" size="small"
+                                @click="showAddBuyerDialog = true">
+                                {{ t('ticketProject.addBuyer') }}
+                            </v-btn>
                             <span v-if="buyerList.length > 0" class="text-caption text-green">
                                 {{ t('ticketProject.buyersLoaded', { count: buyerList.length }) }}
                             </span>
@@ -302,17 +374,18 @@ function formatPrice(price: number): string {
                             </span>
                         </div>
 
-                        <v-select v-if="buyerList.length > 0" v-model="selectedBuyerId" :items="buyerList"
+                        <v-select v-if="buyerList.length > 0" v-model="selectedBuyerIds" :items="buyerList"
                             item-title="name" item-value="id" :label="t('ticketProject.selectBuyer')" variant="outlined"
-                            density="compact" hide-details="auto" @update:model-value="(v: number) => selectBuyer(v)">
+                            density="compact" hide-details="auto" multiple chips closable-chips
+                            @update:model-value="onBuyersChanged">
                             <template #item="{ props, item: internalItem }">
                                 <v-list-item v-bind="props"
                                     :subtitle="`${internalItem.tel} · ${t('ticketProject.idCard')}: ${internalItem.personalId || '—'}`" />
                             </template>
                         </v-select>
 
-                        <div v-if="selectedBuyerId" class="mt-2 text-caption text-grey">
-                            {{ t('ticketProject.selected') }}: {{ buyerForm.buyerName }} ({{ buyerForm.buyerTel }})
+                        <div v-if="selectedBuyerIds.length > 0" class="mt-2 text-caption text-grey">
+                            {{ t('ticketProject.selected') }}: {{ selectedBuyerIds.length }}{{ t('ticketProject.persons') }}
                         </div>
                     </v-col>
 
@@ -346,6 +419,48 @@ function formatPrice(price: number): string {
                 <v-btn color="primary" variant="tonal" :loading="creating" :disabled="!formValid"
                     @click="submitCreateAndStart">
                     {{ t('ticketProject.createAndStart') }}
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
+    <!-- Add Buyer Dialog -->
+    <v-dialog v-model="showAddBuyerDialog" max-width="440">
+        <v-card :title="t('ticketProject.addBuyerTitle')">
+            <v-card-text>
+                <v-row dense>
+                    <v-col cols="6">
+                        <v-text-field v-model="addBuyerForm.name" :label="t('ticketProject.addBuyerName')"
+                            variant="outlined" density="compact" hide-details="auto" required />
+                    </v-col>
+                    <v-col cols="6">
+                        <v-text-field v-model="addBuyerForm.tel" :label="t('ticketProject.addBuyerTel')"
+                            variant="outlined" density="compact" hide-details="auto" required />
+                    </v-col>
+                    <v-col cols="12">
+                        <v-select v-model="addBuyerForm.idType" :items="idTypes"
+                            item-title="title" item-value="value"
+                            :label="t('ticketProject.addBuyerIdType')"
+                            variant="outlined" density="compact" hide-details="auto" />
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field v-model="addBuyerForm.personalId"
+                            :label="t('ticketProject.addBuyerPersonalId')"
+                            :hint="getPersonalIdHint(addBuyerForm.idType)"
+                            variant="outlined" density="compact" persistent-hint required />
+                    </v-col>
+                    <v-col cols="12">
+                        <v-checkbox v-model="addBuyerForm.isDefault"
+                            :label="t('ticketProject.addBuyerIsDefault')"
+                            density="compact" hide-details />
+                    </v-col>
+                </v-row>
+            </v-card-text>
+            <v-card-actions>
+                <v-spacer />
+                <v-btn variant="text" @click="showAddBuyerDialog = false">{{ t('common.cancel') }}</v-btn>
+                <v-btn color="primary" variant="tonal" :loading="addBuyerSubmitting" @click="submitAddBuyer">
+                    {{ t('common.save') }}
                 </v-btn>
             </v-card-actions>
         </v-card>

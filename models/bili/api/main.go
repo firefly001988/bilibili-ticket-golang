@@ -141,7 +141,9 @@ type TicketProjectInformationNewStruct struct {
 				Number      int    `json:"number"`
 				DisplayName string `json:"display_name"`
 			} `json:"sale_flag"`
-			ScreenName string `json:"screen_name"`
+			ScreenName   string `json:"screen_name"`
+			BuyLimit     int    `json:"num"`
+			BuyLimitType int    `json:"num_type"`
 		} `json:"ticket_list"`
 	} `json:"screenList"`
 }

@@ -20,11 +20,11 @@ func makeTicket(buyerID int64, projectID int64, skuID int64, screenID int64, sor
 		ScreenName:  "test-screen",
 		SortOrder:   sortOrder,
 		Stat:        stat,
-		Buyer: _return.TicketBuyer{
+		Buyers: []_return.TicketBuyer{{
 			BuyerType: _return.ForceRealName,
 			ID:        buyerID,
 			Name:      "test-buyer",
-		},
+		}},
 	}
 }
 
@@ -191,11 +191,11 @@ func TestGetNextInChain_OrdinaryNotChained(t *testing.T) {
 		ScreenID:  20,
 		SortOrder: 1,
 		Stat:      0,
-		Buyer: _return.TicketBuyer{
+		Buyers: []_return.TicketBuyer{{
 			BuyerType: _return.Ordinary,
 			Name:      "ordinary-buyer",
 			Tel:       "1234567890",
-		},
+		}},
 	}
 	td.AddTicket(a)
 

@@ -164,16 +164,17 @@ func (c *BiliClient) GetTicketSkuIDsByProjectID(projectID string) ([]r.TicketSku
 // GetRequestTokenAndPToken fetches the request token and ptoken needed for order preparation.
 //
 // For hot projects, a CToken (window-stats-based token) is generated and included
-// in the prepare request.
-func (c *BiliClient) GetRequestTokenAndPToken(tokenGen token.Generator, projectID string, ticket r.TicketSkuScreenID) (*r.RequestTokenAndPToken, error) {
+// in the prepare request. count is the number of tickets to purchase.
+func (c *BiliClient) GetRequestTokenAndPToken(tokenGen token.Generator, projectID string, ticket r.TicketSkuScreenID, count int) (*r.RequestTokenAndPToken, error) {
 	form := map[string]any{
-		"project_id":    utils.ParseInt64OrDefault(projectID, 0),
-		"screen_id":     ticket.ScreenID,
-		"order_type":    1,
-		"count":         1,
-		"sku_id":        ticket.SkuID,
-		"requestSource": "neul-next",
-		"newRisk":       true,
+		"project_id":         utils.ParseInt64OrDefault(projectID, 0),
+		"screen_id":          ticket.ScreenID,
+		"order_type":         1,
+		"count":              count,
+		"sku_id":             ticket.SkuID,
+		"requestSource":      "neul-next",
+		"newRisk":            true,
+		"ignoreRequestLimit": true,
 	}
 	if tokenGen.IsHotProject() {
 		form["token"] = tokenGen.GenerateTokenPrepareStage()
@@ -234,13 +235,20 @@ func (c *BiliClient) GetConfirmInformation(tokens *r.RequestTokenAndPToken, proj
 //   - buyerType: Ordinary or ForceRealName
 //
 // Returns: error, API response code, API message, and the order result struct.
-func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Time, tokens *r.RequestTokenAndPToken, projectID string, ticket r.TicketSkuScreenID, buyer interface{}, buyerType r.BuyerType, confirmInfo *api.ConfirmStruct) (error, int, string, api.TicketOrderStruct) {
+func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Time, tokens *r.RequestTokenAndPToken, projectID string, ticket r.TicketSkuScreenID, buyers []r.TicketBuyer, confirmInfo *api.ConfirmStruct) (error, int, string, api.TicketOrderStruct) {
+	count := len(buyers)
+	if count == 0 {
+		return fmt.Errorf("no buyers provided"), -1, "", api.TicketOrderStruct{}
+	}
+	// pay_money = unit_price × count
+	payMoney := ticket.Price * count
+
 	form := map[string]any{
 		"again":          1,
 		"project_id":     utils.ParseInt64OrDefault(projectID, 0),
 		"screen_id":      ticket.ScreenID,
-		"count":          1,
-		"pay_money":      ticket.Price,
+		"count":          count,
+		"pay_money":      payMoney,
 		"order_type":     1,
 		"timestamp":      whenGenPToken.UnixMilli(),
 		"deviceId":       c.fingerprint.Buvidfp,
@@ -261,23 +269,49 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 		"coupon_code":  "",
 	}
 
-	if buyerType == r.ForceRealName {
-		bs, err := json.Marshal(buyer)
+	firstBuyer := buyers[0]
+	if firstBuyer.BuyerType == r.ForceRealName {
+		// Build buyer_info as an array of real-name buyer entries
+		buyerInfoList := make([]map[string]any, 0, count)
+		for _, bt := range confirmInfo.BuyerList.List {
+			for _, b := range buyers {
+				if bt.Id == b.ID {
+					buyerInfoList = append(buyerInfoList, map[string]any{
+						"id":                  bt.Id,
+						"uid":                 bt.Uid,
+						"accountId":           bt.AccountId,
+						"name":                bt.Name,
+						"tel":                 bt.Tel,
+						"account_channel":     bt.AccountChannel,
+						"personal_id":         bt.PersonalId,
+						"id_card_front":       bt.IdCardFront,
+						"id_card_back":        bt.IdCardBack,
+						"is_default":          bt.IsDefault,
+						"id_type":             bt.IdType,
+						"verify_status":       bt.VerifyStatus,
+						"isBuyerInfoVerified": bt.IsBuyerInfoVerified,
+						"isBuyerValid":        bt.IsBuyerValid,
+					})
+					break
+				}
+			}
+		}
+		if len(buyerInfoList) != count {
+			return fmt.Errorf("failed to match all buyers in confirmInfo list: got %d, need %d", len(buyerInfoList), count), -1, "", api.TicketOrderStruct{}
+		}
+		bs, err := json.Marshal(buyerInfoList)
 		if err != nil {
 			return fmt.Errorf("marshal buyer info: %w", err), -1, "", api.TicketOrderStruct{}
 		}
 		form["buyer_info"] = string(bs)
 		form["contactInfo"] = nil
-	} else if buyerType == r.Ordinary {
-		b, ok := buyer.(map[string]string)
-		if !ok {
-			return fmt.Errorf("invalid buyer type for Ordinary buyer: %T", buyer), -1, "", api.TicketOrderStruct{}
-		}
-		form["tel"] = b["tel"]
-		form["buyer"] = b["name"]
+	} else if firstBuyer.BuyerType == r.Ordinary {
+		// Ordinary: only supports single buyer
+		form["tel"] = firstBuyer.Tel
+		form["buyer"] = firstBuyer.Name
 		form["contactInfo"] = map[string]any{
-			"name": b["name"],
-			"tel":  b["tel"],
+			"name": firstBuyer.Name,
+			"tel":  firstBuyer.Tel,
 			"uid":  c.getUID(),
 		}
 	} else {
@@ -351,6 +385,36 @@ func (c *BiliClient) GetOrderStatus(projectID, token string, orderID int64) (err
 	return nil, orderID == utils.ParseInt64OrDefault(apiResp.Data.OrderId, 0)
 }
 
+// CreateBuyer adds a new buyer for the current logged-in account.
+// Endpoint: POST https://show.bilibili.com/api/ticket/buyer/create
+func (c *BiliClient) CreateBuyer(name, tel string, idType int, personalID string, isDefault bool) error {
+	form := map[string]any{
+		"name":        name,
+		"tel":         tel,
+		"id_type":     idType,
+		"personal_id": personalID,
+		"src":         "ticket",
+	}
+	if isDefault {
+		form["is_default"] = "1"
+	} else {
+		form["is_default"] = "0"
+	}
+	resp, err := c.client.R().SetBodyJsonMarshal(form).Post("https://show.bilibili.com/api/ticket/buyer/create")
+	if err != nil {
+		return err
+	}
+	var apiResp api.ShowApiDataRoot[any]
+	err = resp.Unmarshal(&apiResp)
+	if err != nil {
+		return err
+	}
+	if apiResp.GetCode() != 0 {
+		return fmt.Errorf("create buyer failed: code=%d, message=%s", apiResp.GetCode(), apiResp.GetMessage())
+	}
+	return nil
+}
+
 // GetRealnameBuyerList fetches the list of buyers for a real-name project, which includes sensitive info like ID numbers.
 // Parameters: none
 //
@@ -413,6 +477,10 @@ func (c *BiliClient) GetRealnameBuyerListNew() (error, []api.BuyerNoSensitiveStr
 			IdName = "身份证"
 		case 1:
 			IdName = "护照"
+		case 2:
+			IdName = "港澳通行证"
+		case 3:
+			IdName = "台湾通行证"
 		default:
 			IdName = "未知证件类型"
 		}
