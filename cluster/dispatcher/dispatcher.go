@@ -1,0 +1,303 @@
+package dispatcher
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sort"
+	"sync"
+	"time"
+
+	"bilibili-ticket-golang/cluster/domain"
+)
+
+type WorkerStatus struct {
+	State  domain.AttemptState
+	Result domain.ExecutionResult
+}
+
+type WorkerClient interface {
+	Submit(context.Context, domain.WorkerNode, domain.ExecutionSpec) error
+	Status(context.Context, domain.WorkerNode, string) (WorkerStatus, error)
+	Stop(context.Context, domain.WorkerNode, string) error
+}
+
+type Repository interface {
+	PutAttempt(context.Context, domain.ExecutionAttempt) error
+	PutAccount(context.Context, domain.Account, *int64) error
+	MarkIntentSucceeded(context.Context, domain.LogicalOrderIntent, domain.ExecutionResult) error
+}
+
+type MappingResolver interface {
+	Resolve(context.Context, string, []domain.Buyer) ([]domain.Buyer, error)
+}
+
+type IntentPlan struct {
+	Macro  domain.MacroTask
+	Intent domain.LogicalOrderIntent
+}
+
+type attempt struct {
+	value  domain.ExecutionAttempt
+	planID string
+}
+
+type Dispatcher struct {
+	mu            sync.Mutex
+	client        WorkerClient
+	repository    Repository
+	resolver      MappingResolver
+	plans         map[string]*IntentPlan
+	attempts      map[string]*attempt
+	accounts      map[string]domain.Account
+	workers       map[string]domain.WorkerNode
+	accountBusy   map[string]string
+	workerBusy    map[string]string
+	failedWorkers map[string]time.Time
+	degraded      bool
+	now           func() time.Time
+	next          uint64
+}
+
+func New(client WorkerClient, repository Repository, resolver MappingResolver) *Dispatcher {
+	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), now: time.Now}
+}
+
+func (d *Dispatcher) SetResources(accounts []domain.Account, workers []domain.WorkerNode) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, account := range accounts {
+		d.accounts[account.ID] = account
+	}
+	for _, worker := range workers {
+		d.workers[worker.ID] = worker
+	}
+}
+
+func (d *Dispatcher) Add(plan IntentPlan) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.plans[plan.Intent.ID] = &plan
+}
+
+// Reconcile first observes every active attempt, then fills replica deficits.
+func (d *Dispatcher) Reconcile(ctx context.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err := d.poll(ctx); err != nil {
+		return err
+	}
+	ordered := make([]*IntentPlan, 0, len(d.plans))
+	for _, plan := range d.plans {
+		if !plan.Intent.Succeeded {
+			ordered = append(ordered, plan)
+		}
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].Macro.Priority == ordered[j].Macro.Priority {
+			return ordered[i].Intent.CreatedAt.Before(ordered[j].Intent.CreatedAt)
+		}
+		return ordered[i].Macro.Priority > ordered[j].Macro.Priority
+	})
+	for _, plan := range ordered {
+		if d.now().After(plan.Macro.Deadline) || d.conflicted(plan) {
+			continue
+		}
+		desired := plan.Macro.DesiredReplicas
+		if desired <= 0 {
+			desired = 1
+		}
+		hard := plan.Macro.HardConcurrency
+		if hard <= 0 {
+			hard = desired
+		}
+		if desired > hard {
+			desired = hard
+		}
+		for d.activeCount(plan.Intent.ID) < desired {
+			account, worker, ok := d.pickResources()
+			if !ok {
+				break
+			}
+			if err := d.dispatch(ctx, plan, account, worker); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) poll(ctx context.Context) error {
+	for _, current := range d.attempts {
+		if current.value.State.Terminal() {
+			continue
+		}
+		worker := d.workers[current.value.WorkerID]
+		status, err := d.client.Status(ctx, worker, current.value.ID)
+		if err != nil {
+			d.failedWorkers[worker.ID] = d.now()
+			d.degraded = true
+			continue
+		}
+		current.value.State, current.value.UpdatedAt = status.State, d.now()
+		if !status.State.Terminal() {
+			continue
+		}
+		delete(d.accountBusy, current.value.AccountID)
+		delete(d.workerBusy, current.value.WorkerID)
+		if status.Result.Success {
+			if err := d.win(ctx, current, status.Result); err != nil {
+				return err
+			}
+			continue
+		}
+		d.applyFailure(current, status.Result)
+		if d.repository != nil {
+			_ = d.repository.PutAttempt(ctx, current.value)
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) win(ctx context.Context, winner *attempt, result domain.ExecutionResult) error {
+	plan := d.plans[winner.planID]
+	plan.Intent.Succeeded = true
+	if d.repository != nil {
+		if err := d.repository.MarkIntentSucceeded(ctx, plan.Intent, result); err != nil {
+			return err
+		}
+	}
+	for _, sibling := range d.attempts {
+		if sibling.value.ID == winner.value.ID || sibling.value.State.Terminal() {
+			continue
+		}
+		other := d.plans[sibling.planID]
+		if sibling.planID == winner.planID || domain.Conflicts(plan.Intent, other.Intent) {
+			_ = d.client.Stop(ctx, d.workers[sibling.value.WorkerID], sibling.value.ID)
+			sibling.value.State = domain.AttemptStopping
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) applyFailure(current *attempt, result domain.ExecutionResult) {
+	switch result.Reason {
+	case domain.FailureCookieInvalid:
+		account := d.accounts[current.value.AccountID]
+		account.Enabled = false
+		d.accounts[account.ID] = account
+	case domain.FailureAccountRisk:
+		account := d.accounts[current.value.AccountID]
+		account.CooldownUntil = d.now().Add(5 * time.Minute)
+		d.accounts[account.ID] = account
+	case domain.FailureHTTP412, domain.FailureCaptcha, domain.FailureWorkerLost:
+		d.failedWorkers[current.value.WorkerID] = d.now()
+		d.degraded = true
+	}
+}
+
+func (d *Dispatcher) conflicted(candidate *IntentPlan) bool {
+	for _, current := range d.attempts {
+		if current.value.State.Terminal() || current.planID == candidate.Intent.ID {
+			continue
+		}
+		if domain.Conflicts(candidate.Intent, d.plans[current.planID].Intent) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Dispatcher) activeCount(intentID string) int {
+	count := 0
+	for _, current := range d.attempts {
+		if current.planID == intentID && !current.value.State.Terminal() {
+			count++
+		}
+	}
+	return count
+}
+
+func (d *Dispatcher) pickResources() (domain.Account, domain.WorkerNode, bool) {
+	accounts := make([]domain.Account, 0, len(d.accounts))
+	workers := make([]domain.WorkerNode, 0, len(d.workers))
+	for _, value := range d.accounts {
+		if !value.Enabled || d.accountBusy[value.ID] != "" || value.CooldownUntil.After(d.now()) {
+			continue
+		}
+		if !d.degraded && value.Role == domain.RoleStandby {
+			continue
+		}
+		accounts = append(accounts, value)
+	}
+	for _, value := range d.workers {
+		if !value.Enabled || d.workerBusy[value.ID] != "" {
+			continue
+		}
+		if _, failed := d.failedWorkers[value.ID]; failed {
+			continue
+		}
+		if !d.degraded && value.Role == domain.RoleStandby {
+			continue
+		}
+		workers = append(workers, value)
+	}
+	sort.Slice(accounts, func(i, j int) bool { return accounts[i].ID < accounts[j].ID })
+	sort.Slice(workers, func(i, j int) bool { return workers[i].ID < workers[j].ID })
+	if len(accounts) == 0 && d.degraded {
+		for _, value := range d.accounts {
+			if value.Enabled && d.accountBusy[value.ID] == "" && value.Role == domain.RoleStandby {
+				accounts = append(accounts, value)
+			}
+		}
+	}
+	if len(accounts) == 0 || len(workers) == 0 {
+		return domain.Account{}, domain.WorkerNode{}, false
+	}
+	return accounts[0], workers[0], true
+}
+
+func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account domain.Account, worker domain.WorkerNode) error {
+	buyers := append([]domain.Buyer(nil), plan.Intent.Buyers...)
+	var err error
+	if d.resolver != nil {
+		buyers, err = d.resolver.Resolve(ctx, account.ID, buyers)
+		if err != nil {
+			return err
+		}
+	}
+	d.next++
+	id := fmt.Sprintf("attempt-%s-%d", plan.Intent.ID, d.next)
+	mode := domain.StartImmediate
+	if plan.Macro.StartAt.After(d.now()) {
+		mode = domain.StartScheduled
+	}
+	spec := domain.ExecutionSpec{AttemptID: id, IntentID: plan.Intent.ID, ProjectID: plan.Macro.ProjectID, ScreenID: plan.Macro.ScreenID, SKUID: plan.Macro.SKUID, Buyers: buyers, StartMode: mode, StartAt: plan.Macro.StartAt, Deadline: plan.Macro.Deadline, IntervalMS: 500, Credentials: account.Credentials}
+	if err := d.client.Submit(ctx, worker, spec); err != nil {
+		return err
+	}
+	now := d.now()
+	value := domain.ExecutionAttempt{ID: id, IntentID: plan.Intent.ID, SpecHash: spec.Hash(), AccountID: account.ID, WorkerID: worker.ID, State: domain.AttemptWaiting, CreatedAt: now, UpdatedAt: now}
+	d.attempts[id] = &attempt{value: value, planID: plan.Intent.ID}
+	d.accountBusy[account.ID], d.workerBusy[worker.ID] = id, id
+	if d.repository != nil {
+		return d.repository.PutAttempt(ctx, value)
+	}
+	return nil
+}
+
+func (d *Dispatcher) SwitchToReflow(ctx context.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, current := range d.attempts {
+		plan := d.plans[current.planID]
+		if plan.Intent.Phase != domain.PhasePunctual || current.value.State.Terminal() {
+			continue
+		}
+		if err := d.client.Stop(ctx, d.workers[current.value.WorkerID], current.value.ID); err != nil && !errors.Is(err, context.Canceled) {
+			return err
+		}
+		current.value.State = domain.AttemptStopping
+	}
+	return nil
+}
