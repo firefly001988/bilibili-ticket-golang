@@ -39,6 +39,15 @@ export interface MacroSummary {
   desiredReplicas: number
   hardConcurrency: number
   phase: Phase
+  purchaseGroups: PurchaseGroup[]
+}
+
+export interface PurchaseGroup {
+  id: string
+  macroTaskId: string
+  buyers: LogicalBuyer[]
+  allowSplit: boolean
+  createdAt: string
 }
 
 export interface AttemptSummary {

@@ -55,7 +55,8 @@ type WorkerSummary struct {
 }
 type MacroSummary struct {
 	domain.MacroTask
-	Phase domain.Phase `json:"phase"`
+	Phase          domain.Phase           `json:"phase"`
+	PurchaseGroups []domain.PurchaseGroup `json:"purchaseGroups"`
 }
 type AttemptSummary struct {
 	ID        string               `json:"id"`
@@ -325,7 +326,15 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		if phase == "" {
 			phase = domain.PhasePunctual
 		}
-		result.Macros = append(result.Macros, MacroSummary{MacroTask: macro, Phase: phase})
+		groups, groupErr := s.repository.ListPurchaseGroups(ctx, macro.ID)
+		if groupErr != nil {
+			s.mu.RUnlock()
+			return ClusterSnapshot{}, groupErr
+		}
+		if groups == nil {
+			groups = make([]domain.PurchaseGroup, 0)
+		}
+		result.Macros = append(result.Macros, MacroSummary{MacroTask: macro, Phase: phase, PurchaseGroups: groups})
 	}
 	s.mu.RUnlock()
 	for _, value := range s.dispatcher.Attempts() {
@@ -463,6 +472,18 @@ func (s *ClusterService) SyncAccountBuyers(accountID string) ([]domain.Buyer, er
 	return buyers, nil
 }
 
+func (s *ClusterService) DeleteAccount(accountID string) error {
+	for _, attempt := range s.dispatcher.Attempts() {
+		if attempt.AccountID == accountID && !attempt.State.Terminal() {
+			return fmt.Errorf("account is used by active attempt %s", attempt.ID)
+		}
+	}
+	if err := s.repository.DeleteAccount(context.Background(), accountID); err != nil {
+		return err
+	}
+	return s.refreshResources(context.Background())
+}
+
 func (s *ClusterService) AddWorker(document string) error {
 	var input struct {
 		ID      string              `json:"id"`
@@ -490,6 +511,22 @@ func (s *ClusterService) AddWorker(document string) error {
 	}
 	s.client.SetKey(node.ID, input.Key)
 	return s.refreshResources(ctx)
+}
+
+func (s *ClusterService) DeleteWorker(workerID string) error {
+	if workerID == "local" {
+		return fmt.Errorf("the automatically managed local worker cannot be deleted")
+	}
+	for _, attempt := range s.dispatcher.Attempts() {
+		if attempt.WorkerID == workerID && !attempt.State.Terminal() {
+			return fmt.Errorf("worker is used by active attempt %s", attempt.ID)
+		}
+	}
+	if err := s.repository.DeleteWorker(context.Background(), workerID); err != nil {
+		return err
+	}
+	s.client.RemoveKey(workerID)
+	return s.refreshResources(context.Background())
 }
 
 func (s *ClusterService) SaveMacro(document string) error {

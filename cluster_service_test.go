@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
 	"testing"
@@ -55,6 +56,13 @@ func TestClusterServiceValidatesRunnableMacroAndPurchaseShape(t *testing.T) {
 	if err := service.SavePurchaseGroup(document(t, valid)); err != nil {
 		t.Fatal(err)
 	}
+	snapshot, err := service.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Macros) != 1 || len(snapshot.Macros[0].PurchaseGroups) != 1 || len(snapshot.Macros[0].PurchaseGroups[0].Buyers) != 2 {
+		t.Fatalf("purchase groups missing from macro summary: %#v", snapshot.Macros)
+	}
 }
 
 func TestClusterSnapshotUsesEmptyBuyerArray(t *testing.T) {
@@ -65,5 +73,35 @@ func TestClusterSnapshotUsesEmptyBuyerArray(t *testing.T) {
 	}
 	if snapshot.Buyers == nil {
 		t.Fatal("empty buyers must be represented as an empty array, not null")
+	}
+}
+
+func TestClusterServiceDeletesIdleResources(t *testing.T) {
+	service := testClusterService(t)
+	ctx := context.Background()
+	if err := service.repository.PutAccount(ctx, domain.Account{ID: "account", Enabled: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.repository.PutWorker(ctx, domain.WorkerNode{ID: "remote", BaseURL: "http://worker", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.repository.PutWorkerKey(ctx, "remote", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteAccount("account"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteWorker("remote"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := service.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Accounts) != 0 || len(snapshot.Workers) != 0 {
+		t.Fatalf("resources were not deleted: %#v", snapshot)
+	}
+	if err := service.DeleteWorker("local"); err == nil {
+		t.Fatal("local worker deletion must be rejected")
 	}
 }

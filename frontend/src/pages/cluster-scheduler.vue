@@ -18,6 +18,7 @@ const project = ref<ProjectCatalog | null>(null)
 const projectLoading = ref(false)
 const selectedSKU = ref<CatalogSKU | null>(null)
 const eventDayConfirmed = ref(false)
+const expandedMacros = ref<string[]>([])
 let timer: number | undefined
 let loginTimer: number | undefined
 
@@ -115,6 +116,20 @@ async function syncBuyers(accountId: string) {
   finally { loading.value = false }
 }
 
+function toggleMacro(id: string) {
+  expandedMacros.value = expandedMacros.value.includes(id) ? expandedMacros.value.filter(value => value !== id) : [...expandedMacros.value, id]
+}
+
+async function deleteAccount(id: string, name: string) {
+  if (!window.confirm(`确定删除账号“${name}”及其购票人映射吗？`)) return
+  await invoke('DeleteAccount', id)
+}
+
+async function deleteWorker(id: string, name: string) {
+  if (!window.confirm(`确定删除 Worker“${name}”吗？`)) return
+  await invoke('DeleteWorker', id)
+}
+
 onMounted(async () => { await refresh(); timer = window.setInterval(refresh, 5000) })
 onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) window.clearInterval(loginTimer) })
 </script>
@@ -149,12 +164,18 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
           <v-table density="compact">
             <thead><tr><th>项目 / SKU</th><th>活动日</th><th>容量</th><th>副本</th><th>优先级</th><th>阶段 / 审核</th><th>操作</th></tr></thead>
             <tbody>
-              <tr v-for="item in snapshot.macros" :key="item.id">
+              <template v-for="item in snapshot.macros" :key="item.id">
+              <tr class="cursor-pointer" @click="toggleMacro(item.id)">
                 <td><div>{{ item.projectName || `项目 ${item.projectId}` }}</div><div class="text-caption text-medium-emphasis">{{ item.screenName || item.screenId }} — {{ item.skuName || item.skuId }}</div></td><td>{{ item.eventDay || '未设置' }}</td><td>{{ item.orderCapacity }}</td>
                 <td>{{ item.desiredReplicas }} / {{ item.hardConcurrency }}</td><td>{{ item.priority }}</td>
                 <td><v-chip size="small" :color="item.needsReview ? 'warning' : 'success'">{{ item.phase }} · {{ item.needsReview ? '待确认' : '可调度' }}</v-chip></td>
-                <td><v-btn size="small" :disabled="item.needsReview || !item.eventDayConfirmed" @click="invoke('StartMacro', item.id)">启动准点</v-btn></td>
+                <td><v-btn size="small" :disabled="item.needsReview || !item.eventDayConfirmed" @click.stop="invoke('StartMacro', item.id)">启动准点</v-btn><v-btn class="ml-1" size="small" variant="text" :icon="expandedMacros.includes(item.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" @click.stop="toggleMacro(item.id)" /></td>
               </tr>
+              <tr v-if="expandedMacros.includes(item.id)"><td colspan="7" class="bg-grey-lighten-4 pa-4">
+                <div v-if="item.purchaseGroups.length === 0" class="text-medium-emphasis">尚未配置购票组。</div>
+                <v-row v-else dense><v-col v-for="(group, index) in item.purchaseGroups" :key="group.id" cols="12" md="6"><v-card variant="outlined"><v-card-title class="text-subtitle-1">购票组 {{ index + 1 }}<v-chip class="ml-2" size="x-small" :color="group.allowSplit ? 'warning' : 'default'">{{ group.allowSplit ? '回流可拆单' : '保持整单' }}</v-chip></v-card-title><v-card-text><v-chip v-for="buyer in group.buyers" :key="buyer.logicalId" class="mr-2 mb-1" prepend-icon="mdi-account">{{ buyer.name }}<v-tooltip activator="parent">{{ buyer.tel || '无手机号' }}</v-tooltip></v-chip></v-card-text></v-card></v-col></v-row>
+              </td></tr>
+              </template>
             </tbody>
           </v-table>
           <v-expansion-panels class="mt-5">
@@ -192,7 +213,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
           </v-row>
           <v-divider class="mb-4" />
           <v-row>
-            <v-col cols="7"><v-table density="compact"><thead><tr><th>账号</th><th>角色</th><th>状态</th><th>购票人</th></tr></thead><tbody><tr v-for="item in snapshot.accounts" :key="item.id"><td>{{ item.name || item.id }}</td><td><v-chip size="small">{{ item.role }}</v-chip></td><td>{{ item.enabled ? (item.cooldownUntil ? `冷却至 ${item.cooldownUntil}` : '可用') : '停用' }}</td><td><v-btn size="small" variant="tonal" prepend-icon="mdi-account-sync" @click="syncBuyers(item.id)">同步</v-btn></td></tr></tbody></v-table></v-col>
+            <v-col cols="7"><v-table density="compact"><thead><tr><th>账号</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="item in snapshot.accounts" :key="item.id"><td>{{ item.name || item.id }}</td><td><v-chip size="small">{{ item.role }}</v-chip></td><td>{{ item.enabled ? (item.cooldownUntil ? `冷却至 ${item.cooldownUntil}` : '可用') : '停用' }}</td><td><v-btn size="small" variant="tonal" prepend-icon="mdi-account-sync" @click="syncBuyers(item.id)">同步</v-btn><v-btn class="ml-1" size="small" variant="text" color="error" icon="mdi-delete" @click="deleteAccount(item.id, item.name || item.id)" /></td></tr></tbody></v-table></v-col>
             <v-col cols="5"><v-textarea v-model="accountJSON" label="标准凭据 JSON" rows="8" /><v-btn color="primary" block @click="importAccount">导入账号</v-btn></v-col>
           </v-row>
           <v-divider class="my-5" />
@@ -205,7 +226,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
       <v-window-item value="workers">
         <v-card-text>
           <v-row>
-            <v-col cols="7"><v-table density="compact"><thead><tr><th>Worker</th><th>地址</th><th>角色</th><th>健康 / 活动任务</th></tr></thead><tbody><tr v-for="item in snapshot.workers" :key="item.id"><td>{{ item.name || item.id }}</td><td>{{ item.baseUrl }}</td><td>{{ item.role }}</td><td><v-chip size="small" :color="item.healthy ? 'success' : 'error'">{{ item.healthy ? (item.activeAttemptId || '空闲') : '失联' }}</v-chip></td></tr></tbody></v-table></v-col>
+            <v-col cols="7"><v-table density="compact"><thead><tr><th>Worker</th><th>地址</th><th>角色</th><th>健康 / 活动任务</th><th>操作</th></tr></thead><tbody><tr v-for="item in snapshot.workers" :key="item.id"><td>{{ item.name || item.id }}</td><td>{{ item.baseUrl }}</td><td>{{ item.role }}</td><td><v-chip size="small" :color="item.healthy ? 'success' : 'error'">{{ item.healthy ? (item.activeAttemptId || '空闲') : '失联' }}</v-chip></td><td><v-tooltip :text="item.id === 'local' ? '本机 Worker 由雇主自动管理' : '删除 Worker'"><template #activator="{ props }"><span v-bind="props"><v-btn size="small" variant="text" color="error" icon="mdi-delete" :disabled="item.id === 'local'" @click="deleteWorker(item.id, item.name || item.id)" /></span></template></v-tooltip></td></tr></tbody></v-table></v-col>
             <v-col cols="5"><v-text-field v-model="worker.id" label="Worker ID" /><v-text-field v-model="worker.name" label="名称" /><v-text-field v-model="worker.baseUrl" label="HTTP 地址" /><v-text-field v-model="worker.key" label="独立控制密钥" type="password" /><v-select v-model="worker.role" :items="['primary', 'standby']" label="角色" /><v-btn color="primary" block @click="addWorker">添加 Worker</v-btn></v-col>
           </v-row>
         </v-card-text>

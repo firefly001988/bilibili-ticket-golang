@@ -79,12 +79,15 @@ func New(client WorkerClient, repository Repository, resolver MappingResolver) *
 func (d *Dispatcher) SetResources(accounts []domain.Account, workers []domain.WorkerNode) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	nextAccounts := make(map[string]domain.Account, len(accounts))
 	for _, account := range accounts {
-		d.accounts[account.ID] = account
+		nextAccounts[account.ID] = account
 	}
+	nextWorkers := make(map[string]domain.WorkerNode, len(workers))
 	for _, worker := range workers {
-		d.workers[worker.ID] = worker
+		nextWorkers[worker.ID] = worker
 	}
+	d.accounts, d.workers = nextAccounts, nextWorkers
 }
 
 func (d *Dispatcher) Add(plan IntentPlan) {

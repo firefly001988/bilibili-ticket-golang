@@ -130,6 +130,28 @@ func (r *Repository) PutWorker(ctx context.Context, value domain.WorkerNode) err
 	return err
 }
 
+func (r *Repository) DeleteWorker(ctx context.Context, id string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM leases WHERE worker_id=?`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM worker_keys WHERE worker_id=?`, id); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM workers WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
 func (r *Repository) PutWorkerKey(ctx context.Context, workerID, key string) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO worker_keys(worker_id,control_key) VALUES(?,?) ON CONFLICT(worker_id) DO UPDATE SET control_key=excluded.control_key`, workerID, []byte(key))
 	return err
@@ -171,6 +193,31 @@ func (r *Repository) Account(ctx context.Context, id string) (domain.Account, er
 	var value domain.Account
 	err := json.Unmarshal(b, &value)
 	return value, err
+}
+
+func (r *Repository) DeleteAccount(ctx context.Context, id string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM leases WHERE account_id=?`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM account_buyer_mappings WHERE account_id=?`, id); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM accounts WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM logical_buyers WHERE id NOT IN (SELECT logical_buyer_id FROM account_buyer_mappings)`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) PutLogicalBuyer(ctx context.Context, value domain.Buyer) error {

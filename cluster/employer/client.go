@@ -31,6 +31,12 @@ func (c *WorkerClient) SetKey(workerID, key string) {
 	c.keys[workerID] = key
 }
 
+func (c *WorkerClient) RemoveKey(workerID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.keys, workerID)
+}
+
 func (c *WorkerClient) Submit(ctx context.Context, node domain.WorkerNode, spec domain.ExecutionSpec) error {
 	response, err := c.do(ctx, node, http.MethodPost, "/v1/tasks", spec)
 	if err != nil {
