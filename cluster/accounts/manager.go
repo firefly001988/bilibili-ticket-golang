@@ -40,6 +40,7 @@ type CredentialDocument struct {
 	Name          string              `json:"name"`
 	Role          domain.ResourceRole `json:"role"`
 	Cookies       map[string]string   `json:"cookies"`
+	CookieJar     []domain.HTTPCookie `json:"cookieJar,omitempty"`
 	RefreshToken  string              `json:"refreshToken"`
 	DeviceProfile json.RawMessage     `json:"deviceProfile,omitempty"`
 }
@@ -49,7 +50,7 @@ func (m *Manager) Import(ctx context.Context, data []byte) (domain.Account, erro
 	if err := json.Unmarshal(data, &document); err != nil {
 		return domain.Account{}, err
 	}
-	if len(document.Cookies) == 0 {
+	if len(document.Cookies) == 0 && len(document.CookieJar) == 0 {
 		return domain.Account{}, errors.New("cookies are required")
 	}
 	if document.ID == "" {
@@ -58,10 +59,7 @@ func (m *Manager) Import(ctx context.Context, data []byte) (domain.Account, erro
 	if document.Role == "" {
 		document.Role = domain.RolePrimary
 	}
-	if len(document.DeviceProfile) == 0 {
-		document.DeviceProfile = newDeviceProfile()
-	}
-	account := domain.Account{ID: document.ID, Name: document.Name, Role: document.Role, Enabled: true, Credentials: domain.Credentials{Cookies: document.Cookies, RefreshToken: document.RefreshToken, Version: 1, DeviceProfile: document.DeviceProfile}}
+	account := domain.Account{ID: document.ID, Name: document.Name, Role: document.Role, Enabled: true, Credentials: domain.Credentials{Cookies: document.Cookies, CookieJar: document.CookieJar, RefreshToken: document.RefreshToken, Version: 1, DeviceProfile: document.DeviceProfile}}
 	if err := m.repository.PutAccount(ctx, account, nil); err != nil {
 		return domain.Account{}, err
 	}
@@ -136,10 +134,4 @@ func randomID(prefix string) string {
 	var b [12]byte
 	_, _ = rand.Read(b[:])
 	return prefix + "-" + hex.EncodeToString(b[:])
-}
-func newDeviceProfile() json.RawMessage {
-	var b [16]byte
-	_, _ = rand.Read(b[:])
-	data, _ := json.Marshal(map[string]string{"deviceId": hex.EncodeToString(b[:])})
-	return data
 }

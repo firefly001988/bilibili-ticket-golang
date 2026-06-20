@@ -151,6 +151,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	clusterSvc.SetCatalogClient(c)
 
 	// Wire up cookie persistence: called from frontend after login & on exit
 	c.SetCookieSaveCallback(func() {

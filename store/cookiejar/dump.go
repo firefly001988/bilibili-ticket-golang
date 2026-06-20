@@ -23,3 +23,16 @@ func (j *Jar) AllPersistentEntries() []CookieEntries {
 	sort.Sort(byCanonicalHost{entries})
 	return entries
 }
+
+func (j *Jar) AllEntries() []CookieEntries {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	var entries []CookieEntries
+	for _, submap := range j.entries {
+		for _, entry := range submap {
+			entries = append(entries, entry)
+		}
+	}
+	sort.Sort(byCanonicalHost{entries})
+	return entries
+}

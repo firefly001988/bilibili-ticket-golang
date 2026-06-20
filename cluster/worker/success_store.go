@@ -58,7 +58,9 @@ func (s *SuccessStore) Append(result domain.ExecutionResult) error {
 	if err != nil {
 		return err
 	}
-	data, err := json.Marshal(result)
+	persisted := result
+	persisted.Credentials = domain.Credentials{}
+	data, err := json.Marshal(persisted)
 	if err == nil {
 		_, err = f.Write(append(data, '\n'))
 	}
@@ -70,7 +72,7 @@ func (s *SuccessStore) Append(result domain.ExecutionResult) error {
 		err = closeErr
 	}
 	if err == nil {
-		s.results[result.AttemptID] = result
+		s.results[result.AttemptID] = persisted
 	}
 	return err
 }

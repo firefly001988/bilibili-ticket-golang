@@ -2,9 +2,12 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +37,18 @@ type BilibiliBackend struct {
 
 func NewBilibiliBackend(credentials domain.Credentials) (*BilibiliBackend, error) {
 	jar := cookiejar.New(nil)
+	for _, saved := range credentials.CookieJar {
+		host := strings.TrimPrefix(saved.Domain, ".")
+		if host == "" {
+			host = "www.bilibili.com"
+		}
+		u, _ := url.Parse("https://" + host + "/")
+		cookie := &http.Cookie{Name: saved.Name, Value: saved.Value, Domain: saved.Domain, Path: saved.Path, Secure: saved.Secure, HttpOnly: saved.HTTPOnly}
+		if saved.Expires > 0 {
+			cookie.Expires = time.Unix(saved.Expires, 0)
+		}
+		jar.SetCookies(u, []*http.Cookie{cookie})
+	}
 	for _, host := range []string{"https://bilibili.com/", "https://www.bilibili.com/", "https://show.bilibili.com/", "https://passport.bilibili.com/"} {
 		cookies := make([]*http.Cookie, 0, len(credentials.Cookies))
 		for name, value := range credentials.Cookies {
@@ -43,11 +58,24 @@ func NewBilibiliBackend(credentials domain.Credentials) (*BilibiliBackend, error
 			jar.SetCookies(u.URL, cookies)
 		}
 	}
-	client, err := biliutils.NewBiliClientWithCookiejar(jar)
+	var client *biliutils.BiliClient
+	var err error
+	if len(credentials.DeviceProfile) > 0 {
+		var profile biliutils.DeviceProfile
+		if decodeErr := json.Unmarshal(credentials.DeviceProfile, &profile); decodeErr != nil {
+			return nil, fmt.Errorf("decode device profile: %w", decodeErr)
+		}
+		client, err = biliutils.NewBiliClientWithDeviceProfile(jar, profile)
+	} else {
+		client, err = biliutils.NewBiliClientWithCookiejar(jar)
+	}
 	if err != nil {
 		return nil, err
 	}
 	client.SetRefreshToken(credentials.RefreshToken)
+	if len(credentials.DeviceProfile) == 0 {
+		credentials.DeviceProfile, _ = json.Marshal(client.ExportDeviceProfile())
+	}
 	return &BilibiliBackend{client: client, jar: jar, credentials: credentials}, nil
 }
 
@@ -55,14 +83,19 @@ func (b *BilibiliBackend) Credentials() domain.Credentials {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	updated := make(map[string]string)
-	for _, entry := range b.jar.AllPersistentEntries() {
+	full := make([]domain.HTTPCookie, 0)
+	for _, entry := range b.jar.AllEntries() {
 		updated[entry.Name] = entry.Value
+		full = append(full, domain.HTTPCookie{Name: entry.Name, Value: entry.Value, Domain: entry.Domain, Path: entry.Path, Secure: entry.Secure, HTTPOnly: entry.HttpOnly, Expires: entry.Expires})
 	}
 	if len(updated) > 0 {
 		b.credentials.Cookies = updated
 	}
+	b.credentials.CookieJar = full
 	b.credentials.RefreshToken = b.client.GetRefreshToken()
-	return b.credentials
+	result := b.credentials
+	result.Version++
+	return result
 }
 
 func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec) Outcome {

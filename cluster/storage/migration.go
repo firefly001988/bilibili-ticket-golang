@@ -38,10 +38,12 @@ func (r *Repository) MigrateLegacy(ctx context.Context, legacy *configuration.Da
 	}
 
 	cookies := make(map[string]string, len(legacy.Cookies))
+	cookieJar := make([]domain.HTTPCookie, 0, len(legacy.Cookies))
 	for _, cookie := range legacy.Cookies {
 		cookies[cookie.Name] = cookie.Value
+		cookieJar = append(cookieJar, domain.HTTPCookie{Name: cookie.Name, Value: cookie.Value, Domain: cookie.Domain, Path: cookie.Path, Secure: cookie.Secure, HTTPOnly: cookie.HttpOnly, Expires: cookie.Expires})
 	}
-	account := domain.Account{ID: "migrated-account", Name: "Migrated account", Role: domain.RolePrimary, Enabled: len(cookies) > 0, Credentials: domain.Credentials{Cookies: cookies, RefreshToken: legacy.RefreshToken, Version: 1}}
+	account := domain.Account{ID: "migrated-account", Name: "Migrated account", Role: domain.RolePrimary, Enabled: len(cookies) > 0, Credentials: domain.Credentials{Cookies: cookies, CookieJar: cookieJar, RefreshToken: legacy.RefreshToken, Version: 1}}
 	accountPayload, _ := json.Marshal(account)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,role,enabled,credential_version,payload) VALUES(?,?,?,?,?)`, account.ID, account.Role, account.Enabled, account.Credentials.Version, accountPayload); err != nil {
 		return err

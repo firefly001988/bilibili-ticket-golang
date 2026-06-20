@@ -43,24 +43,25 @@ type attempt struct {
 }
 
 type Dispatcher struct {
-	mu            sync.Mutex
-	client        WorkerClient
-	repository    Repository
-	resolver      MappingResolver
-	plans         map[string]*IntentPlan
-	attempts      map[string]*attempt
-	accounts      map[string]domain.Account
-	workers       map[string]domain.WorkerNode
-	accountBusy   map[string]string
-	workerBusy    map[string]string
-	failedWorkers map[string]time.Time
-	degraded      bool
-	now           func() time.Time
-	next          uint64
+	mu                  sync.Mutex
+	client              WorkerClient
+	repository          Repository
+	resolver            MappingResolver
+	plans               map[string]*IntentPlan
+	attempts            map[string]*attempt
+	accounts            map[string]domain.Account
+	workers             map[string]domain.WorkerNode
+	accountBusy         map[string]string
+	workerBusy          map[string]string
+	failedWorkers       map[string]time.Time
+	quarantinedAccounts map[string]time.Time
+	degraded            bool
+	now                 func() time.Time
+	next                uint64
 }
 
 func New(client WorkerClient, repository Repository, resolver MappingResolver) *Dispatcher {
-	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), now: time.Now}
+	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), now: time.Now}
 }
 
 func (d *Dispatcher) SetResources(accounts []domain.Account, workers []domain.WorkerNode) {
@@ -157,8 +158,13 @@ func (d *Dispatcher) poll(ctx context.Context) error {
 		worker := d.workers[current.value.WorkerID]
 		status, err := d.client.Status(ctx, worker, current.value.ID)
 		if err != nil {
-			d.failedWorkers[worker.ID] = d.now()
+			now := d.now()
+			d.failedWorkers[worker.ID] = now
+			d.quarantinedAccounts[current.value.AccountID] = now.Add(195 * time.Second)
 			d.degraded = true
+			current.value.State, current.value.UpdatedAt = domain.AttemptFailed, now
+			delete(d.accountBusy, current.value.AccountID)
+			delete(d.workerBusy, current.value.WorkerID)
 			continue
 		}
 		current.value.State, current.value.UpdatedAt = status.State, d.now()
@@ -167,13 +173,24 @@ func (d *Dispatcher) poll(ctx context.Context) error {
 		}
 		delete(d.accountBusy, current.value.AccountID)
 		delete(d.workerBusy, current.value.WorkerID)
+		if status.Result.Credentials.Version > 0 {
+			account := d.accounts[current.value.AccountID]
+			oldVersion := account.Credentials.Version
+			if status.Result.Credentials.Version > oldVersion {
+				account.Credentials = status.Result.Credentials
+				d.accounts[account.ID] = account
+				if d.repository != nil {
+					_ = d.repository.PutAccount(ctx, account, &oldVersion)
+				}
+			}
+		}
 		if status.Result.Success {
 			if err := d.win(ctx, current, status.Result); err != nil {
 				return err
 			}
 			continue
 		}
-		d.applyFailure(current, status.Result)
+		d.applyFailure(ctx, current, status.Result)
 		if d.repository != nil {
 			_ = d.repository.PutAttempt(ctx, current.value)
 		}
@@ -183,6 +200,9 @@ func (d *Dispatcher) poll(ctx context.Context) error {
 
 func (d *Dispatcher) win(ctx context.Context, winner *attempt, result domain.ExecutionResult) error {
 	plan := d.plans[winner.planID]
+	if plan.Intent.Succeeded {
+		return nil
+	}
 	plan.Intent.Succeeded = true
 	if d.repository != nil {
 		if err := d.repository.MarkIntentSucceeded(ctx, plan.Intent, result); err != nil {
@@ -202,16 +222,24 @@ func (d *Dispatcher) win(ctx context.Context, winner *attempt, result domain.Exe
 	return nil
 }
 
-func (d *Dispatcher) applyFailure(current *attempt, result domain.ExecutionResult) {
+func (d *Dispatcher) applyFailure(ctx context.Context, current *attempt, result domain.ExecutionResult) {
 	switch result.Reason {
 	case domain.FailureCookieInvalid:
 		account := d.accounts[current.value.AccountID]
+		old := account.Credentials.Version
 		account.Enabled = false
 		d.accounts[account.ID] = account
+		if d.repository != nil {
+			_ = d.repository.PutAccount(ctx, account, &old)
+		}
 	case domain.FailureAccountRisk:
 		account := d.accounts[current.value.AccountID]
+		old := account.Credentials.Version
 		account.CooldownUntil = d.now().Add(5 * time.Minute)
 		d.accounts[account.ID] = account
+		if d.repository != nil {
+			_ = d.repository.PutAccount(ctx, account, &old)
+		}
 	case domain.FailureHTTP412, domain.FailureCaptcha, domain.FailureWorkerLost:
 		d.failedWorkers[current.value.WorkerID] = d.now()
 		d.degraded = true
@@ -242,9 +270,19 @@ func (d *Dispatcher) activeCount(intentID string) int {
 
 func (d *Dispatcher) pickResources() (domain.Account, domain.WorkerNode, bool) {
 	accounts := make([]domain.Account, 0, len(d.accounts))
+	recoveredAccounts := make([]domain.Account, 0)
 	workers := make([]domain.WorkerNode, 0, len(d.workers))
 	for _, value := range d.accounts {
+		if until := d.quarantinedAccounts[value.ID]; until.After(d.now()) {
+			continue
+		} else if !until.IsZero() {
+			delete(d.quarantinedAccounts, value.ID)
+		}
 		if !value.Enabled || d.accountBusy[value.ID] != "" || value.CooldownUntil.After(d.now()) {
+			continue
+		}
+		if !value.CooldownUntil.IsZero() {
+			recoveredAccounts = append(recoveredAccounts, value)
 			continue
 		}
 		if !d.degraded && value.Role == domain.RoleStandby {
@@ -268,10 +306,13 @@ func (d *Dispatcher) pickResources() (domain.Account, domain.WorkerNode, bool) {
 	sort.Slice(workers, func(i, j int) bool { return workers[i].ID < workers[j].ID })
 	if len(accounts) == 0 && d.degraded {
 		for _, value := range d.accounts {
-			if value.Enabled && d.accountBusy[value.ID] == "" && value.Role == domain.RoleStandby {
+			if value.Enabled && d.accountBusy[value.ID] == "" && !d.quarantinedAccounts[value.ID].After(d.now()) && value.Role == domain.RoleStandby {
 				accounts = append(accounts, value)
 			}
 		}
+	}
+	if len(accounts) == 0 {
+		accounts = append(accounts, recoveredAccounts...)
 	}
 	if len(accounts) == 0 || len(workers) == 0 {
 		return domain.Account{}, domain.WorkerNode{}, false

@@ -34,9 +34,6 @@ func TestImportAndExplicitProvisioning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(account.Credentials.DeviceProfile) == 0 {
-		t.Fatal("device profile not generated")
-	}
 	buyer := domain.Buyer{LogicalID: "person", Name: "A", IDCard: "x"}
 	if _, err := manager.EnsureBuyer(ctx, account.ID, buyer, false); !errors.Is(err, ErrConfirmationRequired) || p.created != 0 {
 		t.Fatalf("confirmation guard failed: %v", err)

@@ -1,17 +1,22 @@
 <script lang="ts" setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import { clusterCall, type ClusterSnapshot, type ResourceRole } from '@/composables/clusterTypes'
+import VueQr from 'vue-qr'
 
 const tab = ref('tasks')
 const loading = ref(false)
 const error = ref('')
-const snapshot = ref<ClusterSnapshot>({ accounts: [], workers: [], macros: [], attempts: [] })
+const snapshot = ref<ClusterSnapshot>({ taskGroups: [], accounts: [], workers: [], macros: [], attempts: [] })
 const accountJSON = ref('')
 const worker = ref({ id: '', name: '', baseUrl: 'http://127.0.0.1:18080', key: '', role: 'primary' as ResourceRole })
 const macroJSON = ref('')
 const purchaseJSON = ref('')
 const provisionJSON = ref('')
+const taskGroupJSON = ref('')
+const login = ref({ name: '', role: 'primary' as ResourceRole, sessionId: '', url: '', message: '' })
+const skuInspect = ref({ projectId: 0, screenId: 0, skuId: 0, eventDay: '', orderCapacity: 4, capacitySource: 'default', confirmed: false })
 let timer: number | undefined
+let loginTimer: number | undefined
 
 async function refresh() {
   try {
@@ -33,9 +38,31 @@ const saveMacro = () => invoke('SaveMacro', macroJSON.value)
 const savePurchase = () => invoke('SavePurchaseGroup', purchaseJSON.value)
 const provisionBuyer = () => invoke('ProvisionBuyer', provisionJSON.value, true)
 const switchReflow = () => invoke('SwitchToReflow')
+const saveTaskGroup = () => invoke('SaveTaskGroup', taskGroupJSON.value)
+
+async function beginLogin() {
+  const result = await clusterCall<{ sessionId: string; url: string }>('BeginAccountLogin', login.value.name, login.value.role)
+  login.value.sessionId = result.sessionId; login.value.url = result.url
+  if (loginTimer) window.clearInterval(loginTimer)
+  loginTimer = window.setInterval(async () => {
+    const state = await clusterCall<{ code: number; message: string; accountId?: string }>('PollAccountLogin', login.value.sessionId)
+    login.value.message = state.message
+    if (state.accountId) { window.clearInterval(loginTimer); loginTimer = undefined; login.value.url = ''; await refresh() }
+  }, 2000)
+}
+
+async function inspectSKU() {
+  const result = await clusterCall<any>('InspectSKU', skuInspect.value.projectId, skuInspect.value.screenId, skuInspect.value.skuId)
+  Object.assign(skuInspect.value, result, { confirmed: false })
+}
+
+function prepareMacroJSON() {
+  if (!skuInspect.value.confirmed) { error.value = '必须人工确认活动日期'; return }
+  macroJSON.value = JSON.stringify({ id: `macro-${skuInspect.value.projectId}-${skuInspect.value.skuId}`, taskGroupId: snapshot.value.taskGroups[0]?.id, projectId: skuInspect.value.projectId, screenId: skuInspect.value.screenId, skuId: skuInspect.value.skuId, eventDay: skuInspect.value.eventDay, eventDayConfirmed: true, needsReview: false, smartMerge: false, orderCapacity: skuInspect.value.orderCapacity, capacitySource: skuInspect.value.capacitySource, priority: 0, desiredReplicas: 1, hardConcurrency: 1 }, null, 2)
+}
 
 onMounted(async () => { await refresh(); timer = window.setInterval(refresh, 5000) })
-onUnmounted(() => { if (timer) window.clearInterval(timer) })
+onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) window.clearInterval(loginTimer) })
 </script>
 
 <template>
@@ -77,7 +104,8 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
             </tbody>
           </v-table>
           <v-expansion-panels class="mt-5">
-            <v-expansion-panel title="创建或更新宏任务（JSON）"><v-expansion-panel-text><v-textarea v-model="macroJSON" rows="8" label="MacroTask JSON" /><v-btn color="primary" @click="saveMacro">保存宏任务</v-btn></v-expansion-panel-text></v-expansion-panel>
+            <v-expansion-panel title="创建任务组（JSON）"><v-expansion-panel-text><div class="mb-2">现有：{{ snapshot.taskGroups.map(g => `${g.name} (${g.id})`).join('、') }}</div><v-textarea v-model="taskGroupJSON" rows="3" label="{ name, id? }" /><v-btn color="primary" @click="saveTaskGroup">保存任务组</v-btn></v-expansion-panel-text></v-expansion-panel>
+            <v-expansion-panel title="创建或更新宏任务"><v-expansion-panel-text><v-row><v-col><v-text-field v-model.number="skuInspect.projectId" label="Project ID" /></v-col><v-col><v-text-field v-model.number="skuInspect.screenId" label="Screen ID" /></v-col><v-col><v-text-field v-model.number="skuInspect.skuId" label="SKU ID" /></v-col></v-row><v-btn variant="outlined" @click="inspectSKU">从 API 预填日期与订单上限</v-btn><v-row class="mt-2"><v-col><v-text-field v-model="skuInspect.eventDay" label="活动日期 YYYY-MM-DD" /></v-col><v-col><v-text-field v-model.number="skuInspect.orderCapacity" label="单订单人数上限" /></v-col></v-row><v-checkbox v-model="skuInspect.confirmed" label="我已人工确认活动日期正确" /><v-btn class="mb-3" @click="prepareMacroJSON">生成配置</v-btn><v-textarea v-model="macroJSON" rows="8" label="MacroTask JSON" /><v-btn color="primary" @click="saveMacro">保存宏任务</v-btn></v-expansion-panel-text></v-expansion-panel>
             <v-expansion-panel title="添加购票组（JSON）"><v-expansion-panel-text><v-textarea v-model="purchaseJSON" rows="7" label="PurchaseGroup JSON（allowSplit 仅影响回流）" /><v-btn color="primary" @click="savePurchase">保存购票组</v-btn></v-expansion-panel-text></v-expansion-panel>
           </v-expansion-panels>
         </v-card-text>
@@ -85,6 +113,11 @@ onUnmounted(() => { if (timer) window.clearInterval(timer) })
 
       <v-window-item value="accounts">
         <v-card-text>
+          <v-row class="mb-4">
+            <v-col cols="8"><div class="text-h6 mb-2">逐账号扫码登录</div><v-text-field v-model="login.name" label="账号备注" /><v-select v-model="login.role" :items="['primary', 'standby']" label="角色" /><v-btn color="primary" @click="beginLogin">生成独立二维码</v-btn><div class="mt-2">{{ login.message }}</div></v-col>
+            <v-col cols="4" class="text-center"><VueQr v-if="login.url" :text="login.url" :size="180" /></v-col>
+          </v-row>
+          <v-divider class="mb-4" />
           <v-row>
             <v-col cols="7"><v-table density="compact"><thead><tr><th>账号</th><th>角色</th><th>凭据版本</th><th>状态</th></tr></thead><tbody><tr v-for="item in snapshot.accounts" :key="item.id"><td>{{ item.name || item.id }}</td><td><v-chip size="small">{{ item.role }}</v-chip></td><td>{{ item.credentialVersion }}</td><td>{{ item.enabled ? (item.cooldownUntil ? `冷却至 ${item.cooldownUntil}` : '可用') : '停用' }}</td></tr></tbody></v-table></v-col>
             <v-col cols="5"><v-textarea v-model="accountJSON" label="标准凭据 JSON" rows="8" /><v-btn color="primary" block @click="importAccount">导入账号</v-btn></v-col>

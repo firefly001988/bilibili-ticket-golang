@@ -86,7 +86,7 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 	if e.Classifier == nil {
 		e.Classifier = DefaultClassifier{}
 	}
-	result := domain.ExecutionResult{AttemptID: spec.AttemptID, IntentID: spec.IntentID, State: domain.AttemptRunning, StartedAt: now()}
+	result := domain.ExecutionResult{AttemptID: spec.AttemptID, IntentID: spec.IntentID, SpecHash: spec.Hash(), State: domain.AttemptRunning, StartedAt: now()}
 	finish := func(state domain.AttemptState, reason domain.FailureReason, message string, retryable bool) domain.ExecutionResult {
 		result.State, result.Reason, result.Message, result.Retryable = state, reason, message, retryable
 		result.FinishedAt = now()

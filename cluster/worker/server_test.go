@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +106,12 @@ func TestSuccessPersistsAndSurvivesRestart(t *testing.T) {
 	if got := request(t, restarted.Handler(), http.MethodGet, "/v1/tasks/a", "", "secret").Code; got != http.StatusOK {
 		t.Fatalf("persisted status=%d", got)
 	}
+	changed := workerSpec("a")
+	changed.SKUID = 99
+	changedJSON, _ := json.Marshal(changed)
+	if got := request(t, restarted.Handler(), http.MethodPost, "/v1/tasks", string(changedJSON), "secret").Code; got != http.StatusConflict {
+		t.Fatalf("persisted spec conflict=%d", got)
+	}
 }
 
 func TestLeaseDefaultsAndStatusRenews(t *testing.T) {
@@ -124,5 +132,25 @@ func TestLeaseDefaultsAndStatusRenews(t *testing.T) {
 	s.mu.Unlock()
 	if !renewed.After(first) {
 		t.Fatal("status did not renew lease")
+	}
+}
+
+func TestSuccessStoreNeverPersistsCredentials(t *testing.T) {
+	dir := t.TempDir()
+	store, err := OpenSuccessStore(filepath.Join(dir, "success-orders.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := domain.ExecutionResult{AttemptID: "a", SpecHash: "hash", Success: true, Credentials: domain.Credentials{Cookies: map[string]string{"SESSDATA": "secret"}, RefreshToken: "refresh-secret"}}
+	if err := store.Append(result); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "success-orders.jsonl"))
+	if strings.Contains(string(data), "secret") {
+		t.Fatalf("credential leaked to success record: %s", data)
+	}
+	info, _ := os.Stat(filepath.Join(dir, "success-orders.jsonl"))
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("mode=%o", info.Mode().Perm())
 	}
 }

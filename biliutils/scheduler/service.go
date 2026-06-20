@@ -119,105 +119,10 @@ func NewSchedulerService(client *biliutils.BiliClient, logBroker *LogBroker, tic
 	}
 }
 
-// AddTicketTask creates a TicketTask from the given ticket hash and starts it.
-// The retry interval is taken from the global setting (DataStorage.RetryIntervalMs).
+// AddTicketTask is retained only for old generated frontend bindings.
+// Membership-ticket execution moved to the employer ClusterService.
 func (svc *SchedulerService) AddTicketTask(hash string) error {
-	// Find the ticket by hash (non-mutating read to avoid side effects)
-	tickets := svc.tickets.GetTicketsNoMutate()
-
-	// Debug: dump all known ticket hashes
-	if global.Debug {
-		fmt.Printf("[DEBUG] AddTicketTask: looking for hash=%s, total tickets=%d\n", hash, len(tickets))
-		for i, t := range tickets {
-			fmt.Printf("[DEBUG]   ticket[%d]: hash=%s expire=%d start=%d valid=%v\n",
-				i, t.Hash(), t.Expire, t.Start, t.Valid())
-		}
-	}
-
-	var ticket *configuration.TicketEntry
-	for i := range tickets {
-		if tickets[i].Hash() == hash {
-			ticket = &tickets[i]
-			break
-		}
-	}
-	if ticket == nil {
-		return fmt.Errorf("ticket not found: %s", hash)
-	}
-
-	if !ticket.Valid() {
-		return errors.New("ticket is expired or invalid")
-	}
-
-	// Check not already scheduled
-	if svc.scheduler.HasTask(hash) {
-		return errors.New("task already exists")
-	}
-
-	targetTime := time.Unix(ticket.Start, 0)
-	interval := time.Duration(svc.store.RetryIntervalMs) * time.Millisecond
-
-	logCh := svc.logBroker.CreateStream(hash)
-
-	// Wire up notification: use MultiNotifier.Notify if there are any channels configured
-	var notifyFn func(string)
-	if svc.notifier != nil && svc.notifier.Count() > 0 {
-		notifyFn = func(msg string) {
-			svc.notifier.Notify(msg)
-		}
-	}
-
-	task, err := NewTicketTask(svc.client, *ticket, notifyFn, interval, logCh, func(stat RunningStat, userStopped bool) {
-		svc.tickets.UpdateTicketStat(hash, int(stat))
-
-		// Chain switching: auto-start the next ticket in the same chain group
-		// when the termination state matches the configured ChainTrigger.
-		// This applies to both natural termination and user-initiated stops.
-		trigger := svc.store.ChainTrigger
-		shouldSwitch := false
-		switch trigger {
-		case "any":
-			// Any terminal state (success/failed/error) triggers the switch.
-			shouldSwitch = stat == StatSuccess || stat == StatFailed || stat == StatError
-		default: // "success"
-			shouldSwitch = stat == StatSuccess
-		}
-		if !shouldSwitch {
-			return
-		}
-
-		nextHash, ok := svc.tickets.GetNextInChain(hash)
-		if !ok {
-			return
-		}
-		// Avoid re-scheduling an already-running task.
-		if svc.scheduler.HasTask(nextHash) {
-			return
-		}
-		// Run asynchronously to avoid blocking the task's termination goroutine
-		// (AddTicketTask does a network call via NewTicketTask).
-		go func() {
-			if err := svc.AddTicketTask(nextHash); err != nil {
-				fmt.Printf("[chain] failed to start next ticket %s after %s: %v\n", nextHash, hash, err)
-				// Notify the user that the chain was broken.
-				if svc.notifier != nil && svc.notifier.Count() > 0 {
-					svc.notifier.Notify(i18n.T("chain.next_failed", map[string]interface{}{"Error": err.Error()}))
-				}
-			} else {
-				fmt.Printf("[chain] started next ticket %s after %s (trigger=%s, stat=%d)\n", nextHash, hash, trigger, stat)
-			}
-		}()
-	})
-	if err != nil {
-		return fmt.Errorf("create task: %w", err)
-	}
-	task.ID = hash
-	task.TargetTime = targetTime
-
-	if !svc.scheduler.AddTask(task) {
-		return errors.New("task already exists")
-	}
-	return nil
+	return fmt.Errorf("membership ticket %s must be started through ClusterService", hash)
 }
 
 // RemoveTask stops and removes a task by its ticket hash.
@@ -344,7 +249,7 @@ func (svc *SchedulerService) AddTicket(ticket FrontendTicket) (string, error) {
 	}
 
 	if !svc.tickets.AddTicket(entry) {
-		return "", fmt.Errorf(i18n.T("ticket.error.duplicate", nil))
+		return "", errors.New(i18n.T("ticket.error.duplicate", nil))
 	}
 
 	fmt.Printf("[DEBUG] AddTicket: hash=%s expire=%d start=%d buyers=%d firstBuyer=%+v\n",
@@ -671,7 +576,7 @@ func (svc *SchedulerService) RemoveNotifyChannel(index int) error {
 	defer svc.notifyOpsMu.Unlock()
 
 	if !svc.notifyChData.Remove(index) {
-		return fmt.Errorf(i18n.T("notify.error.index_not_found", map[string]interface{}{"Index": index}))
+		return errors.New(i18n.T("notify.error.index_not_found", map[string]interface{}{"Index": index}))
 	}
 	svc.rebuildNotifier()
 	svc.persistNotify()
@@ -695,7 +600,7 @@ func (svc *SchedulerService) UpdateNotifyChannel(index int, ch FrontendNotifyCha
 	}
 
 	if !svc.notifyChData.Update(index, nc) {
-		return fmt.Errorf(i18n.T("notify.error.index_not_found", map[string]interface{}{"Index": index}))
+		return errors.New(i18n.T("notify.error.index_not_found", map[string]interface{}{"Index": index}))
 	}
 	svc.rebuildNotifier()
 	svc.persistNotify()
@@ -706,7 +611,7 @@ func (svc *SchedulerService) UpdateNotifyChannel(index int, ch FrontendNotifyCha
 func (svc *SchedulerService) TestNotifyChannel(index int) error {
 	channels := svc.notifyChData.GetAll()
 	if index < 0 || index >= len(channels) {
-		return fmt.Errorf(i18n.T("notify.error.index_not_found", map[string]interface{}{"Index": index}))
+		return errors.New(i18n.T("notify.error.index_not_found", map[string]interface{}{"Index": index}))
 	}
 
 	n, err := channels[index].ToNotifier()
@@ -715,7 +620,7 @@ func (svc *SchedulerService) TestNotifyChannel(index int) error {
 	}
 
 	if b, err := n.Test(); !b {
-		return fmt.Errorf(i18n.T("notify.error.test_failed", map[string]interface{}{"Error": err}))
+		return errors.New(i18n.T("notify.error.test_failed", map[string]interface{}{"Error": err}))
 	}
 	return nil
 }
@@ -934,7 +839,7 @@ func (svc *SchedulerService) AddBWSEntry(entry FrontendBWSEntry) (string, error)
 	}
 
 	if !svc.bwsData.AddEntry(e) {
-		return "", fmt.Errorf(i18n.T("bws.error.duplicate", nil))
+		return "", errors.New(i18n.T("bws.error.duplicate", nil))
 	}
 
 	if svc.store != nil {

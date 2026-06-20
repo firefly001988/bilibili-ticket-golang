@@ -266,6 +266,27 @@ func (r *Repository) ListAccounts(ctx context.Context) ([]domain.Account, error)
 	return result, rows.Err()
 }
 
+func (r *Repository) ListTaskGroups(ctx context.Context) ([]domain.TaskGroup, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM task_groups ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.TaskGroup
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		var value domain.TaskGroup
+		if err := json.Unmarshal(b, &value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
+}
+
 func (r *Repository) ListWorkers(ctx context.Context) ([]domain.WorkerNode, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM workers ORDER BY role,id`)
 	if err != nil {

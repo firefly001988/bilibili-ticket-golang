@@ -28,6 +28,12 @@ type Fingerprint struct {
 	Canvasfp   string
 }
 
+type DeviceProfile struct {
+	Buvid       string      `json:"buvid"`
+	InfocUUID   string      `json:"infocUuid"`
+	Fingerprint Fingerprint `json:"fingerprint"`
+}
+
 // CaptchaSolverFn is a function that solves a geetest captcha given gt+challenge.
 // It returns the validate string on success.
 type CaptchaSolverFn func(gt, challenge string) (validate string, err error)
@@ -50,7 +56,7 @@ type BiliClient struct {
 
 // NewBiliClient creates a new BiliClient with random device fingerprint.
 func NewBiliClient() (*BiliClient, error) {
-	return NewBiliClientWithCookiejar(nil)
+	return newBiliClient(nil, nil)
 }
 
 // NewBiliClientWithCookiejar creates a new BiliClient with a cookie jar and random device fingerprint.
@@ -63,6 +69,14 @@ func NewBiliClient() (*BiliClient, error) {
 //   - Injects show.bilibili.com-specific cookies (_uuid, buvid, feSign, screenInfo, etc.)
 //   - Handles voucher (x-bili-gaia-vvoucher) responses transparently
 func NewBiliClientWithCookiejar(jar http.CookieJar) (*BiliClient, error) {
+	return newBiliClient(jar, nil)
+}
+
+func NewBiliClientWithDeviceProfile(jar http.CookieJar, profile DeviceProfile) (*BiliClient, error) {
+	return newBiliClient(jar, &profile)
+}
+
+func newBiliClient(jar http.CookieJar, profile *DeviceProfile) (*BiliClient, error) {
 	ver, err := GetBilibiliAppVersion()
 	if err != nil {
 		return nil, err
@@ -76,6 +90,11 @@ func NewBiliClientWithCookiejar(jar http.CookieJar) (*BiliClient, error) {
 		Buvidfp:    utils.CalculateFingerprintID(utils.GenerateRandomFingerprint()),
 		Webglfp:    utils.RandomString("0123456789abcdef", 32),
 		Canvasfp:   utils.RandomString("0123456789abcdef", 32),
+	}
+	if profile != nil {
+		buvid, infocUUID = profile.Buvid, profile.InfocUUID
+		profileFingerprint := profile.Fingerprint
+		fp = &profileFingerprint
 	}
 
 	biliClient := &BiliClient{
@@ -185,6 +204,12 @@ func NewBiliClientWithCookiejar(jar http.CookieJar) (*BiliClient, error) {
 	})
 
 	return biliClient, nil
+}
+
+func (c *BiliClient) ExportDeviceProfile() DeviceProfile {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return DeviceProfile{Buvid: c.buvid, InfocUUID: c.infocUUID, Fingerprint: *c.fingerprint}
 }
 
 // GetBilibiliAppVersion fetches the latest Bilibili Android app version info.

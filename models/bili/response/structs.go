@@ -18,13 +18,15 @@ type SaleTimeRange struct {
 }
 
 type TicketSkuScreenID struct {
-	ScreenID int64         `json:"screenId"`
-	SkuID    int64         `json:"skuId"`
-	Name     string        `json:"name"`
-	Desc     string        `json:"desc"`
-	Price    int           `json:"price"`
-	Flags    SaleFlagInfo  `json:"flags"`
-	SaleStat SaleTimeRange `json:"saleStat"`
+	ScreenID  int64         `json:"screenId"`
+	SkuID     int64         `json:"skuId"`
+	Name      string        `json:"name"`
+	Desc      string        `json:"desc"`
+	Price     int           `json:"price"`
+	Flags     SaleFlagInfo  `json:"flags"`
+	SaleStat  SaleTimeRange `json:"saleStat"`
+	EventTime time.Time     `json:"eventTime"`
+	BuyLimit  int           `json:"buyLimit"`
 }
 
 type RequestTokenAndPToken struct {

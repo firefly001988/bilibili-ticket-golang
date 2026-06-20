@@ -74,11 +74,13 @@ func (c *BiliClient) GetTicketSkuIDsByProjectIDNew(projectID string) ([]r.Ticket
 	for _, screen := range apiResp.Data.ScreenList {
 		for _, skuInfo := range screen.TicketList {
 			ticket := r.TicketSkuScreenID{
-				ScreenID: screen.ScreenId,
-				SkuID:    skuInfo.SkuId,
-				Name:     skuInfo.ScreenName,
-				Desc:     skuInfo.Desc,
-				Price:    skuInfo.Price,
+				ScreenID:  screen.ScreenId,
+				SkuID:     skuInfo.SkuId,
+				Name:      skuInfo.ScreenName,
+				Desc:      skuInfo.Desc,
+				Price:     skuInfo.Price,
+				EventTime: time.Unix(screen.StartTime, 0),
+				BuyLimit:  skuInfo.BuyLimit,
 				Flags: r.SaleFlagInfo{
 					Number:      skuInfo.SaleFlag.Number,
 					DisplayName: skuInfo.SaleFlag.DisplayName,

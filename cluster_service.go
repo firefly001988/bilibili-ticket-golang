@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,10 +24,11 @@ import (
 )
 
 type ClusterSnapshot struct {
-	Accounts []AccountSummary `json:"accounts"`
-	Workers  []WorkerSummary  `json:"workers"`
-	Macros   []MacroSummary   `json:"macros"`
-	Attempts []AttemptSummary `json:"attempts"`
+	TaskGroups []domain.TaskGroup `json:"taskGroups"`
+	Accounts   []AccountSummary   `json:"accounts"`
+	Workers    []WorkerSummary    `json:"workers"`
+	Macros     []MacroSummary     `json:"macros"`
+	Attempts   []AttemptSummary   `json:"attempts"`
 }
 type AccountSummary struct {
 	ID                string              `json:"id"`
@@ -58,19 +63,55 @@ type AttemptSummary struct {
 }
 
 type ClusterService struct {
-	repository *clusterstorage.Repository
-	client     *employer.WorkerClient
-	dispatcher *dispatcher.Dispatcher
-	accounts   *accounts.Manager
-	local      employer.LocalWorkerManager
-	mu         sync.RWMutex
-	phases     map[string]domain.Phase
-	cancel     context.CancelFunc
+	repository    *clusterstorage.Repository
+	client        *employer.WorkerClient
+	dispatcher    *dispatcher.Dispatcher
+	accounts      *accounts.Manager
+	local         employer.LocalWorkerManager
+	mu            sync.RWMutex
+	phases        map[string]domain.Phase
+	loginSessions map[string]*accountLoginSession
+	catalog       *biliutils.BiliClient
+	cancel        context.CancelFunc
+}
+
+func (s *ClusterService) SetCatalogClient(client *biliutils.BiliClient) { s.catalog = client }
+
+type SKUInspection struct {
+	EventDay       string                `json:"eventDay"`
+	OrderCapacity  int                   `json:"orderCapacity"`
+	CapacitySource domain.CapacitySource `json:"capacitySource"`
+	SaleStart      time.Time             `json:"saleStart"`
+	SaleEnd        time.Time             `json:"saleEnd"`
+}
+
+func (s *ClusterService) InspectSKU(projectID, screenID, skuID int64) (SKUInspection, error) {
+	if s.catalog == nil {
+		return SKUInspection{}, fmt.Errorf("catalog client is unavailable")
+	}
+	items, err := s.catalog.GetTicketSkuIDsByProjectIDNew(fmt.Sprint(projectID))
+	if err != nil {
+		return SKUInspection{}, err
+	}
+	for _, item := range items {
+		if item.ScreenID == screenID && item.SkuID == skuID {
+			capacity, source := item.BuyLimit, domain.CapacityAPI
+			if capacity <= 0 {
+				capacity, source = 4, domain.CapacityDefault
+			}
+			eventDay := ""
+			if !item.EventTime.IsZero() {
+				eventDay = item.EventTime.Format("2006-01-02")
+			}
+			return SKUInspection{EventDay: eventDay, OrderCapacity: capacity, CapacitySource: source, SaleStart: item.SaleStat.Start, SaleEnd: item.SaleStat.End}, nil
+		}
+	}
+	return SKUInspection{}, fmt.Errorf("SKU not found")
 }
 
 func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 	client := employer.NewWorkerClient()
-	service := &ClusterService{repository: repository, client: client, phases: make(map[string]domain.Phase)}
+	service := &ClusterService{repository: repository, client: client, phases: make(map[string]domain.Phase), loginSessions: make(map[string]*accountLoginSession)}
 	service.accounts = accounts.NewManager(repository, biliProvisioner{})
 	service.dispatcher = dispatcher.New(client, repository, buyerResolver{repository: repository})
 	return service
@@ -104,6 +145,9 @@ func (s *ClusterService) Start(parent context.Context) {
 		node, err := s.local.Start(ctx, s.client, employer.LocalWorkerOptions{DataDir: "data/local-worker"})
 		if err == nil {
 			_ = s.repository.PutWorker(ctx, node)
+			if key, readErr := os.ReadFile("data/local-worker/control.key"); readErr == nil {
+				_ = s.repository.PutWorkerKey(ctx, node.ID, string(key))
+			}
 			_ = s.refreshResources(ctx)
 		}
 	}()
@@ -144,7 +188,11 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	if err != nil {
 		return ClusterSnapshot{}, err
 	}
-	result := ClusterSnapshot{}
+	taskGroups, err := s.repository.ListTaskGroups(ctx)
+	if err != nil {
+		return ClusterSnapshot{}, err
+	}
+	result := ClusterSnapshot{TaskGroups: taskGroups}
 	for _, account := range accountList {
 		result.Accounts = append(result.Accounts, AccountSummary{ID: account.ID, Name: account.Name, Role: account.Role, Enabled: account.Enabled, CooldownUntil: account.CooldownUntil, CredentialVersion: account.Credentials.Version})
 	}
@@ -173,6 +221,113 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State})
 	}
 	return result, nil
+}
+
+type accountLoginSession struct {
+	Client    *biliutils.BiliClient
+	Jar       *cookiejar.Jar
+	QRCodeKey string
+	Name      string
+	Role      domain.ResourceRole
+	CreatedAt time.Time
+}
+
+type AccountLoginStart struct {
+	SessionID string `json:"sessionId"`
+	URL       string `json:"url"`
+}
+type AccountLoginPoll struct {
+	Code      int    `json:"code"`
+	Message   string `json:"message"`
+	AccountID string `json:"accountId,omitempty"`
+}
+
+func (s *ClusterService) BeginAccountLogin(name string, role domain.ResourceRole) (AccountLoginStart, error) {
+	jar := cookiejar.New(nil)
+	client, err := biliutils.NewBiliClientWithCookiejar(jar)
+	if err != nil {
+		return AccountLoginStart{}, err
+	}
+	qr, err := client.GetQRCodeUrlAndKey()
+	if err != nil {
+		return AccountLoginStart{}, err
+	}
+	if role == "" {
+		role = domain.RolePrimary
+	}
+	id := randomClusterID("login")
+	s.mu.Lock()
+	s.loginSessions[id] = &accountLoginSession{Client: client, Jar: jar, QRCodeKey: qr.QRCodeKey, Name: name, Role: role, CreatedAt: time.Now()}
+	s.mu.Unlock()
+	return AccountLoginStart{SessionID: id, URL: qr.URL}, nil
+}
+
+func (s *ClusterService) PollAccountLogin(sessionID string) (AccountLoginPoll, error) {
+	s.mu.RLock()
+	session := s.loginSessions[sessionID]
+	s.mu.RUnlock()
+	if session == nil {
+		return AccountLoginPoll{}, fmt.Errorf("login session not found")
+	}
+	if time.Since(session.CreatedAt) > 5*time.Minute {
+		s.mu.Lock()
+		delete(s.loginSessions, sessionID)
+		s.mu.Unlock()
+		return AccountLoginPoll{}, fmt.Errorf("login session expired")
+	}
+	state, err := session.Client.GetQRLoginState(session.QRCodeKey)
+	if err != nil {
+		return AccountLoginPoll{}, err
+	}
+	result := AccountLoginPoll{Code: state.Code, Message: state.Message}
+	if state.Code != 0 {
+		return result, nil
+	}
+	session.Client.SetRefreshToken(state.RefreshToken)
+	info, err := session.Client.GetAccountStatus()
+	if err != nil {
+		return result, err
+	}
+	profile, _ := json.Marshal(session.Client.ExportDeviceProfile())
+	credentials := credentialsFrom(session.Client, session.Jar, domain.Credentials{RefreshToken: state.RefreshToken, Version: 1, DeviceProfile: profile})
+	accountID := fmt.Sprintf("bili-%d", info.UID)
+	name := session.Name
+	if name == "" {
+		name = info.Name
+	}
+	account := domain.Account{ID: accountID, Name: name, Role: session.Role, Enabled: true, Credentials: credentials}
+	if err := s.repository.PutAccount(context.Background(), account, nil); err != nil {
+		return result, err
+	}
+	s.mu.Lock()
+	delete(s.loginSessions, sessionID)
+	s.mu.Unlock()
+	result.AccountID = accountID
+	_ = s.refreshResources(context.Background())
+	return result, nil
+}
+
+func randomClusterID(prefix string) string {
+	var value [12]byte
+	_, _ = rand.Read(value[:])
+	return prefix + "-" + hex.EncodeToString(value[:])
+}
+
+func (s *ClusterService) SaveTaskGroup(document string) error {
+	var value domain.TaskGroup
+	if err := json.Unmarshal([]byte(document), &value); err != nil {
+		return err
+	}
+	if value.ID == "" {
+		value.ID = randomClusterID("group")
+	}
+	if value.Name == "" {
+		return fmt.Errorf("task group name is required")
+	}
+	if value.CreatedAt.IsZero() {
+		value.CreatedAt = time.Now()
+	}
+	return s.repository.PutTaskGroup(context.Background(), value)
 }
 
 func (s *ClusterService) ImportAccount(document string) error {
@@ -369,6 +524,18 @@ func (biliProvisioner) CreateBuyer(ctx context.Context, account domain.Account, 
 
 func accountClient(account domain.Account) (*biliutils.BiliClient, *cookiejar.Jar, error) {
 	jar := cookiejar.New(nil)
+	for _, saved := range account.Credentials.CookieJar {
+		host := strings.TrimPrefix(saved.Domain, ".")
+		if host == "" {
+			host = "www.bilibili.com"
+		}
+		u, _ := url.Parse("https://" + host + "/")
+		cookie := &http.Cookie{Name: saved.Name, Value: saved.Value, Domain: saved.Domain, Path: saved.Path, Secure: saved.Secure, HttpOnly: saved.HTTPOnly}
+		if saved.Expires > 0 {
+			cookie.Expires = time.Unix(saved.Expires, 0)
+		}
+		jar.SetCookies(u, []*http.Cookie{cookie})
+	}
 	cookies := make([]*http.Cookie, 0, len(account.Credentials.Cookies))
 	for name, value := range account.Credentials.Cookies {
 		cookies = append(cookies, &http.Cookie{Name: name, Value: value, Path: "/"})
@@ -377,7 +544,17 @@ func accountClient(account domain.Account) (*biliutils.BiliClient, *cookiejar.Ja
 		u, _ := url.Parse(raw)
 		jar.SetCookies(u, cookies)
 	}
-	client, err := biliutils.NewBiliClientWithCookiejar(jar)
+	var client *biliutils.BiliClient
+	var err error
+	if len(account.Credentials.DeviceProfile) > 0 {
+		var profile biliutils.DeviceProfile
+		if decodeErr := json.Unmarshal(account.Credentials.DeviceProfile, &profile); decodeErr != nil {
+			return nil, nil, decodeErr
+		}
+		client, err = biliutils.NewBiliClientWithDeviceProfile(jar, profile)
+	} else {
+		client, err = biliutils.NewBiliClientWithCookiejar(jar)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -386,12 +563,18 @@ func accountClient(account domain.Account) (*biliutils.BiliClient, *cookiejar.Ja
 }
 func credentialsFrom(client *biliutils.BiliClient, jar *cookiejar.Jar, previous domain.Credentials) domain.Credentials {
 	values := make(map[string]string)
-	for _, entry := range jar.AllPersistentEntries() {
+	full := make([]domain.HTTPCookie, 0)
+	for _, entry := range jar.AllEntries() {
 		values[entry.Name] = entry.Value
+		full = append(full, domain.HTTPCookie{Name: entry.Name, Value: entry.Value, Domain: entry.Domain, Path: entry.Path, Secure: entry.Secure, HTTPOnly: entry.HttpOnly, Expires: entry.Expires})
 	}
+	previous.CookieJar = full
 	if len(values) > 0 {
 		previous.Cookies = values
 	}
 	previous.RefreshToken = client.GetRefreshToken()
+	if len(previous.DeviceProfile) == 0 {
+		previous.DeviceProfile, _ = json.Marshal(client.ExportDeviceProfile())
+	}
 	return previous
 }

@@ -49,6 +49,7 @@ export interface AttemptSummary {
 }
 
 export interface ClusterSnapshot {
+  taskGroups: Array<{ id: string; name: string; createdAt: string }>
   accounts: AccountSummary[]
   workers: WorkerSummary[]
   macros: MacroSummary[]

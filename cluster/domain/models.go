@@ -186,9 +186,20 @@ func Conflicts(a, b LogicalOrderIntent) bool {
 
 type Credentials struct {
 	Cookies       map[string]string `json:"cookies"`
+	CookieJar     []HTTPCookie      `json:"cookieJar,omitempty"`
 	RefreshToken  string            `json:"refreshToken,omitempty"`
 	Version       int64             `json:"version"`
 	DeviceProfile json.RawMessage   `json:"deviceProfile,omitempty"`
+}
+
+type HTTPCookie struct {
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	Domain   string `json:"domain,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Secure   bool   `json:"secure,omitempty"`
+	HTTPOnly bool   `json:"httpOnly,omitempty"`
+	Expires  int64  `json:"expires,omitempty"`
 }
 
 type Account struct {
@@ -280,6 +291,7 @@ func (s ExecutionSpec) Hash() string {
 type ExecutionResult struct {
 	AttemptID   string        `json:"attemptId"`
 	IntentID    string        `json:"intentId"`
+	SpecHash    string        `json:"specHash"`
 	State       AttemptState  `json:"state"`
 	Success     bool          `json:"success"`
 	OrderID     string        `json:"orderId,omitempty"`

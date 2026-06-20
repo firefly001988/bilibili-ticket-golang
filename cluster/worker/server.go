@@ -99,7 +99,7 @@ func NewServer(config Config, factory BackendFactory) (*Server, error) {
 	}
 	s := &Server{config: config, factory: factory, store: store, tasks: make(map[string]*task), now: time.Now}
 	for id, result := range store.All() {
-		s.tasks[id] = &task{spec: domain.ExecutionSpec{AttemptID: id, IntentID: result.IntentID}, specHash: "persisted-success", state: domain.AttemptSucceeded, result: result}
+		s.tasks[id] = &task{spec: domain.ExecutionSpec{AttemptID: id, IntentID: result.IntentID}, specHash: result.SpecHash, state: domain.AttemptSucceeded, result: result}
 	}
 	go s.reapLeases()
 	return s, nil
@@ -149,7 +149,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	hash := spec.Hash()
 	s.mu.Lock()
 	if existing, ok := s.tasks[spec.AttemptID]; ok {
-		if existing.specHash != hash && existing.specHash != "persisted-success" {
+		if existing.specHash != hash {
 			s.mu.Unlock()
 			writeError(w, http.StatusConflict, "attemptId already exists with different spec")
 			return
@@ -170,6 +170,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	response := s.snapshot(t)
 	s.mu.Unlock()
 	go s.run(ctx, t)
+	_ = WriteRedactedLog(s.config.DataDir, fmt.Sprintf("accepted attempt=%s intent=%s", spec.AttemptID, spec.IntentID))
 	writeJSON(w, http.StatusAccepted, response)
 }
 
@@ -200,6 +201,7 @@ func (s *Server) complete(t *task, result domain.ExecutionResult) {
 	if s.active == t.spec.AttemptID {
 		s.active = ""
 	}
+	_ = WriteRedactedLog(s.config.DataDir, fmt.Sprintf("completed attempt=%s state=%s reason=%s order=%s", t.spec.AttemptID, result.State, result.Reason, result.OrderID))
 }
 
 type Status struct {
@@ -299,7 +301,18 @@ func WriteRedactedLog(dataDir, line string) error {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(dataDir, "worker.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	path := filepath.Join(dataDir, "worker.log")
+	if info, err := os.Stat(path); err == nil && info.Size() >= 5<<20 {
+		for i := 2; i >= 0; i-- {
+			from := path
+			if i > 0 {
+				from = fmt.Sprintf("%s.%d", path, i)
+			}
+			to := fmt.Sprintf("%s.%d", path, i+1)
+			_ = os.Rename(from, to)
+		}
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
