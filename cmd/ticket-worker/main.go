@@ -9,6 +9,7 @@ import (
 
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/executor"
+	"bilibili-ticket-golang/cluster/worker"
 )
 
 func main() {
@@ -19,9 +20,33 @@ func main() {
 	case "run":
 		run(os.Args[2:])
 	case "serve":
-		fatal("serve mode is not available in this build")
+		serve(os.Args[2:])
 	default:
 		fatal("unknown command %q", os.Args[1])
+	}
+}
+
+func serve(args []string) {
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	path := fs.String("config", "", "worker config JSON")
+	_ = fs.Parse(args)
+	if *path == "" {
+		fatal("--config is required")
+	}
+	b, err := os.ReadFile(*path)
+	if err != nil {
+		fatal("read config: %v", err)
+	}
+	var config worker.Config
+	if err := json.Unmarshal(b, &config); err != nil {
+		fatal("decode config: %v", err)
+	}
+	server, err := worker.NewServer(config, nil)
+	if err != nil {
+		fatal("initialize worker: %v", err)
+	}
+	if err := server.ListenAndServe(); err != nil {
+		fatal("serve worker: %v", err)
 	}
 }
 
