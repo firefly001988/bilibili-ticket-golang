@@ -43,12 +43,12 @@ jobs:
             cgo: 1
           - platform: darwin
             arch: arm64
-            os: macos-14
+            os: macos-26
             ext: ""
             cgo: 1
           - platform: darwin
             arch: amd64
-            os: macos-14
+            os: macos-26-intel
             ext: ""
             cgo: 1
     runs-on: ${{ matrix.os }}
