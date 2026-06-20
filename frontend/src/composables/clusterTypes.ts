@@ -48,9 +48,40 @@ export interface AttemptSummary {
   reason?: string
 }
 
+export interface LogicalBuyer {
+  logicalId: string
+  name: string
+  tel?: string
+  idCard?: string
+  type: number
+}
+
+export interface CatalogSKU {
+  screenId: number
+  skuId: number
+  screenName: string
+  skuName: string
+  price: number
+  status?: string
+  eventTime?: string
+  saleStart?: string
+  saleEnd?: string
+  orderCapacity: number
+}
+
+export interface ProjectCatalog {
+  id: string
+  name: string
+  forceRealName: boolean
+  start?: string
+  end?: string
+  tickets: CatalogSKU[]
+}
+
 export interface ClusterSnapshot {
   taskGroups: Array<{ id: string; name: string; createdAt: string }>
   accounts: AccountSummary[]
+  buyers: LogicalBuyer[]
   workers: WorkerSummary[]
   macros: MacroSummary[]
   attempts: AttemptSummary[]
