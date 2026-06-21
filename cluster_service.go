@@ -41,7 +41,7 @@ type AccountSummary struct {
 	Name              string              `json:"name"`
 	Role              domain.ResourceRole `json:"role"`
 	Enabled           bool                `json:"enabled"`
-	CooldownUntil     time.Time           `json:"cooldownUntil,omitempty"`
+	CooldownUntil     *time.Time          `json:"cooldownUntil,omitempty"`
 	CredentialVersion int64               `json:"credentialVersion"`
 }
 type WorkerSummary struct {
@@ -185,6 +185,17 @@ func (s *ClusterService) Start(parent context.Context) error {
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
 	accountsList, err := s.repository.ListAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	for _, account := range accountsList {
+		if account.ID == "migrated-account" && !account.Enabled {
+			if deleteErr := s.repository.DeleteAccount(ctx, account.ID); deleteErr != nil && !errors.Is(deleteErr, sql.ErrNoRows) {
+				return deleteErr
+			}
+		}
+	}
+	accountsList, err = s.repository.ListAccounts(ctx)
 	if err != nil {
 		return err
 	}
@@ -360,7 +371,12 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	}
 	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyers}
 	for _, account := range accountList {
-		result.Accounts = append(result.Accounts, AccountSummary{ID: account.ID, Name: account.Name, Role: account.Role, Enabled: account.Enabled, CooldownUntil: account.CooldownUntil, CredentialVersion: account.Credentials.Version})
+		summary := AccountSummary{ID: account.ID, Name: account.Name, Role: account.Role, Enabled: account.Enabled, CredentialVersion: account.Credentials.Version}
+		if !account.CooldownUntil.IsZero() {
+			cooldown := account.CooldownUntil
+			summary.CooldownUntil = &cooldown
+		}
+		result.Accounts = append(result.Accounts, summary)
 	}
 	for _, node := range workerList {
 		summary := WorkerSummary{ID: node.ID, Name: node.Name, BaseURL: node.BaseURL, Role: node.Role, Enabled: node.Enabled}
@@ -591,6 +607,9 @@ func (s *ClusterService) SaveMacro(document string) error {
 	if value.ID == "" || value.TaskGroupID == "" {
 		return fmt.Errorf("id and taskGroupId are required")
 	}
+	if s.dispatcher.MacroActive(value.ID) {
+		return fmt.Errorf("macro task cannot be edited while an attempt is active")
+	}
 	if value.OrderCapacity <= 0 {
 		value.OrderCapacity = 4
 		value.CapacitySource = domain.CapacityDefault
@@ -610,6 +629,22 @@ func (s *ClusterService) SaveMacro(document string) error {
 		}
 	}
 	return s.repository.PutMacroTask(context.Background(), value)
+}
+
+func (s *ClusterService) DeleteMacro(macroID string) error {
+	if s.dispatcher.MacroActive(macroID) {
+		return fmt.Errorf("macro task cannot be deleted while an attempt is active")
+	}
+	if err := s.repository.DeleteMacroTask(context.Background(), macroID); err != nil {
+		return err
+	}
+	if err := s.dispatcher.RemoveMacro(macroID); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	delete(s.phases, macroID)
+	s.mu.Unlock()
+	return nil
 }
 func (s *ClusterService) SavePurchaseGroup(document string) error {
 	var value domain.PurchaseGroup

@@ -21,6 +21,7 @@ const projectLoading = ref(false)
 const selectedSKU = ref<CatalogSKU | null>(null)
 const eventDayConfirmed = ref(false)
 const expandedMacros = ref<string[]>([])
+const taskEditorPanel = ref<number | null>(null)
 let timer: number | undefined
 let loginTimer: number | undefined
 
@@ -144,6 +145,23 @@ async function deleteWorker(id: string, name: string) {
   await invoke('DeleteWorker', id)
 }
 
+function editMacro(item: (typeof snapshot.value.macros)[number]) {
+  selectedSKU.value = { screenId: item.screenId, skuId: item.skuId, screenName: item.screenName || '', skuName: item.skuName || '', price: 0, orderCapacity: item.orderCapacity }
+  project.value = { id: String(item.projectId), name: item.projectName || `项目 ${item.projectId}`, forceRealName: true, tickets: [selectedSKU.value] }
+  projectId.value = String(item.projectId)
+  eventDayConfirmed.value = item.eventDayConfirmed
+  Object.assign(macro.value, { id: item.id, taskGroupId: item.taskGroupId, projectId: item.projectId, projectName: item.projectName || '', screenId: item.screenId, screenName: item.screenName || '', skuId: item.skuId, skuName: item.skuName || '', eventDay: item.eventDay, orderCapacity: item.orderCapacity, capacitySource: item.capacitySource || 'default', smartMerge: item.smartMerge, priority: item.priority, desiredReplicas: item.desiredReplicas, hardConcurrency: item.hardConcurrency, startAt: localDateTime(item.startAt), deadline: localDateTime(item.deadline) })
+  taskEditorPanel.value = 1
+  window.setTimeout(() => document.querySelector('[data-macro-editor]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+}
+
+async function deleteMacro(item: (typeof snapshot.value.macros)[number]) {
+  const name = `${item.projectName || `项目 ${item.projectId}`} · ${item.skuName || item.skuId}`
+  if (!window.confirm(`确定删除宏任务“${name}”及其全部购票组和执行记录吗？`)) return
+  await invoke('DeleteMacro', item.id)
+  expandedMacros.value = expandedMacros.value.filter(id => id !== item.id)
+}
+
 onMounted(async () => { await refresh(); timer = window.setInterval(refresh, 5000) })
 onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) window.clearInterval(loginTimer) })
 </script>
@@ -184,7 +202,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
                 <td><div>{{ item.projectName || `项目 ${item.projectId}` }}</div><div class="text-caption text-medium-emphasis">{{ item.screenName || item.screenId }} — {{ item.skuName || item.skuId }}</div></td><td>{{ item.eventDay || '未设置' }}</td><td>{{ item.orderCapacity }}</td>
                 <td>{{ item.desiredReplicas }} / {{ item.hardConcurrency }}</td><td>{{ item.priority }}</td>
                 <td><v-chip size="small" :color="item.needsReview ? 'warning' : 'success'">{{ item.phase }} · {{ item.needsReview ? '待确认' : '可调度' }}</v-chip></td>
-                <td><v-btn size="small" :loading="startingMacroId === item.id" :disabled="item.needsReview || !item.eventDayConfirmed" @click.stop="startMacro(item.id)">启动准点</v-btn><v-btn class="ml-1" size="small" variant="text" :icon="expandedMacros.includes(item.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" @click.stop="toggleMacro(item.id)" /></td>
+                <td class="text-no-wrap"><v-btn size="small" :loading="startingMacroId === item.id" :disabled="item.needsReview || !item.eventDayConfirmed" @click.stop="startMacro(item.id)">启动准点</v-btn><v-btn class="ml-1" size="small" variant="text" icon="mdi-pencil" @click.stop="editMacro(item)" /><v-btn size="small" variant="text" color="error" icon="mdi-delete" @click.stop="deleteMacro(item)" /><v-btn size="small" variant="text" :icon="expandedMacros.includes(item.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" @click.stop="toggleMacro(item.id)" /></td>
               </tr>
               <tr v-if="expandedMacros.includes(item.id)"><td colspan="7" class="bg-grey-lighten-4 pa-4">
                 <div v-if="item.purchaseGroups.length === 0" class="text-medium-emphasis">尚未配置购票组。</div>
@@ -193,9 +211,9 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
               </template>
             </tbody>
           </v-table>
-          <v-expansion-panels class="mt-5">
+          <v-expansion-panels v-model="taskEditorPanel" class="mt-5">
             <v-expansion-panel title="创建任务组"><v-expansion-panel-text><div class="mb-2">现有：{{ snapshot.taskGroups.map(g => g.name).join('、') || '暂无' }}</div><v-text-field v-model="taskGroup.name" label="任务组名称" /><v-btn color="primary" @click="saveTaskGroup">保存任务组</v-btn></v-expansion-panel-text></v-expansion-panel>
-            <v-expansion-panel title="创建或更新宏任务"><v-expansion-panel-text>
+            <v-expansion-panel title="创建或更新宏任务" data-macro-editor><v-expansion-panel-text>
               <div class="d-flex ga-2 mb-3"><v-text-field v-model="projectId" label="Bilibili 项目 ID" hide-details @keyup.enter="loadProject" /><v-btn color="primary" :loading="projectLoading" @click="loadProject">读取项目</v-btn></div>
               <v-alert v-if="project" type="info" variant="tonal" class="mb-3"><strong>{{ project.name }}</strong><span class="ml-2">{{ project.forceRealName ? '实名制项目' : '非强制实名项目' }}</span></v-alert>
               <v-list v-if="project?.tickets.length" border rounded class="mb-4" max-height="300"><v-list-item v-for="ticket in project.tickets" :key="`${ticket.screenId}-${ticket.skuId}`" :active="selectedSKU?.skuId === ticket.skuId && selectedSKU?.screenId === ticket.screenId" @click="chooseSKU(ticket)"><template #title>{{ ticket.screenName }} — {{ ticket.skuName }}</template><template #subtitle>¥{{ (ticket.price / 100).toFixed(2) }} · {{ ticket.status || '状态未知' }} · 单订单最多 {{ ticket.orderCapacity }} 人</template><template #append><v-icon>{{ selectedSKU?.skuId === ticket.skuId ? 'mdi-check-circle' : 'mdi-chevron-right' }}</v-icon></template></v-list-item></v-list>

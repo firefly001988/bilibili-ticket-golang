@@ -97,6 +97,40 @@ func (r *Repository) PutMacroTask(ctx context.Context, value domain.MacroTask) e
 	_, err = r.db.ExecContext(ctx, `INSERT INTO macro_tasks(id,task_group_id,priority,needs_review,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET priority=excluded.priority,needs_review=excluded.needs_review,payload=excluded.payload`, value.ID, value.TaskGroupID, value.Priority, value.NeedsReview, b)
 	return err
 }
+
+func (r *Repository) DeleteMacroTask(ctx context.Context, id string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM leases WHERE attempt_id IN (SELECT id FROM attempts WHERE intent_id IN (SELECT id FROM intents WHERE macro_task_id=?))`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM execution_results WHERE attempt_id IN (SELECT id FROM attempts WHERE intent_id IN (SELECT id FROM intents WHERE macro_task_id=?))`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM buyer_day_occupancy WHERE intent_id IN (SELECT id FROM intents WHERE macro_task_id=?)`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM attempts WHERE intent_id IN (SELECT id FROM intents WHERE macro_task_id=?)`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM intents WHERE macro_task_id=?`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM purchase_groups WHERE macro_task_id=?`, id); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM macro_tasks WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
 func (r *Repository) PutPurchaseGroup(ctx context.Context, value domain.PurchaseGroup) error {
 	b, err := marshal(value)
 	if err != nil {

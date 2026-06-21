@@ -43,10 +43,14 @@ func (r *Repository) MigrateLegacy(ctx context.Context, legacy *configuration.Da
 		cookies[cookie.Name] = cookie.Value
 		cookieJar = append(cookieJar, domain.HTTPCookie{Name: cookie.Name, Value: cookie.Value, Domain: cookie.Domain, Path: cookie.Path, Secure: cookie.Secure, HTTPOnly: cookie.HttpOnly, Expires: cookie.Expires})
 	}
-	account := domain.Account{ID: "migrated-account", Name: "Migrated account", Role: domain.RolePrimary, Enabled: len(cookies) > 0, Credentials: domain.Credentials{Cookies: cookies, CookieJar: cookieJar, RefreshToken: legacy.RefreshToken, Version: 1}}
-	accountPayload, _ := json.Marshal(account)
-	if _, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,role,enabled,credential_version,payload) VALUES(?,?,?,?,?)`, account.ID, account.Role, account.Enabled, account.Credentials.Version, accountPayload); err != nil {
-		return err
+	_, hasSession := cookies["SESSDATA"]
+	_, hasCSRF := cookies["bili_jct"]
+	if hasSession && hasCSRF {
+		account := domain.Account{ID: "migrated-account", Name: "Migrated account", Role: domain.RolePrimary, Enabled: true, Credentials: domain.Credentials{Cookies: cookies, CookieJar: cookieJar, RefreshToken: legacy.RefreshToken, Version: 1}}
+		accountPayload, _ := json.Marshal(account)
+		if _, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,role,enabled,credential_version,payload) VALUES(?,?,?,?,?)`, account.ID, account.Role, account.Enabled, account.Credentials.Version, accountPayload); err != nil {
+			return err
+		}
 	}
 
 	entries := legacy.TicketData.GetTicketsNoMutate()

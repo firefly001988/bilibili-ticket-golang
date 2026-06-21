@@ -69,6 +69,20 @@ func TestClusterServiceValidatesRunnableMacroAndPurchaseShape(t *testing.T) {
 	if len(snapshot.Macros) != 1 || len(snapshot.Macros[0].PurchaseGroups) != 1 || len(snapshot.Macros[0].PurchaseGroups[0].Buyers) != 2 {
 		t.Fatalf("purchase groups missing from macro summary: %#v", snapshot.Macros)
 	}
+	macro.Priority = 9
+	if err := service.SaveMacro(document(t, macro)); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteMacro(macro.ID); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err = service.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Macros) != 0 || len(snapshot.Attempts) != 0 {
+		t.Fatalf("macro cascade was not removed: %#v", snapshot)
+	}
 }
 
 func TestClusterSnapshotUsesEmptyBuyerArray(t *testing.T) {
@@ -93,6 +107,13 @@ func TestClusterServiceDeletesIdleResources(t *testing.T) {
 	}
 	if err := service.repository.PutWorkerKey(ctx, "remote", "secret"); err != nil {
 		t.Fatal(err)
+	}
+	beforeDelete, err := service.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(beforeDelete.Accounts) != 1 || beforeDelete.Accounts[0].CooldownUntil != nil {
+		t.Fatalf("zero cooldown must be omitted: %#v", beforeDelete.Accounts)
 	}
 	if err := service.DeleteAccount("account"); err != nil {
 		t.Fatal(err)

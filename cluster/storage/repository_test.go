@@ -63,6 +63,13 @@ func TestLegacyMigrationIsIdempotentAndBlocksUnreviewedMacros(t *testing.T) {
 	if len(macros) != 1 || macros[0].Dispatchable() || !macros[0].NeedsReview || macros[0].DesiredReplicas != 1 {
 		t.Fatalf("unexpected migration: %#v", macros)
 	}
+	accounts, err := r.ListAccounts(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 0 {
+		t.Fatalf("migration created an unusable placeholder account: %#v", accounts)
+	}
 }
 
 func TestSuccessTransactionOccupiesAllBuyerDays(t *testing.T) {

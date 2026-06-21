@@ -35,9 +35,12 @@ export interface MacroSummary {
   needsReview: boolean
   smartMerge: boolean
   orderCapacity: number
+  capacitySource?: string
   priority: number
   desiredReplicas: number
   hardConcurrency: number
+  startAt: string
+  deadline: string
   phase: Phase
   purchaseGroups: PurchaseGroup[]
 }

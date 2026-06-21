@@ -111,6 +111,41 @@ func (d *Dispatcher) ActiveAttemptsFor(intentIDs map[string]struct{}) int {
 	return count
 }
 
+func (d *Dispatcher) MacroActive(macroID string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, current := range d.attempts {
+		plan := d.plans[current.planID]
+		if plan != nil && plan.Macro.ID == macroID && !current.value.State.Terminal() {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Dispatcher) RemoveMacro(macroID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, current := range d.attempts {
+		plan := d.plans[current.planID]
+		if plan != nil && plan.Macro.ID == macroID && !current.value.State.Terminal() {
+			return fmt.Errorf("macro is used by active attempt %s", current.value.ID)
+		}
+	}
+	for intentID, plan := range d.plans {
+		if plan.Macro.ID != macroID {
+			continue
+		}
+		delete(d.plans, intentID)
+		for attemptID, current := range d.attempts {
+			if current.planID == intentID {
+				delete(d.attempts, attemptID)
+			}
+		}
+	}
+	return nil
+}
+
 func (d *Dispatcher) Add(plan IntentPlan) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
