@@ -14,8 +14,8 @@ const editing = ref(false)
 const encodedImport = ref('')
 const importing = ref(false)
 
-const addWorker = () => invoke('AddWorker', JSON.stringify(worker.value)).catch(() => {})
-const updateWorker = () => invoke('UpdateWorker', JSON.stringify(worker.value)).catch(() => {})
+const addWorker = () => invoke('AddWorker', JSON.stringify(worker.value)).catch(() => { })
+const updateWorker = () => invoke('UpdateWorker', JSON.stringify(worker.value)).catch(() => { })
 
 async function importFromEncoded() {
   if (!encodedImport.value.trim()) return
@@ -57,7 +57,26 @@ async function editWorker(id: string) {
 
 async function deleteWorker(id: string, name: string) {
   if (!window.confirm(`确定删除 Worker"${name}"吗？`)) return
-  await invoke('DeleteWorker', id).catch(() => {})
+  await invoke('DeleteWorker', id).catch(() => { })
+}
+
+async function disconnectWorker(id: string, name: string) {
+  if (!window.confirm(`确定断开 Worker"${name}"的连接吗？`)) return
+  try {
+    await invoke('DisconnectWorker', id)
+    messages.add({ text: `已断开 Worker"${name}"`, color: 'info', timeout: 2000 })
+  } catch (e: any) {
+    messages.add({ text: String(e), color: 'error', timeout: 3000 })
+  }
+}
+
+async function reconnectWorker(id: string, name: string) {
+  try {
+    await invoke('ReconnectWorker', id)
+    messages.add({ text: `Worker"${name}"已重连`, color: 'success', timeout: 2000 })
+  } catch (e: any) {
+    messages.add({ text: String(e), color: 'error', timeout: 3000 })
+  }
 }
 </script>
 
@@ -65,19 +84,42 @@ async function deleteWorker(id: string, name: string) {
   <v-row>
     <v-col cols="7">
       <v-table density="compact">
-        <thead><tr><th>Worker</th><th>地址</th><th>角色</th><th>健康 / 活动任务</th><th>操作</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Worker</th>
+            <th>地址</th>
+            <th>角色</th>
+            <th>健康 / 活动任务</th>
+            <th>操作</th>
+          </tr>
+        </thead>
         <tbody>
           <tr v-for="item in snapshot.workers" :key="item.id">
             <td>{{ item.name || item.id }}</td>
             <td>{{ item.address }}</td>
             <td>{{ item.role }}</td>
-            <td><v-chip size="small" :color="item.healthy ? 'success' : 'error'">{{ item.healthy ? (item.activeAttemptId || '空闲') : '失联' }}</v-chip></td>
+            <td><v-chip size="small" :color="item.healthy ? 'success' : 'error'">{{ item.healthy ? (item.activeAttemptId
+              || '空闲') : '失联' }}</v-chip></td>
             <td>
               <v-tooltip :text="item.id === 'local' ? '本机 Worker 由雇主自动管理' : '编辑 Worker'">
-                <template #activator="{ props }"><span v-bind="props"><v-btn size="small" variant="text" color="info" icon="mdi-pencil" :disabled="item.id === 'local'" @click="editWorker(item.id)" /></span></template>
+                <template #activator="{ props }"><span v-bind="props"><v-btn size="small" variant="text" color="info"
+                      icon="mdi-pencil" :disabled="item.id === 'local'"
+                      @click="editWorker(item.id)" /></span></template>
+              </v-tooltip>
+              <v-tooltip v-if="item.healthy" :text="item.id === 'local' ? '本机 Worker 由雇主自动管理' : '断开连接'">
+                <template #activator="{ props }"><span v-bind="props"><v-btn size="small" variant="text" color="warning"
+                      icon="mdi-link-off" :disabled="item.id === 'local'"
+                      @click="disconnectWorker(item.id, item.name || item.id)" /></span></template>
+              </v-tooltip>
+              <v-tooltip v-else :text="item.id === 'local' ? '本机 Worker 由雇主自动管理' : '重新连接'">
+                <template #activator="{ props }"><span v-bind="props"><v-btn size="small" variant="text" color="success"
+                      icon="mdi-link-plus" :disabled="item.id === 'local'"
+                      @click="reconnectWorker(item.id, item.name || item.id)" /></span></template>
               </v-tooltip>
               <v-tooltip :text="item.id === 'local' ? '本机 Worker 由雇主自动管理' : '删除 Worker'">
-                <template #activator="{ props }"><span v-bind="props"><v-btn size="small" variant="text" color="error" icon="mdi-delete" :disabled="item.id === 'local'" @click="deleteWorker(item.id, item.name || item.id)" /></span></template>
+                <template #activator="{ props }"><span v-bind="props"><v-btn size="small" variant="text" color="error"
+                      icon="mdi-delete" :disabled="item.id === 'local'"
+                      @click="deleteWorker(item.id, item.name || item.id)" /></span></template>
               </v-tooltip>
             </td>
           </tr>
@@ -107,22 +149,9 @@ async function deleteWorker(id: string, name: string) {
 
       <details class="mb-2">
         <summary class="text-caption cursor-pointer">从编码字符串导入</summary>
-        <v-textarea
-          v-model="encodedImport"
-          label="编码后的 Worker 配置 (Base4096)"
-          rows="2"
-          density="compact"
-          class="mt-2"
-        />
-        <v-btn
-          color="secondary"
-          variant="tonal"
-          size="small"
-          block
-          :disabled="!encodedImport.trim()"
-          :loading="importing"
-          @click="importFromEncoded"
-        >
+        <v-textarea v-model="encodedImport" label="编码后的 Worker 配置 (Base4096)" rows="2" density="compact" class="mt-2" />
+        <v-btn color="secondary" variant="tonal" size="small" block :disabled="!encodedImport.trim()"
+          :loading="importing" @click="importFromEncoded">
           导入 Worker
         </v-btn>
       </details>

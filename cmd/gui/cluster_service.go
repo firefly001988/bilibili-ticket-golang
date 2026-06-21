@@ -319,7 +319,9 @@ func (s *ClusterService) Start(parent context.Context) error {
 		}
 		workers = filtered
 	}
-	s.dispatcher.SetResources(accountsList, workers)
+	// Load all resources and eagerly dial every worker so connection
+	// problems surface immediately instead of waiting for a dispatch.
+	_ = s.refreshResources(ctx)
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
 		return err
@@ -453,6 +455,32 @@ func (s *ClusterService) refreshResources(ctx context.Context) error {
 			s.dispatcher.MarkWorkerHealthy(node.ID)
 		}
 	}
+
+	// Eagerly dial workers that are not yet connected so that connection
+	// problems surface immediately instead of silently waiting until the
+	// first dispatch. Skip workers that the user manually disconnected.
+	go func() {
+		for _, node := range workers {
+			if s.client.IsHealthy(node.ID) {
+				continue // already connected
+			}
+			if s.client.IsDisconnected(node.ID) {
+				continue // user manually disconnected — don't auto-reconnect
+			}
+			healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			info, err := s.client.Health(healthCtx, node)
+			cancel()
+			if err != nil {
+				log.Printf("[cluster] health check failed for worker %s (%s): %v", node.ID, node.Address, err)
+				continue
+			}
+			log.Printf("[cluster] worker %s connected (version=%s, plugin=%s)", node.ID, info["version"], info["pluginVersion"])
+			if s.client.IsHealthy(node.ID) {
+				s.dispatcher.MarkWorkerHealthy(node.ID)
+			}
+		}
+	}()
+
 	return nil
 }
 
@@ -716,7 +744,20 @@ func (s *ClusterService) AddWorker(document string) error {
 	if err := s.repository.PutWorkerTLS(ctx, node.ID, tlsConfig); err != nil {
 		return err
 	}
-	return s.refreshResources(ctx)
+	if err := s.refreshResources(ctx); err != nil {
+		return err
+	}
+
+	// Synchronously dial the new worker so connection errors surface
+	// immediately instead of waiting for the async health check.
+	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := s.client.Health(healthCtx, node); err != nil {
+		log.Printf("[cluster] health check for new worker %s (%s): %v", node.ID, node.Address, err)
+		return fmt.Errorf("worker saved but unreachable: %w", err)
+	}
+	log.Printf("[cluster] worker %s connected (%s)", node.ID, node.Address)
+	return nil
 }
 
 // UpdateWorker updates the connection settings (address, TLS, role) for an
@@ -777,7 +818,20 @@ func (s *ClusterService) UpdateWorker(document string) error {
 	if err := s.repository.PutWorkerTLS(ctx, node.ID, tlsConfig); err != nil {
 		return err
 	}
-	return s.refreshResources(ctx)
+	if err := s.refreshResources(ctx); err != nil {
+		return err
+	}
+
+	// Synchronously dial the updated worker so connection errors surface
+	// immediately instead of waiting for the async health check.
+	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := s.client.Health(healthCtx, node); err != nil {
+		log.Printf("[cluster] health check for updated worker %s (%s): %v", node.ID, node.Address, err)
+		return fmt.Errorf("worker updated but unreachable: %w", err)
+	}
+	log.Printf("[cluster] worker %s reconnected (%s)", node.ID, node.Address)
+	return nil
 }
 
 // WorkerConfigResponse returns the full configuration for a worker, suitable
@@ -831,6 +885,50 @@ func (s *ClusterService) DeleteWorker(workerID string) error {
 	}
 	s.client.RemoveTLS(workerID)
 	return s.refreshResources(context.Background())
+}
+
+// DisconnectWorker closes the gRPC connection to a worker (keeping the TLS
+// config so it can be reconnected later).
+func (s *ClusterService) DisconnectWorker(workerID string) error {
+	if workerID == "local" {
+		return fmt.Errorf("the local worker cannot be disconnected")
+	}
+	s.client.Disconnect(workerID)
+	return s.refreshResources(context.Background())
+}
+
+// ReconnectWorker re-establishes the gRPC connection to a worker and verifies
+// it with a health check.  Retries up to 5 times with 5s intervals.
+func (s *ClusterService) ReconnectWorker(workerID string) error {
+	if workerID == "local" {
+		return fmt.Errorf("the local worker is auto-managed")
+	}
+	ctx := context.Background()
+	node, err := s.repository.Worker(ctx, workerID)
+	if err != nil {
+		return fmt.Errorf("worker %s not found: %w", workerID, err)
+	}
+	// Close any stale connection first.
+	s.client.Disconnect(workerID)
+
+	const maxRetries = 5
+	const retryInterval = 5 * time.Second
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		healthCtx, cancel := context.WithTimeout(ctx, retryInterval)
+		_, err := s.client.Health(healthCtx, node)
+		cancel()
+		if err == nil {
+			log.Printf("[cluster] worker %s reconnected (attempt %d)", workerID, i+1)
+			return s.refreshResources(ctx)
+		}
+		lastErr = err
+		log.Printf("[cluster] reconnect worker %s attempt %d/%d failed: %v", workerID, i+1, maxRetries, err)
+		if i < maxRetries-1 {
+			time.Sleep(retryInterval)
+		}
+	}
+	return fmt.Errorf("reconnect failed after %d attempts: %w", maxRetries, lastErr)
 }
 
 // GenerateRemoteWorkerConfigResponse is returned by GenerateRemoteWorkerConfig.
@@ -991,7 +1089,20 @@ func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string) error 
 	if err := s.repository.PutWorkerTLS(ctx, rc.WorkerID, tlsConfig); err != nil {
 		return err
 	}
-	return s.refreshResources(ctx)
+	if err := s.refreshResources(ctx); err != nil {
+		return err
+	}
+
+	// Synchronously dial the imported worker so connection errors surface
+	// immediately instead of waiting for the async health check.
+	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := s.client.Health(healthCtx, node); err != nil {
+		log.Printf("[cluster] health check for imported worker %s (%s): %v", node.ID, node.Address, err)
+		return fmt.Errorf("worker imported but unreachable: %w", err)
+	}
+	log.Printf("[cluster] worker %s connected (%s)", node.ID, node.Address)
+	return nil
 }
 
 func (s *ClusterService) SaveMacro(document string) error {

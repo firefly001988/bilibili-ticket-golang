@@ -37,15 +37,17 @@ type workerConn struct {
 
 // WorkerClient manages gRPC connections to workers.
 type WorkerClient struct {
-	mu         sync.Mutex
-	workers    map[string]*workerConn
-	tlsConfigs map[string]*tls.Config
+	mu           sync.Mutex
+	workers      map[string]*workerConn
+	tlsConfigs   map[string]*tls.Config
+	disconnected map[string]bool // true = user manually disconnected, skip auto-reconnect
 }
 
 func NewWorkerClient() *WorkerClient {
 	return &WorkerClient{
-		workers:    make(map[string]*workerConn),
-		tlsConfigs: make(map[string]*tls.Config),
+		workers:      make(map[string]*workerConn),
+		tlsConfigs:   make(map[string]*tls.Config),
+		disconnected: make(map[string]bool),
 	}
 }
 
@@ -58,6 +60,7 @@ func (c *WorkerClient) SetTLS(workerID string, tlsCfg *tls.Config) {
 		delete(c.workers, workerID)
 	}
 	c.tlsConfigs[workerID] = tlsCfg
+	delete(c.disconnected, workerID) // new TLS config → allow reconnect
 }
 
 // SetTLSFromConfig builds a TLS config from WorkerTLSConfig and stores it.
@@ -79,6 +82,21 @@ func (c *WorkerClient) RemoveTLS(workerID string) {
 		delete(c.workers, workerID)
 	}
 	delete(c.tlsConfigs, workerID)
+	delete(c.disconnected, workerID)
+}
+
+// Disconnect closes the gRPC connection to a worker without removing its TLS
+// configuration.  The worker is marked as manually disconnected so that
+// automatic reconnect (e.g. from refreshResources) will not kick in.
+// A subsequent Health/Submit/Reconnect call will clear the flag and re-dial.
+func (c *WorkerClient) Disconnect(workerID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if wc, ok := c.workers[workerID]; ok {
+		c.closeWorkerConnLocked(wc)
+		delete(c.workers, workerID)
+	}
+	c.disconnected[workerID] = true
 }
 
 func (c *WorkerClient) closeWorkerConnLocked(wc *workerConn) {
@@ -121,6 +139,7 @@ func (c *WorkerClient) getClientLocked(node domain.WorkerNode) (pb.WorkerService
 		lastHeartbeat: time.Now(),
 	}
 	c.workers[node.ID] = wc
+	delete(c.disconnected, node.ID) // reconnected — clear manual disconnect
 
 	// Start heartbeat stream.
 	c.startHeartbeat(node, wc)
@@ -193,6 +212,13 @@ func (c *WorkerClient) IsHealthy(workerID string) bool {
 		return false
 	}
 	return wc.isAlive()
+}
+
+// IsDisconnected reports whether the user has manually disconnected this worker.
+func (c *WorkerClient) IsDisconnected(workerID string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.disconnected[workerID]
 }
 
 // LastHeartbeat returns the time of the last received heartbeat (zero if unknown).
