@@ -1,16 +1,17 @@
 <script lang="ts" setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { clusterCall, type CatalogSKU, type ClusterSnapshot, type ProjectCatalog, type ResourceRole, type WorkerLogEntry } from '@/composables/clusterTypes'
+import { useMessagesStore } from '@/stores/snackbar'
 import VueQr from 'vue-qr'
+
+const messages = useMessagesStore()
 
 const tab = ref('tasks')
 const loading = ref(false)
-const error = ref('')
-const notice = ref('')
 const startingMacroId = ref('')
 const snapshot = ref<ClusterSnapshot>({ taskGroups: [], accounts: [], buyers: [], workers: [], macros: [], attempts: [] })
 const accountJSON = ref('')
-const worker = ref({ id: '', name: '', baseUrl: 'http://127.0.0.1:18080', key: '', role: 'primary' as ResourceRole })
+const worker = ref({ id: '', name: '', address: '127.0.0.1:18080', caCert: '', clientCert: '', clientKey: '', tlsServerName: '', role: 'primary' as ResourceRole })
 const taskGroup = ref({ name: '' })
 const macro = ref({ id: '', taskGroupId: '', projectId: 0, projectName: '', screenId: 0, screenName: '', skuId: 0, skuName: '', eventDay: '', orderCapacity: 4, capacitySource: 'default', smartMerge: false, priority: 0, desiredReplicas: 1, hardConcurrency: 1, startAt: '', deadline: '' })
 const purchase = ref({ id: '', macroTaskId: '', allowSplit: false, buyerIds: [] as string[], createdAt: '' })
@@ -38,9 +39,8 @@ async function refresh() {
     next.macros ||= []
     next.attempts ||= []
     snapshot.value = next
-    error.value = ''
     if (logAttemptId.value) await loadAttemptLogs(logAttemptId.value, false)
-  } catch (e) { error.value = String(e) }
+  } catch (e) { messages.add({ text: `刷新失败：${e}`, color: 'error', timeout: 5000 }) }
 }
 
 async function loadAttemptLogs(attemptId: string, showLoading = true) {
@@ -48,9 +48,8 @@ async function loadAttemptLogs(attemptId: string, showLoading = true) {
   if (showLoading) logsLoading.value = true
   try {
     attemptLogs.value = await clusterCall<WorkerLogEntry[]>('AttemptLogs', attemptId)
-    error.value = ''
   } catch (e) {
-    error.value = `读取 Worker 日志失败：${String(e)}`
+    messages.add({ text: `读取 Worker 日志失败：${e}`, color: 'error', timeout: 5000 })
   } finally {
     logsLoading.value = false
   }
@@ -68,19 +67,17 @@ function logTime(value: string) {
 async function invoke(method: string, ...args: any[]) {
   loading.value = true
   try { await clusterCall(method, ...args); await refresh(); return true }
-  catch (e) { error.value = String(e); return false }
+  catch (e) { messages.add({ text: String(e), color: 'error', timeout: 5000 }); return false }
   finally { loading.value = false }
 }
 
 async function startMacro(id: string) {
   startingMacroId.value = id
-  notice.value = ''
   try {
     await clusterCall('StartMacro', id)
-    notice.value = '准点任务已创建并成功下发到 Worker。'
-    error.value = ''
+    messages.add({ text: '准点任务已创建并成功下发到 Worker。', color: 'success', timeout: 3000 })
     await refresh()
-  } catch (e) { error.value = String(e) }
+  } catch (e) { messages.add({ text: String(e), color: 'error', timeout: 5000 }) }
   finally { startingMacroId.value = '' }
 }
 
@@ -89,13 +86,13 @@ const addWorker = () => invoke('AddWorker', JSON.stringify(worker.value))
 const switchReflow = () => invoke('SwitchToReflow')
 
 async function saveTaskGroup() {
-  if (!taskGroup.value.name.trim()) { error.value = '请输入任务组名称'; return }
+  if (!taskGroup.value.name.trim()) { messages.add({ text: '请输入任务组名称', color: 'warning', timeout: 3000 }); return }
   if (await invoke('SaveTaskGroup', JSON.stringify(taskGroup.value))) taskGroup.value.name = ''
 }
 
 async function saveMacro() {
-  if (!selectedSKU.value || !eventDayConfirmed.value) { error.value = '请选择票种并确认活动日期'; return }
-  if (!macro.value.taskGroupId || !macro.value.startAt || !macro.value.deadline) { error.value = '任务组、开始时间和截止时间不能为空'; return }
+  if (!selectedSKU.value || !eventDayConfirmed.value) { messages.add({ text: '请选择票种并确认活动日期', color: 'warning', timeout: 3000 }); return }
+  if (!macro.value.taskGroupId || !macro.value.startAt || !macro.value.deadline) { messages.add({ text: '任务组、开始时间和截止时间不能为空', color: 'warning', timeout: 3000 }); return }
   const document = { ...macro.value, eventDayConfirmed: true, needsReview: false, startAt: new Date(macro.value.startAt).toISOString(), deadline: new Date(macro.value.deadline).toISOString() }
   await invoke('SaveMacro', JSON.stringify(document))
 }
@@ -103,7 +100,7 @@ async function saveMacro() {
 async function savePurchase() {
   const selected = new Set(purchase.value.buyerIds)
   const buyers = snapshot.value.buyers.filter(item => selected.has(item.logicalId))
-  if (!purchase.value.macroTaskId || buyers.length === 0) { error.value = '请选择宏任务并至少填写一名购票人'; return }
+  if (!purchase.value.macroTaskId || buyers.length === 0) { messages.add({ text: '请选择宏任务并至少填写一名购票人', color: 'warning', timeout: 3000 }); return }
   if (await invoke('SavePurchaseGroup', JSON.stringify({ id: purchase.value.id || `purchase-${Date.now()}`, macroTaskId: purchase.value.macroTaskId, allowSplit: purchase.value.allowSplit, buyers, createdAt: purchase.value.createdAt || undefined }))) resetPurchaseEditor()
 }
 
@@ -130,14 +127,13 @@ async function beginLogin() {
 }
 
 async function loadProject() {
-  if (!projectId.value.trim()) { error.value = '请输入项目 ID'; return }
+  if (!projectId.value.trim()) { messages.add({ text: '请输入项目 ID', color: 'warning', timeout: 3000 }); return }
   projectLoading.value = true
   try {
     project.value = await clusterCall<ProjectCatalog>('LoadProject', projectId.value.trim())
     selectedSKU.value = null
     eventDayConfirmed.value = false
-    error.value = ''
-  } catch (e) { error.value = String(e) }
+  } catch (e) { messages.add({ text: String(e), color: 'error', timeout: 5000 }) }
   finally { projectLoading.value = false }
 }
 
@@ -151,7 +147,7 @@ function chooseSKU(ticket: CatalogSKU) {
 async function syncBuyers(accountId: string) {
   loading.value = true
   try { await clusterCall('SyncAccountBuyers', accountId); await refresh() }
-  catch (e) { error.value = String(e) }
+  catch (e) { messages.add({ text: String(e), color: 'error', timeout: 5000 }) }
   finally { loading.value = false }
 }
 
@@ -212,8 +208,6 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
       <v-spacer />
       <v-btn :loading="loading" prepend-icon="mdi-refresh" variant="text" @click="refresh">刷新</v-btn>
     </v-card-title>
-    <v-alert v-if="error" type="error" closable class="ma-4" @click:close="error = ''">{{ error }}</v-alert>
-    <v-alert v-if="notice" type="success" closable class="ma-4" @click:close="notice = ''">{{ notice }}</v-alert>
     <v-tabs v-model="tab" grow>
       <v-tab value="tasks">任务规划</v-tab>
       <v-tab value="accounts">账号池</v-tab>
@@ -297,8 +291,8 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
       <v-window-item value="workers">
         <v-card-text>
           <v-row>
-            <v-col cols="7"><v-table density="compact"><thead><tr><th>Worker</th><th>地址</th><th>角色</th><th>健康 / 活动任务</th><th>操作</th></tr></thead><tbody><tr v-for="item in snapshot.workers" :key="item.id"><td>{{ item.name || item.id }}</td><td>{{ item.baseUrl }}</td><td>{{ item.role }}</td><td><v-chip size="small" :color="item.healthy ? 'success' : 'error'">{{ item.healthy ? (item.activeAttemptId || '空闲') : '失联' }}</v-chip></td><td><v-tooltip :text="item.id === 'local' ? '本机 Worker 由雇主自动管理' : '删除 Worker'"><template #activator="{ props }"><span v-bind="props"><v-btn size="small" variant="text" color="error" icon="mdi-delete" :disabled="item.id === 'local'" @click="deleteWorker(item.id, item.name || item.id)" /></span></template></v-tooltip></td></tr></tbody></v-table></v-col>
-            <v-col cols="5"><v-text-field v-model="worker.id" label="Worker ID" /><v-text-field v-model="worker.name" label="名称" /><v-text-field v-model="worker.baseUrl" label="HTTP 地址" /><v-text-field v-model="worker.key" label="独立控制密钥" type="password" /><v-select v-model="worker.role" :items="['primary', 'standby']" label="角色" /><v-btn color="primary" block @click="addWorker">添加 Worker</v-btn></v-col>
+            <v-col cols="7"><v-table density="compact"><thead><tr><th>Worker</th><th>地址</th><th>角色</th><th>健康 / 活动任务</th><th>操作</th></tr></thead><tbody><tr v-for="item in snapshot.workers" :key="item.id"><td>{{ item.name || item.id }}</td><td>{{ item.address }}</td><td>{{ item.role }}</td><td><v-chip size="small" :color="item.healthy ? 'success' : 'error'">{{ item.healthy ? (item.activeAttemptId || '空闲') : '失联' }}</v-chip></td><td><v-tooltip :text="item.id === 'local' ? '本机 Worker 由雇主自动管理' : '删除 Worker'"><template #activator="{ props }"><span v-bind="props"><v-btn size="small" variant="text" color="error" icon="mdi-delete" :disabled="item.id === 'local'" @click="deleteWorker(item.id, item.name || item.id)" /></span></template></v-tooltip></td></tr></tbody></v-table></v-col>
+            <v-col cols="5"><v-text-field v-model="worker.id" label="Worker ID" /><v-text-field v-model="worker.name" label="名称" /><v-text-field v-model="worker.address" label="gRPC 地址（host:port）" placeholder="127.0.0.1:18080" /><v-text-field v-model="worker.tlsServerName" label="TLS SNI（可选）" placeholder="localhost" /><v-textarea v-model="worker.caCert" label="CA 证书 (PEM)" rows="2" /><v-textarea v-model="worker.clientCert" label="客户端证书 (PEM)" rows="2" /><v-textarea v-model="worker.clientKey" label="客户端私钥 (PEM)" rows="2" type="password" /><v-select v-model="worker.role" :items="['primary', 'standby']" label="角色" /><v-btn color="primary" block @click="addWorker">添加 Worker</v-btn></v-col>
           </v-row>
         </v-card-text>
       </v-window-item>

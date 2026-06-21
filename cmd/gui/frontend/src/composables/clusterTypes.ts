@@ -13,7 +13,7 @@ export interface AccountSummary {
 export interface WorkerSummary {
   id: string
   name: string
-  baseUrl: string
+  address: string
   role: ResourceRole
   enabled: boolean
   healthy: boolean

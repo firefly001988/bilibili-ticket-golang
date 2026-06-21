@@ -1,7 +1,7 @@
 package configuration
 
 import (
-	_return "bilibili-ticket-golang/models/bili/response"
+	_return "bilibili-ticket-golang/lib/models/bili/response"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"

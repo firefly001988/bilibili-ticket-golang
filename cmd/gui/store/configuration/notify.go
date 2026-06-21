@@ -1,7 +1,7 @@
 package configuration
 
 import (
-	"bilibili-ticket-golang/biliutils/notify"
+	"bilibili-ticket-golang/lib/biliutils/notify"
 	"fmt"
 	"sync"
 )

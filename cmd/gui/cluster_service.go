@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"bilibili-ticket-golang/biliutils"
 	"bilibili-ticket-golang/cluster/accounts"
 	"bilibili-ticket-golang/cluster/dispatcher"
 	"bilibili-ticket-golang/cluster/domain"
@@ -25,8 +24,9 @@ import (
 	"bilibili-ticket-golang/cluster/planner"
 	clusterstorage "bilibili-ticket-golang/cluster/storage"
 	clusterworker "bilibili-ticket-golang/cluster/worker"
-	"bilibili-ticket-golang/global"
-	"bilibili-ticket-golang/store/cookiejar"
+	"bilibili-ticket-golang/cmd/gui/store/cookiejar"
+	"bilibili-ticket-golang/lib/biliutils"
+	"bilibili-ticket-golang/lib/global"
 )
 
 type ClusterSnapshot struct {
@@ -48,7 +48,7 @@ type AccountSummary struct {
 type WorkerSummary struct {
 	ID              string              `json:"id"`
 	Name            string              `json:"name"`
-	BaseURL         string              `json:"baseUrl"`
+	Address         string              `json:"address"`
 	Role            domain.ResourceRole `json:"role"`
 	Enabled         bool                `json:"enabled"`
 	Healthy         bool                `json:"healthy"`
@@ -258,8 +258,10 @@ func (s *ClusterService) Start(parent context.Context) error {
 		return err
 	}
 	for _, node := range workers {
-		if key, err := s.repository.WorkerKey(ctx, node.ID); err == nil {
-			s.client.SetKey(node.ID, key)
+		if tls, err := s.repository.WorkerTLS(ctx, node.ID); err == nil {
+			if setErr := s.client.SetTLSFromConfig(node.ID, tls); setErr != nil {
+				log.Printf("[cluster] TLS config for worker %s: %v", node.ID, setErr)
+			}
 		}
 	}
 	pluginName := ""
@@ -276,10 +278,7 @@ func (s *ClusterService) Start(parent context.Context) error {
 		if node.ID != "local" {
 			continue
 		}
-		healthCtx, healthCancel := context.WithTimeout(ctx, 800*time.Millisecond)
-		_, healthErr := s.client.Health(healthCtx, node)
-		healthCancel()
-		if healthErr == nil {
+		if s.client.IsHealthy(node.ID) {
 			localNode, localReady = node, true
 		}
 		break
@@ -292,8 +291,17 @@ func (s *ClusterService) Start(parent context.Context) error {
 		if err := s.repository.PutWorker(ctx, localNode); err != nil {
 			return err
 		}
-		if key, readErr := os.ReadFile("data/local-worker/control.key"); readErr == nil {
-			if err := s.repository.PutWorkerKey(ctx, localNode.ID, string(key)); err != nil {
+		// TLS certs are auto-generated and stored on disk;
+		// persist the TLS config in the repository for future restarts.
+		tlsBundle, _, tlsErr := clusterworker.LoadOrGenerateLocalTLS("data/local-worker")
+		if tlsErr == nil {
+			tlsCfg := domain.WorkerTLSConfig{
+				CACertPEM:     tlsBundle.CAPEM,
+				ClientCertPEM: tlsBundle.CertPEM,
+				ClientKeyPEM:  tlsBundle.KeyPEM,
+				ServerName:    localNode.TLSServerName,
+			}
+			if err := s.repository.PutWorkerTLS(ctx, localNode.ID, tlsCfg); err != nil {
 				return err
 			}
 		}
@@ -385,14 +393,8 @@ func (s *ClusterService) refreshResources(ctx context.Context) error {
 	}
 	s.dispatcher.SetResources(accountList, workers)
 	for _, node := range workers {
-		healthCtx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
-		health, healthErr := s.client.Health(healthCtx, node)
-		cancel()
-		if healthErr == nil {
-			active, _ := health["activeAttemptId"].(string)
-			if active == "" {
-				s.dispatcher.MarkWorkerHealthy(node.ID)
-			}
+		if s.client.IsHealthy(node.ID) {
+			s.dispatcher.MarkWorkerHealthy(node.ID)
 		}
 	}
 	return nil
@@ -433,14 +435,20 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		result.Accounts = append(result.Accounts, summary)
 	}
 	for _, node := range workerList {
-		summary := WorkerSummary{ID: node.ID, Name: node.Name, BaseURL: node.BaseURL, Role: node.Role, Enabled: node.Enabled}
-		healthCtx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
-		health, healthErr := s.client.Health(healthCtx, node)
-		cancel()
-		if healthErr == nil {
-			summary.Healthy = true
-			summary.ActiveAttemptID, _ = health["activeAttemptId"].(string)
-			summary.Version, _ = health["version"].(string)
+		summary := WorkerSummary{ID: node.ID, Name: node.Name, Address: node.Address, Role: node.Role, Enabled: node.Enabled}
+		summary.Healthy = s.client.IsHealthy(node.ID)
+		if summary.Healthy {
+			// Fetch additional metadata via gRPC Health call (best-effort).
+			if hb, ok := s.client.LastHeartbeat(node.ID); ok {
+				_ = hb
+			}
+			healthCtx, healthCancel := context.WithTimeout(ctx, 800*time.Millisecond)
+			health, healthErr := s.client.Health(healthCtx, node)
+			healthCancel()
+			if healthErr == nil {
+				summary.ActiveAttemptID, _ = health["activeAttemptId"].(string)
+				summary.Version, _ = health["version"].(string)
+			}
 		}
 		result.Workers = append(result.Workers, summary)
 	}
@@ -610,30 +618,48 @@ func (s *ClusterService) DeleteAccount(accountID string) error {
 
 func (s *ClusterService) AddWorker(document string) error {
 	var input struct {
-		ID      string              `json:"id"`
-		Name    string              `json:"name"`
-		BaseURL string              `json:"baseUrl"`
-		Key     string              `json:"key"`
-		Role    domain.ResourceRole `json:"role"`
+		ID            string              `json:"id"`
+		Name          string              `json:"name"`
+		Address       string              `json:"address"`
+		CACert        string              `json:"caCert"`
+		ClientCert    string              `json:"clientCert"`
+		ClientKey     string              `json:"clientKey"`
+		TLSServerName string              `json:"tlsServerName"`
+		Role          domain.ResourceRole `json:"role"`
 	}
 	if err := json.Unmarshal([]byte(document), &input); err != nil {
 		return err
 	}
-	if input.ID == "" || input.BaseURL == "" || input.Key == "" {
-		return fmt.Errorf("id, baseUrl and key are required")
+	if input.ID == "" || input.Address == "" || input.ClientKey == "" {
+		return fmt.Errorf("id, address and clientKey are required")
 	}
 	if input.Role == "" {
 		input.Role = domain.RolePrimary
 	}
-	node := domain.WorkerNode{ID: input.ID, Name: input.Name, BaseURL: input.BaseURL, Role: input.Role, Enabled: true}
+	node := domain.WorkerNode{
+		ID:            input.ID,
+		Name:          input.Name,
+		Address:       input.Address,
+		Role:          input.Role,
+		Enabled:       true,
+		TLSServerName: input.TLSServerName,
+	}
+	tlsConfig := domain.WorkerTLSConfig{
+		CACertPEM:     []byte(input.CACert),
+		ClientCertPEM: []byte(input.ClientCert),
+		ClientKeyPEM:  []byte(input.ClientKey),
+		ServerName:    input.TLSServerName,
+	}
+	if err := s.client.SetTLSFromConfig(node.ID, tlsConfig); err != nil {
+		return fmt.Errorf("invalid TLS config: %w", err)
+	}
 	ctx := context.Background()
 	if err := s.repository.PutWorker(ctx, node); err != nil {
 		return err
 	}
-	if err := s.repository.PutWorkerKey(ctx, node.ID, input.Key); err != nil {
+	if err := s.repository.PutWorkerTLS(ctx, node.ID, tlsConfig); err != nil {
 		return err
 	}
-	s.client.SetKey(node.ID, input.Key)
 	return s.refreshResources(ctx)
 }
 
@@ -649,7 +675,7 @@ func (s *ClusterService) DeleteWorker(workerID string) error {
 	if err := s.repository.DeleteWorker(context.Background(), workerID); err != nil {
 		return err
 	}
-	s.client.RemoveKey(workerID)
+	s.client.RemoveTLS(workerID)
 	return s.refreshResources(context.Background())
 }
 

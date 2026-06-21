@@ -143,10 +143,14 @@ func TestClusterServiceDeletesIdleResources(t *testing.T) {
 	if err := service.repository.PutAccount(ctx, domain.Account{ID: "account", Enabled: true}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.repository.PutWorker(ctx, domain.WorkerNode{ID: "remote", BaseURL: "http://worker", Enabled: true}); err != nil {
+	if err := service.repository.PutWorker(ctx, domain.WorkerNode{ID: "remote", Address: "worker:18080", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.repository.PutWorkerKey(ctx, "remote", "secret"); err != nil {
+	if err := service.repository.PutWorkerTLS(ctx, "remote", domain.WorkerTLSConfig{
+		CACertPEM:     []byte("test-ca"),
+		ClientCertPEM: []byte("test-cert"),
+		ClientKeyPEM:  []byte("test-key"),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	beforeDelete, err := service.Snapshot()

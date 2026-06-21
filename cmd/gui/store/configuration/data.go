@@ -1,7 +1,7 @@
 package configuration
 
 import (
-	"bilibili-ticket-golang/store/cookiejar"
+	"bilibili-ticket-golang/cmd/gui/store/cookiejar"
 	"os"
 	"path/filepath"
 	"sync"
