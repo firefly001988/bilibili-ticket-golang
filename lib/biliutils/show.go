@@ -1,13 +1,14 @@
 package biliutils
 
 import (
+	"bilibili-ticket-golang/cmd/gui/i18n"
 	"bilibili-ticket-golang/lib/biliutils/token"
 	"bilibili-ticket-golang/lib/global"
-	"bilibili-ticket-golang/cmd/gui/i18n"
 	"bilibili-ticket-golang/lib/models/bili/api"
 	r "bilibili-ticket-golang/lib/models/bili/response"
 	"bilibili-ticket-golang/lib/models/errors"
 	"bilibili-ticket-golang/lib/utils"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
@@ -228,6 +229,7 @@ func (c *BiliClient) GetConfirmInformation(tokens *r.RequestTokenAndPToken, proj
 // SubmitOrder sends the final order creation request to Bilibili's ticket mall.
 //
 // Parameters:
+//   - ctx: context for cancellation
 //   - tokenGen: token generation strategy (CToken for hot projects, Normal otherwise)
 //   - whenGenPToken: timestamp when the ptoken was generated, sent as timestamp field
 //   - tokens: the RequestToken/PToken/GaiaToken from GetRequestTokenAndPToken
@@ -237,7 +239,12 @@ func (c *BiliClient) GetConfirmInformation(tokens *r.RequestTokenAndPToken, proj
 //   - buyerType: Ordinary or ForceRealName
 //
 // Returns: error, API response code, API message, and the order result struct.
-func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Time, tokens *r.RequestTokenAndPToken, projectID string, ticket r.TicketSkuScreenID, buyers []r.TicketBuyer, confirmInfo *api.ConfirmStruct) (error, int, string, api.TicketOrderStruct) {
+func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, whenGenPToken time.Time, tokens *r.RequestTokenAndPToken, projectID string, ticket r.TicketSkuScreenID, buyers []r.TicketBuyer, confirmInfo *api.ConfirmStruct) (error, int, string, api.TicketOrderStruct) {
+	select {
+	case <-ctx.Done():
+		return ctx.Err(), -1, "", api.TicketOrderStruct{}
+	default:
+	}
 	count := len(buyers)
 	if count == 0 {
 		return fmt.Errorf("no buyers provided"), -1, "", api.TicketOrderStruct{}
@@ -336,6 +343,7 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 	}
 
 	resp, err := c.client.R().
+		SetContext(ctx).
 		SetHeader("X-Risk-Header", fmt.Sprintf("platform/h5 uid/%s deviceId/%s", c.getUID(), c.GetInfocUUID())).
 		SetBodyJsonMarshal(form).Post("https://show.bilibili.com/api/ticket/order/createV2?project_id=" + projectID + "&ptoken=" + tokens.PToken)
 	if err != nil {
@@ -373,11 +381,16 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 	return nil, apiResp.GetCode(), apiResp.GetMessage(), apiResp.Data
 }
 
-func (c *BiliClient) GetOrderStatus(projectID, token string, orderID int64) (error, bool) {
+func (c *BiliClient) GetOrderStatus(ctx context.Context, projectID, token string, orderID int64) (error, bool) {
+	select {
+	case <-ctx.Done():
+		return ctx.Err(), false
+	default:
+	}
 	if orderID <= 0 {
 		return nil, false
 	}
-	resp, err := c.client.R().SetQueryParams(map[string]string{
+	resp, err := c.client.R().SetContext(ctx).SetQueryParams(map[string]string{
 		"token":      token,
 		"project_id": projectID,
 		"orderId":    strconv.FormatInt(orderID, 10),

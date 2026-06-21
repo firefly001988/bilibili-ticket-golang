@@ -122,7 +122,7 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 			return out
 		}
 	}
-	err, code, message, order := b.client.SubmitOrder(b.tokenGen, b.generatedAt, b.tokens, strconv.FormatInt(spec.ProjectID, 10), b.sku, b.buyers, b.confirm)
+	err, code, message, order := b.client.SubmitOrder(ctx, b.tokenGen, b.generatedAt, b.tokens, strconv.FormatInt(spec.ProjectID, 10), b.sku, b.buyers, b.confirm)
 	b.submitCount++
 	if err != nil {
 		return Outcome{Code: code, Message: message, Err: err}
@@ -134,7 +134,7 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 		b.prepared = false
 	}
 	if code == 0 || code == 100048 || code == 100079 {
-		if err, ok := b.client.GetOrderStatus(strconv.FormatInt(spec.ProjectID, 10), order.Token, order.OrderId); err != nil || !ok {
+		if err, ok := b.client.GetOrderStatus(ctx, strconv.FormatInt(spec.ProjectID, 10), order.Token, order.OrderId); err != nil || !ok {
 			return Outcome{Code: code, Message: "order confirmation pending", Err: err}
 		}
 		return Outcome{Code: code, Message: message, OrderID: strconv.FormatInt(order.OrderId, 10)}
