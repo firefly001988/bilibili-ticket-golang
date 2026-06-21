@@ -422,8 +422,7 @@ func (s *ClusterService) StopMacro(macroID string) error {
 	for _, w := range workerList {
 		workerByID[w.ID] = w
 	}
-	var lastErr error
-	stopped := 0
+	// Send stop to all active worker attempts.
 	for _, a := range s.dispatcher.MacroAttempts(macroID) {
 		if a.State.Terminal() {
 			continue
@@ -432,16 +431,10 @@ func (s *ClusterService) StopMacro(macroID string) error {
 		if !ok {
 			continue
 		}
-		if err := s.client.Stop(ctx, worker, a.ID); err != nil {
-			lastErr = err
-		} else {
-			stopped++
-		}
+		_ = s.client.Stop(ctx, worker, a.ID)
 	}
-	_ = s.dispatcher.RemoveMacro(macroID)
-	if stopped == 0 && lastErr != nil {
-		return lastErr
-	}
+	// Force-disarm the macro: mark intents terminal and release resources.
+	s.dispatcher.DisarmMacro(macroID)
 	return nil
 }
 

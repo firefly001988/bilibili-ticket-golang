@@ -137,6 +137,41 @@ func (d *Dispatcher) MacroAttempts(macroID string) []domain.ExecutionAttempt {
 	return result
 }
 
+// DisarmMacro marks all intents of a macro as stopped, clears their attempts,
+// and releases busy accounts/workers. Call this after sending Stop to workers.
+func (d *Dispatcher) DisarmMacro(macroID string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for intentID, plan := range d.plans {
+		if plan.Macro.ID != macroID {
+			continue
+		}
+		plan.Intent.Armed = false
+		plan.Intent.Terminal = true
+		plan.Intent.FailureReason = domain.FailureStopped
+		// Clear attempts for this intent
+		for attemptID, current := range d.attempts {
+			if current.planID == intentID {
+				if !current.value.State.Terminal() {
+					current.value.State = domain.AttemptStopped
+					current.value.Result = domain.ExecutionResult{
+						AttemptID: current.value.ID,
+						IntentID:  current.value.IntentID,
+						SpecHash:  current.value.SpecHash,
+						State:     domain.AttemptStopped,
+						Reason:    domain.FailureStopped,
+						Message:   "macro disarmed by employer",
+					}
+				}
+				delete(d.accountBusy, current.value.AccountID)
+				delete(d.workerBusy, current.value.WorkerID)
+				delete(d.attempts, attemptID)
+			}
+		}
+		delete(d.plans, intentID)
+	}
+}
+
 func (d *Dispatcher) RemoveMacro(macroID string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
