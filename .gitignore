@@ -5,6 +5,6 @@ data
 old
 logs
 build
-plugins
 cmd/ticket-worker/ticket-worker.exe
 cmd/gui/ticket-worker.exe
+cmd/gui/plugins
