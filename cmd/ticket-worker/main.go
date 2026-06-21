@@ -8,12 +8,12 @@ import (
 	"os"
 	"time"
 
-	biliclock "bilibili-ticket-golang/biliutils/clock"
+	biliclock "bilibili-ticket-golang/lib/biliutils/clock"
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/executor"
 	"bilibili-ticket-golang/cluster/worker"
-	"bilibili-ticket-golang/plugins"
-	"bilibili-ticket-golang/plugins/captcha"
+	"bilibili-ticket-golang/lib/plugins"
+	"bilibili-ticket-golang/lib/plugins/captcha"
 )
 
 func main() {
