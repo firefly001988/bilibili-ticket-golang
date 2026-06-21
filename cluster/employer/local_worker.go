@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -37,11 +38,26 @@ func (m *LocalWorkerManager) Start(ctx context.Context, client *WorkerClient, op
 		return m.node, nil
 	}
 	if options.BinaryPath == "" {
-		executable, err := os.Executable()
-		if err != nil {
-			return domain.WorkerNode{}, err
+		ext := ""
+		if runtime.GOOS == "windows" {
+			ext = ".exe"
 		}
-		options.BinaryPath = filepath.Join(filepath.Dir(executable), "ticket-worker")
+		// Prefer the directory of the current executable (both GUI and worker live in build/bin).
+		if exePath, err := os.Executable(); err == nil {
+			candidate := filepath.Join(filepath.Dir(exePath), "ticket-worker"+ext)
+			if _, err := os.Stat(candidate); err == nil {
+				options.BinaryPath = candidate
+			}
+		}
+		// Fallback: rel path from working directory
+		if options.BinaryPath == "" {
+			runningPath, err := os.Getwd()
+			if err != nil {
+				return domain.WorkerNode{}, err
+			}
+			// running from cmd/gui -> go up to project root, then into build/bin
+			options.BinaryPath = filepath.Join(filepath.Dir(filepath.Dir(runningPath)), "build", "bin", "ticket-worker"+ext)
+		}
 	}
 	if options.DataDir == "" {
 		options.DataDir = "data/local-worker"
