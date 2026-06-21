@@ -133,8 +133,9 @@ func (c *WorkerClient) startHeartbeat(node domain.WorkerNode, wc *workerConn) {
 
 	stream, err := wc.client.Heartbeat(ctx)
 	if err != nil {
-		log.Printf("[worker-client] heartbeat stream to %s failed: %v", node.ID, err)
-		wc.lastHeartbeat = time.Time{} // mark dead
+		// Keep lastHeartbeat as time.Now() so the worker is considered alive
+		// for the grace period; the next call to getClient will retry.
+		log.Printf("[worker-client] heartbeat stream to %s failed (will retry): %v", node.ID, err)
 		return
 	}
 
@@ -174,6 +175,13 @@ func (wc *workerConn) isAlive() bool {
 	wc.mu.Lock()
 	defer wc.mu.Unlock()
 	return !wc.lastHeartbeat.IsZero() && time.Since(wc.lastHeartbeat) < heartbeatTimeout
+}
+
+// markAlive refreshes the heartbeat timestamp (proof of connectivity).
+func (wc *workerConn) markAlive() {
+	wc.mu.Lock()
+	wc.lastHeartbeat = time.Now()
+	wc.mu.Unlock()
 }
 
 // IsHealthy returns whether the worker has been seen recently via heartbeat.
@@ -298,6 +306,10 @@ func (c *WorkerClient) Health(ctx context.Context, node domain.WorkerNode) (map[
 	resp, err := cli.Health(ctx, &pb.HealthRequest{})
 	if err != nil {
 		return nil, err
+	}
+	// Successful Health unary RPC proves the worker is reachable.
+	if wc, ok := c.workers[node.ID]; ok {
+		wc.markAlive()
 	}
 	return map[string]any{
 		"workerId":         resp.WorkerId,
