@@ -215,3 +215,19 @@ func TestHealthyIdleWorkerReturnsToResourcePool(t *testing.T) {
 		t.Fatalf("worker was not rehabilitated: failed=%v degraded=%v", failed, d.degraded)
 	}
 }
+
+func TestUnarmedRestoredIntentIsNotDispatched(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, nil)
+	accounts, workers := resources()
+	d.SetResources(accounts, workers)
+	intent := dispatchIntent("legacy", "m", "buyer")
+	intent.Armed = false
+	d.Add(IntentPlan{Macro: dispatchMacro("m", 1, 1), Intent: intent})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.submitted) != 0 {
+		t.Fatalf("unarmed intent was dispatched: %#v", c.submitted)
+	}
+}

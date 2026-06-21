@@ -259,7 +259,9 @@ func (s *ClusterService) Start(parent context.Context) error {
 	if err != nil {
 		return err
 	}
+	intentByID := make(map[string]domain.LogicalOrderIntent, len(intents))
 	for _, intent := range intents {
+		intentByID[intent.ID] = intent
 		if macro, ok := macroByID[intent.MacroTaskID]; ok {
 			s.dispatcher.Add(dispatcher.IntentPlan{Macro: macro, Intent: intent})
 			s.phases[macro.ID] = intent.Phase
@@ -270,6 +272,15 @@ func (s *ClusterService) Start(parent context.Context) error {
 		return err
 	}
 	for _, value := range attempts {
+		if intent, known := intentByID[value.IntentID]; known && !intent.Armed && !value.State.Terminal() {
+			value.State = domain.AttemptStopped
+			value.UpdatedAt = time.Now()
+			value.Result = domain.ExecutionResult{AttemptID: value.ID, IntentID: value.IntentID, SpecHash: value.SpecHash, State: domain.AttemptStopped, Reason: domain.FailureStopped, Message: "legacy unarmed attempt stopped during recovery", FinishedAt: value.UpdatedAt}
+			if err := s.repository.PutAttempt(ctx, value); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := s.dispatcher.RestoreAttempt(value); err != nil {
 			return err
 		}

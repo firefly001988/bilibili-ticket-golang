@@ -165,7 +165,7 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 	}
 	ordered := make([]*IntentPlan, 0, len(d.plans))
 	for _, plan := range d.plans {
-		if !plan.Intent.Succeeded && !plan.Intent.Terminal {
+		if plan.Intent.Armed && !plan.Intent.Succeeded && !plan.Intent.Terminal {
 			ordered = append(ordered, plan)
 		}
 	}

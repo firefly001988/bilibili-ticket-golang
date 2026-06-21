@@ -141,6 +141,7 @@ type LogicalOrderIntent struct {
 	BuyerDays     []BuyerDayKey `json:"buyerDays"`
 	ShapeHash     string        `json:"shapeHash"`
 	Succeeded     bool          `json:"succeeded"`
+	Armed         bool          `json:"armed"`
 	Terminal      bool          `json:"terminal"`
 	FailureReason FailureReason `json:"failureReason,omitempty"`
 	CreatedAt     time.Time     `json:"createdAt"`
@@ -165,7 +166,7 @@ func NewIntent(id string, macro MacroTask, phase Phase, buyers []Buyer, now time
 		Buyers []string
 	}{macro.ID, phase, buyerIDs(ordered)})
 	sum := sha256.Sum256(shape)
-	return LogicalOrderIntent{ID: id, MacroTaskID: macro.ID, Phase: phase, Buyers: ordered, BuyerDays: keys, ShapeHash: hex.EncodeToString(sum[:]), CreatedAt: now}, nil
+	return LogicalOrderIntent{ID: id, MacroTaskID: macro.ID, Phase: phase, Buyers: ordered, BuyerDays: keys, ShapeHash: hex.EncodeToString(sum[:]), Armed: true, CreatedAt: now}, nil
 }
 
 func buyerIDs(b []Buyer) []string {
