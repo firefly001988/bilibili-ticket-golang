@@ -123,6 +123,20 @@ func (d *Dispatcher) MacroActive(macroID string) bool {
 	return false
 }
 
+// MacroAttempts returns all attempts (terminal and active) belonging to a macro.
+func (d *Dispatcher) MacroAttempts(macroID string) []domain.ExecutionAttempt {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var result []domain.ExecutionAttempt
+	for _, current := range d.attempts {
+		plan := d.plans[current.planID]
+		if plan != nil && plan.Macro.ID == macroID {
+			result = append(result, current.value)
+		}
+	}
+	return result
+}
+
 func (d *Dispatcher) RemoveMacro(macroID string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

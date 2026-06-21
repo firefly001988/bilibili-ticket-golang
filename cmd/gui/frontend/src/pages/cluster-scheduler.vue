@@ -81,6 +81,23 @@ async function startMacro(id: string) {
   finally { startingMacroId.value = '' }
 }
 
+async function stopMacro(id: string) {
+  if (!window.confirm('确定停止该宏任务及其全部执行中的 Worker 任务吗？')) return
+  try {
+    await clusterCall('StopMacro', id)
+    messages.add({ text: '宏任务已停止。', color: 'info', timeout: 3000 })
+    await refresh()
+  } catch (e) { messages.add({ text: String(e), color: 'error', timeout: 5000 }) }
+}
+
+async function stopAttempt(attemptId: string) {
+  try {
+    await clusterCall('StopAttempt', attemptId)
+    messages.add({ text: '执行任务已发送停止指令。', color: 'info', timeout: 3000 })
+    await refresh()
+  } catch (e) { messages.add({ text: String(e), color: 'error', timeout: 5000 }) }
+}
+
 const importAccount = () => invoke('ImportAccount', accountJSON.value)
 const addWorker = () => invoke('AddWorker', JSON.stringify(worker.value))
 const switchReflow = () => invoke('SwitchToReflow')
@@ -234,7 +251,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
                 <td><div>{{ item.projectName || `项目 ${item.projectId}` }}</div><div class="text-caption text-medium-emphasis">{{ item.screenName || item.screenId }} — {{ item.skuName || item.skuId }}</div></td><td>{{ item.eventDay || '未设置' }}</td><td>{{ item.orderCapacity }}</td>
                 <td>{{ item.desiredReplicas }} / {{ item.hardConcurrency }}</td><td>{{ item.priority }}</td>
                 <td><v-chip size="small" :color="item.needsReview ? 'warning' : 'success'">{{ item.phase }} · {{ item.needsReview ? '待确认' : '可调度' }}</v-chip></td>
-                <td class="text-no-wrap"><v-btn size="small" :loading="startingMacroId === item.id" :disabled="item.needsReview || !item.eventDayConfirmed" @click.stop="startMacro(item.id)">启动准点</v-btn><v-btn class="ml-1" size="small" variant="text" icon="mdi-pencil" @click.stop="editMacro(item)" /><v-btn size="small" variant="text" color="error" icon="mdi-delete" @click.stop="deleteMacro(item)" /><v-btn size="small" variant="text" :icon="expandedMacros.includes(item.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" @click.stop="toggleMacro(item.id)" /></td>
+                <td class="text-no-wrap"><v-btn size="small" :loading="startingMacroId === item.id" :disabled="item.needsReview || !item.eventDayConfirmed" @click.stop="startMacro(item.id)">启动准点</v-btn><v-btn class="ml-1" size="small" variant="text" color="warning" icon="mdi-stop" @click.stop="stopMacro(item.id)" /><v-btn class="ml-1" size="small" variant="text" icon="mdi-pencil" @click.stop="editMacro(item)" /><v-btn size="small" variant="text" color="error" icon="mdi-delete" @click.stop="deleteMacro(item)" /><v-btn size="small" variant="text" :icon="expandedMacros.includes(item.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" @click.stop="toggleMacro(item.id)" /></td>
               </tr>
               <tr v-if="expandedMacros.includes(item.id)"><td colspan="7" class="bg-grey-lighten-4 pa-4">
                 <div v-if="item.purchaseGroups.length === 0" class="text-medium-emphasis">尚未配置购票组。</div>
@@ -299,7 +316,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
 
       <v-window-item value="attempts">
         <v-card-text>
-          <v-table density="compact"><thead><tr><th>Attempt</th><th>Intent</th><th>账号</th><th>Worker</th><th>状态</th><th>订单 / 原因</th><th>日志</th></tr></thead><tbody><tr v-for="item in snapshot.attempts" :key="item.id" :class="{ 'bg-blue-lighten-5': logAttemptId === item.id }"><td>{{ item.id }}</td><td>{{ item.intentId }}</td><td>{{ item.accountId }}</td><td>{{ item.workerId }}</td><td><v-chip size="small">{{ item.state }}</v-chip></td><td>{{ item.orderId || item.reason || '-' }}</td><td><v-btn size="small" variant="tonal" prepend-icon="mdi-text-box-search-outline" :loading="logsLoading && logAttemptId === item.id" @click="loadAttemptLogs(item.id)">查看</v-btn></td></tr></tbody></v-table>
+          <v-table density="compact"><thead><tr><th>Attempt</th><th>Intent</th><th>账号</th><th>Worker</th><th>状态</th><th>订单 / 原因</th><th>操作</th></tr></thead><tbody><tr v-for="item in snapshot.attempts" :key="item.id" :class="{ 'bg-blue-lighten-5': logAttemptId === item.id }"><td>{{ item.id }}</td><td>{{ item.intentId }}</td><td>{{ item.accountId }}</td><td>{{ item.workerId }}</td><td><v-chip size="small">{{ item.state }}</v-chip></td><td>{{ item.orderId || item.reason || '-' }}</td><td class="text-no-wrap"><v-btn v-if="item.state !== 'stopped' && item.state !== 'succeeded' && item.state !== 'failed'" size="small" variant="text" color="error" icon="mdi-stop" @click.stop="stopAttempt(item.id)" /><v-btn size="small" variant="tonal" prepend-icon="mdi-text-box-search-outline" :loading="logsLoading && logAttemptId === item.id" @click="loadAttemptLogs(item.id)">查看</v-btn></td></tr></tbody></v-table>
           <v-card v-if="logAttemptId" class="mt-4" variant="outlined">
             <v-card-title class="d-flex align-center"><v-icon class="mr-2">mdi-console-line</v-icon>Worker 日志 · {{ logAttemptId }}<v-spacer /><v-btn :loading="logsLoading" icon="mdi-refresh" variant="text" @click="loadAttemptLogs(logAttemptId)" /><v-btn icon="mdi-close" variant="text" @click="closeAttemptLogs" /></v-card-title>
             <v-divider />
