@@ -24,6 +24,7 @@ import (
 	"bilibili-ticket-golang/cluster/employer"
 	"bilibili-ticket-golang/cluster/planner"
 	clusterstorage "bilibili-ticket-golang/cluster/storage"
+	clusterworker "bilibili-ticket-golang/cluster/worker"
 	"bilibili-ticket-golang/global"
 	"bilibili-ticket-golang/store/cookiejar"
 )
@@ -788,6 +789,32 @@ func (s *ClusterService) invalidateMacroConfiguration(macroID string) error {
 
 func (s *ClusterService) StartMacro(macroID string) error {
 	return s.planAndStart(context.Background(), macroID, domain.PhasePunctual, true)
+}
+
+func (s *ClusterService) AttemptLogs(attemptID string) ([]clusterworker.LogEntry, error) {
+	var selected *domain.ExecutionAttempt
+	for _, attempt := range s.dispatcher.Attempts() {
+		if attempt.ID == attemptID {
+			copy := attempt
+			selected = &copy
+			break
+		}
+	}
+	if selected == nil {
+		return nil, fmt.Errorf("attempt not found")
+	}
+	workers, err := s.repository.ListWorkers(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	for _, node := range workers {
+		if node.ID == selected.WorkerID {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return s.client.Logs(ctx, node, attemptID)
+		}
+	}
+	return nil, fmt.Errorf("worker %s not found", selected.WorkerID)
 }
 
 func (s *ClusterService) planAndStart(ctx context.Context, macroID string, phase domain.Phase, requireActive bool) error {

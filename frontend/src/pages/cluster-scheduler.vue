@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { clusterCall, type CatalogSKU, type ClusterSnapshot, type ProjectCatalog, type ResourceRole } from '@/composables/clusterTypes'
+import { clusterCall, type CatalogSKU, type ClusterSnapshot, type ProjectCatalog, type ResourceRole, type WorkerLogEntry } from '@/composables/clusterTypes'
 import VueQr from 'vue-qr'
 
 const tab = ref('tasks')
@@ -22,6 +22,9 @@ const selectedSKU = ref<CatalogSKU | null>(null)
 const eventDayConfirmed = ref(false)
 const expandedMacros = ref<string[]>([])
 const taskEditorPanel = ref<number | null>(null)
+const logAttemptId = ref('')
+const attemptLogs = ref<WorkerLogEntry[]>([])
+const logsLoading = ref(false)
 let timer: number | undefined
 let loginTimer: number | undefined
 
@@ -36,7 +39,30 @@ async function refresh() {
     next.attempts ||= []
     snapshot.value = next
     error.value = ''
+    if (logAttemptId.value) await loadAttemptLogs(logAttemptId.value, false)
   } catch (e) { error.value = String(e) }
+}
+
+async function loadAttemptLogs(attemptId: string, showLoading = true) {
+  logAttemptId.value = attemptId
+  if (showLoading) logsLoading.value = true
+  try {
+    attemptLogs.value = await clusterCall<WorkerLogEntry[]>('AttemptLogs', attemptId)
+    error.value = ''
+  } catch (e) {
+    error.value = `读取 Worker 日志失败：${String(e)}`
+  } finally {
+    logsLoading.value = false
+  }
+}
+
+function closeAttemptLogs() {
+  logAttemptId.value = ''
+  attemptLogs.value = []
+}
+
+function logTime(value: string) {
+  return new Date(value).toLocaleTimeString()
 }
 
 async function invoke(method: string, ...args: any[]) {
@@ -278,7 +304,14 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
       </v-window-item>
 
       <v-window-item value="attempts">
-        <v-card-text><v-table density="compact"><thead><tr><th>Attempt</th><th>Intent</th><th>账号</th><th>Worker</th><th>状态</th><th>订单 / 原因</th></tr></thead><tbody><tr v-for="item in snapshot.attempts" :key="item.id"><td>{{ item.id }}</td><td>{{ item.intentId }}</td><td>{{ item.accountId }}</td><td>{{ item.workerId }}</td><td><v-chip size="small">{{ item.state }}</v-chip></td><td>{{ item.orderId || item.reason || '-' }}</td></tr></tbody></v-table></v-card-text>
+        <v-card-text>
+          <v-table density="compact"><thead><tr><th>Attempt</th><th>Intent</th><th>账号</th><th>Worker</th><th>状态</th><th>订单 / 原因</th><th>日志</th></tr></thead><tbody><tr v-for="item in snapshot.attempts" :key="item.id" :class="{ 'bg-blue-lighten-5': logAttemptId === item.id }"><td>{{ item.id }}</td><td>{{ item.intentId }}</td><td>{{ item.accountId }}</td><td>{{ item.workerId }}</td><td><v-chip size="small">{{ item.state }}</v-chip></td><td>{{ item.orderId || item.reason || '-' }}</td><td><v-btn size="small" variant="tonal" prepend-icon="mdi-text-box-search-outline" :loading="logsLoading && logAttemptId === item.id" @click="loadAttemptLogs(item.id)">查看</v-btn></td></tr></tbody></v-table>
+          <v-card v-if="logAttemptId" class="mt-4" variant="outlined">
+            <v-card-title class="d-flex align-center"><v-icon class="mr-2">mdi-console-line</v-icon>Worker 日志 · {{ logAttemptId }}<v-spacer /><v-btn :loading="logsLoading" icon="mdi-refresh" variant="text" @click="loadAttemptLogs(logAttemptId)" /><v-btn icon="mdi-close" variant="text" @click="closeAttemptLogs" /></v-card-title>
+            <v-divider />
+            <v-table density="compact" fixed-header height="420"><thead><tr><th style="width: 105px">时间</th><th style="width: 110px">阶段</th><th style="width: 90px">返回码</th><th>详情</th></tr></thead><tbody><tr v-for="entry in attemptLogs" :key="entry.sequence"><td class="text-no-wrap">{{ logTime(entry.time) }}</td><td><v-chip size="x-small" :color="entry.stage === 'completed' ? 'success' : entry.stage === 'response' && entry.code ? 'warning' : undefined">{{ entry.stage }}</v-chip></td><td>{{ entry.code || '-' }}<v-chip v-if="entry.retryable" class="ml-1" size="x-small">重试</v-chip></td><td class="text-mono text-caption">{{ entry.message }}</td></tr><tr v-if="attemptLogs.length === 0"><td colspan="4" class="text-center text-medium-emphasis pa-6">Worker 尚未返回日志。旧 Worker 或重启前的非成功任务不会保留内存日志。</td></tr></tbody></v-table>
+          </v-card>
+        </v-card-text>
       </v-window-item>
     </v-window>
   </v-card>

@@ -42,6 +42,13 @@ func TestWorkerClientUsesSameProtocolForRemoteWorkers(t *testing.T) {
 			if status.Result.Credentials.Version != 2 {
 				t.Fatalf("credentials missing: %#v", status)
 			}
+			logs, err := client.Logs(context.Background(), node, "a")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(logs) == 0 {
+				t.Fatal("worker logs missing")
+			}
 			return
 		}
 		time.Sleep(time.Millisecond)

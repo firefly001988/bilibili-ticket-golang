@@ -76,6 +76,17 @@ type task struct {
 	result     domain.ExecutionResult
 	leaseUntil time.Time
 	cancel     context.CancelFunc
+	logs       []LogEntry
+	logSeq     int64
+}
+
+type LogEntry struct {
+	Sequence  int64     `json:"sequence"`
+	Time      time.Time `json:"time"`
+	Stage     string    `json:"stage"`
+	Message   string    `json:"message"`
+	Code      int       `json:"code,omitempty"`
+	Retryable bool      `json:"retryable,omitempty"`
 }
 
 type Server struct {
@@ -114,6 +125,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/health", s.health)
 	mux.HandleFunc("POST /v1/tasks", s.create)
 	mux.HandleFunc("GET /v1/tasks/{attemptId}", s.status)
+	mux.HandleFunc("GET /v1/tasks/{attemptId}/logs", s.logs)
 	mux.HandleFunc("POST /v1/tasks/{attemptId}/stop", s.stop)
 	mux.HandleFunc("POST /v1/tasks/{attemptId}/ack", s.ack)
 	return s.authenticate(mux)
@@ -173,8 +185,8 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	s.tasks[spec.AttemptID], s.active = t, spec.AttemptID
 	response := s.snapshot(t)
 	s.mu.Unlock()
+	s.logTask(t, "accepted", "task accepted for intent "+spec.IntentID, 0, false)
 	go s.run(ctx, t)
-	_ = WriteRedactedLog(s.config.DataDir, fmt.Sprintf("accepted attempt=%s intent=%s", spec.AttemptID, spec.IntentID))
 	writeJSON(w, http.StatusAccepted, response)
 }
 
@@ -189,7 +201,7 @@ func (s *Server) run(ctx context.Context, t *task) {
 		t.state = domain.AttemptRunning
 	}
 	s.mu.Unlock()
-	_ = WriteRedactedLog(s.config.DataDir, fmt.Sprintf("started attempt=%s mode=%s deadline=%s", t.spec.AttemptID, t.spec.StartMode, t.spec.Deadline.Format(time.RFC3339)))
+	s.logTask(t, "started", fmt.Sprintf("mode=%s deadline=%s", t.spec.StartMode, t.spec.Deadline.Format(time.RFC3339)), 0, false)
 	var executionClock executor.Clock
 	if s.config.CalibrateClock {
 		if offset, err := biliclock.GetBilibiliClockOffset(); err == nil {
@@ -198,7 +210,9 @@ func (s *Server) run(ctx context.Context, t *task) {
 			_ = WriteRedactedLog(s.config.DataDir, "clock calibration failed: "+err.Error())
 		}
 	}
-	result := (executor.Engine{Backend: backend, Clock: executionClock}).Run(ctx, t.spec)
+	result := (executor.Engine{Backend: backend, Clock: executionClock, Observe: func(event executor.Event) {
+		s.logTask(t, event.Stage, event.Message, event.Code, event.Retryable)
+	}}).Run(ctx, t.spec)
 	if result.Success {
 		if err := s.store.Append(result); err != nil {
 			result.Success, result.State, result.Reason, result.Message = false, domain.AttemptFailed, domain.FailureInternal, "persist success: "+err.Error()
@@ -209,12 +223,16 @@ func (s *Server) run(ctx context.Context, t *task) {
 
 func (s *Server) complete(t *task, result domain.ExecutionResult) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	t.result, t.state = result, result.State
 	if s.active == t.spec.AttemptID {
 		s.active = ""
 	}
-	_ = WriteRedactedLog(s.config.DataDir, fmt.Sprintf("completed attempt=%s state=%s reason=%s order=%s", t.spec.AttemptID, result.State, result.Reason, result.OrderID))
+	s.mu.Unlock()
+	message := fmt.Sprintf("state=%s reason=%s order=%s", result.State, result.Reason, result.OrderID)
+	if result.Message != "" {
+		message += " message=" + result.Message
+	}
+	s.logTask(t, "completed", message, 0, false)
 }
 
 type Status struct {
@@ -243,6 +261,33 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	response := s.snapshot(t)
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	t, ok := s.tasks[r.PathValue("attemptId")]
+	if !ok {
+		s.mu.Unlock()
+		writeError(w, http.StatusNotFound, "attempt not found")
+		return
+	}
+	entries := append([]LogEntry(nil), t.logs...)
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, entries)
+}
+
+func (s *Server) logTask(t *task, stage, message string, code int, retryable bool) {
+	message = redactLogLine(message)
+	entry := LogEntry{Time: s.now().UTC(), Stage: stage, Message: message, Code: code, Retryable: retryable}
+	s.mu.Lock()
+	t.logSeq++
+	entry.Sequence = t.logSeq
+	t.logs = append(t.logs, entry)
+	if len(t.logs) > 500 {
+		t.logs = append([]LogEntry(nil), t.logs[len(t.logs)-500:]...)
+	}
+	s.mu.Unlock()
+	_ = WriteRedactedLog(s.config.DataDir, fmt.Sprintf("%s attempt=%s stage=%s code=%d retryable=%t message=%s", entry.Time.Format(time.RFC3339Nano), t.spec.AttemptID, stage, code, retryable, message))
 }
 
 func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
@@ -306,11 +351,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func WriteRedactedLog(dataDir, line string) error {
-	for _, marker := range []string{"SESSDATA", "bili_jct", "refresh_token", "refreshToken"} {
-		if i := strings.Index(line, marker); i >= 0 {
-			line = line[:i] + marker + "=[REDACTED]"
-		}
-	}
+	line = redactLogLine(line)
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return err
 	}
@@ -332,4 +373,13 @@ func WriteRedactedLog(dataDir, line string) error {
 	defer f.Close()
 	_, err = fmt.Fprintln(f, line)
 	return err
+}
+
+func redactLogLine(line string) string {
+	for _, marker := range []string{"SESSDATA", "bili_jct", "refresh_token", "refreshToken"} {
+		if i := strings.Index(line, marker); i >= 0 {
+			line = line[:i] + marker + "=[REDACTED]"
+		}
+	}
+	return line
 }

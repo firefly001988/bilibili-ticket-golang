@@ -65,6 +65,25 @@ func (c *WorkerClient) Status(ctx context.Context, node domain.WorkerNode, attem
 	return dispatcher.WorkerStatus{State: status.State, Result: status.Result}, nil
 }
 
+func (c *WorkerClient) Logs(ctx context.Context, node domain.WorkerNode, attemptID string) ([]worker.LogEntry, error) {
+	response, err := c.do(ctx, node, http.MethodGet, "/v1/tasks/"+attemptID+"/logs", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, responseError(response)
+	}
+	var entries []worker.LogEntry
+	if err := json.NewDecoder(response.Body).Decode(&entries); err != nil {
+		return nil, err
+	}
+	if entries == nil {
+		entries = make([]worker.LogEntry, 0)
+	}
+	return entries, nil
+}
+
 func (c *WorkerClient) Stop(ctx context.Context, node domain.WorkerNode, attemptID string) error {
 	response, err := c.do(ctx, node, http.MethodPost, "/v1/tasks/"+attemptID+"/stop", nil)
 	if err != nil {

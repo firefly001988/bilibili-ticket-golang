@@ -27,9 +27,19 @@ func validSpec() domain.ExecutionSpec {
 
 func TestUnknownErrorRetriesAndReturnsCredentials(t *testing.T) {
 	b := &fakeBackend{outcomes: []Outcome{{Code: 7654}, {Code: 0, OrderID: "order"}}, creds: domain.Credentials{Version: 2}}
-	r := (Engine{Backend: b}).Run(context.Background(), validSpec())
+	var events []Event
+	r := (Engine{Backend: b, Observe: func(event Event) { events = append(events, event) }}).Run(context.Background(), validSpec())
 	if !r.Success || b.calls != 2 || r.Credentials.Version != 2 {
 		t.Fatalf("unexpected result: %#v calls=%d", r, b.calls)
+	}
+	foundRetry := false
+	for _, event := range events {
+		if event.Stage == "response" && event.Code == 7654 && event.Retryable {
+			foundRetry = true
+		}
+	}
+	if !foundRetry {
+		t.Fatalf("retry outcome missing from events: %#v", events)
 	}
 }
 

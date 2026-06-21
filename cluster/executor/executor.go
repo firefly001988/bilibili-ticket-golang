@@ -81,6 +81,15 @@ type Engine struct {
 	Backend    Backend
 	Classifier Classifier
 	Clock      Clock
+	Observe    func(Event)
+}
+
+type Event struct {
+	Time      time.Time
+	Stage     string
+	Message   string
+	Code      int
+	Retryable bool
 }
 
 func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.ExecutionResult {
@@ -92,6 +101,11 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 	}
 	if e.Classifier == nil {
 		e.Classifier = DefaultClassifier{}
+	}
+	emit := func(stage, message string, code int, retryable bool) {
+		if e.Observe != nil {
+			e.Observe(Event{Time: now(), Stage: stage, Message: message, Code: code, Retryable: retryable})
+		}
 	}
 	result := domain.ExecutionResult{AttemptID: spec.AttemptID, IntentID: spec.IntentID, SpecHash: spec.Hash(), State: domain.AttemptRunning, StartedAt: now()}
 	finish := func(state domain.AttemptState, reason domain.FailureReason, message string, retryable bool) domain.ExecutionResult {
@@ -112,6 +126,7 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 		return finish(domain.AttemptFailed, domain.FailureDeadline, "deadline elapsed", false)
 	}
 	if spec.StartMode == domain.StartScheduled && spec.StartAt.After(now()) {
+		emit("scheduled", "waiting until scheduled start", 0, false)
 		if err := e.Clock.Sleep(ctx, spec.StartAt.Sub(now())); err != nil {
 			return finish(domain.AttemptStopped, domain.FailureStopped, err.Error(), false)
 		}
@@ -127,8 +142,20 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 		if !spec.Deadline.After(now()) {
 			return finish(domain.AttemptFailed, domain.FailureDeadline, "deadline elapsed", false)
 		}
+		emit("request", "starting purchase API transaction", 0, false)
 		outcome := e.Backend.Attempt(ctx, spec)
 		classification := e.Classifier.Classify(outcome)
+		message := outcome.Message
+		if outcome.Err != nil {
+			if message != "" {
+				message += ": "
+			}
+			message += outcome.Err.Error()
+		}
+		if message == "" {
+			message = "purchase API returned no order"
+		}
+		emit("response", message, outcome.Code, classification.Retryable)
 		if outcome.OrderID != "" && classification.Reason == domain.FailureNone && !classification.Retryable {
 			result.Success, result.OrderID = true, outcome.OrderID
 			return finish(domain.AttemptSucceeded, domain.FailureNone, outcome.Message, false)
@@ -147,6 +174,7 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 		if remaining := spec.Deadline.Sub(now()); wait > remaining {
 			wait = remaining
 		}
+		emit("retry", "retrying after "+wait.String(), outcome.Code, true)
 		if err := e.Clock.Sleep(ctx, wait); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 			return finish(domain.AttemptStopped, domain.FailureStopped, err.Error(), false)
 		}

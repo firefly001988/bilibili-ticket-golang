@@ -99,6 +99,23 @@ func TestSuccessPersistsAndSurvivesRestart(t *testing.T) {
 	if !succeeded {
 		t.Fatal("attempt did not succeed")
 	}
+	logsResponse := request(t, s.Handler(), http.MethodGet, "/v1/tasks/a/logs", "", "secret")
+	if logsResponse.Code != http.StatusOK {
+		t.Fatalf("logs=%d", logsResponse.Code)
+	}
+	var entries []LogEntry
+	if err := json.Unmarshal(logsResponse.Body.Bytes(), &entries); err != nil {
+		t.Fatal(err)
+	}
+	foundResponse := false
+	for _, entry := range entries {
+		if entry.Stage == "response" {
+			foundResponse = true
+		}
+	}
+	if !foundResponse {
+		t.Fatalf("execution response missing from logs: %#v", entries)
+	}
 	restarted, err := NewServer(cfg, func(domain.ExecutionSpec) (executor.Backend, error) { return backend{}, nil })
 	if err != nil {
 		t.Fatal(err)
@@ -111,6 +128,23 @@ func TestSuccessPersistsAndSurvivesRestart(t *testing.T) {
 	changedJSON, _ := json.Marshal(changed)
 	if got := request(t, restarted.Handler(), http.MethodPost, "/v1/tasks", string(changedJSON), "secret").Code; got != http.StatusConflict {
 		t.Fatalf("persisted spec conflict=%d", got)
+	}
+}
+
+func TestTaskLogsAreBoundedAndRedacted(t *testing.T) {
+	s, err := NewServer(Config{BearerKey: "secret", DataDir: t.TempDir(), PollInterval: 10 * time.Second}, func(domain.ExecutionSpec) (executor.Backend, error) { return backend{}, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := &task{spec: workerSpec("a")}
+	for i := 0; i < 510; i++ {
+		s.logTask(task, "response", "SESSDATA=must-not-leak", 1, true)
+	}
+	if len(task.logs) != 500 || task.logs[0].Sequence != 11 {
+		t.Fatalf("unexpected bounded log window: len=%d first=%d", len(task.logs), task.logs[0].Sequence)
+	}
+	if strings.Contains(task.logs[0].Message, "must-not-leak") {
+		t.Fatalf("credential leaked in API log: %#v", task.logs[0])
 	}
 }
 

@@ -63,6 +63,15 @@ export interface AttemptSummary {
   reason?: string
 }
 
+export interface WorkerLogEntry {
+  sequence: number
+  time: string
+  stage: string
+  message: string
+  code?: number
+  retryable?: boolean
+}
+
 export interface LogicalBuyer {
   logicalId: string
   name: string
