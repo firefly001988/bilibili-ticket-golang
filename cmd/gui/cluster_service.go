@@ -719,6 +719,104 @@ func (s *ClusterService) AddWorker(document string) error {
 	return s.refreshResources(ctx)
 }
 
+// UpdateWorker updates the connection settings (address, TLS, role) for an
+// existing worker. The worker must not have active attempts. Accepts the
+// same JSON document shape as AddWorker.
+func (s *ClusterService) UpdateWorker(document string) error {
+	var input struct {
+		ID            string              `json:"id"`
+		Name          string              `json:"name"`
+		Address       string              `json:"address"`
+		CACert        string              `json:"caCert"`
+		ClientCert    string              `json:"clientCert"`
+		ClientKey     string              `json:"clientKey"`
+		TLSServerName string              `json:"tlsServerName"`
+		Role          domain.ResourceRole `json:"role"`
+	}
+	if err := json.Unmarshal([]byte(document), &input); err != nil {
+		return err
+	}
+	if input.ID == "" || input.Address == "" || input.ClientKey == "" {
+		return fmt.Errorf("id, address and clientKey are required")
+	}
+	if input.ID == "local" {
+		return fmt.Errorf("the automatically managed local worker cannot be edited")
+	}
+	if input.Role == "" {
+		input.Role = domain.RolePrimary
+	}
+	// Block if the worker is executing an active attempt.
+	for _, attempt := range s.dispatcher.Attempts() {
+		if attempt.WorkerID == input.ID && !attempt.State.Terminal() {
+			return fmt.Errorf("worker is used by active attempt %s", attempt.ID)
+		}
+	}
+	node := domain.WorkerNode{
+		ID:            input.ID,
+		Name:          input.Name,
+		Address:       input.Address,
+		Role:          input.Role,
+		Enabled:       true,
+		TLSServerName: input.TLSServerName,
+	}
+	tlsConfig := domain.WorkerTLSConfig{
+		CACertPEM:     []byte(input.CACert),
+		ClientCertPEM: []byte(input.ClientCert),
+		ClientKeyPEM:  []byte(input.ClientKey),
+		ServerName:    input.TLSServerName,
+	}
+	// Close existing connection before applying new TLS config.
+	s.client.RemoveTLS(input.ID)
+	if err := s.client.SetTLSFromConfig(node.ID, tlsConfig); err != nil {
+		return fmt.Errorf("invalid TLS config: %w", err)
+	}
+	ctx := context.Background()
+	if err := s.repository.PutWorker(ctx, node); err != nil {
+		return err
+	}
+	if err := s.repository.PutWorkerTLS(ctx, node.ID, tlsConfig); err != nil {
+		return err
+	}
+	return s.refreshResources(ctx)
+}
+
+// WorkerConfigResponse returns the full configuration for a worker, suitable
+// for pre-filling an edit form.
+type WorkerConfigResponse struct {
+	ID            string              `json:"id"`
+	Name          string              `json:"name"`
+	Address       string              `json:"address"`
+	Role          domain.ResourceRole `json:"role"`
+	CACert        string              `json:"caCert"`
+	ClientCert    string              `json:"clientCert"`
+	ClientKey     string              `json:"clientKey"`
+	TLSServerName string              `json:"tlsServerName"`
+}
+
+// GetWorkerConfig reads the full connection settings for a worker (node info
+// plus TLS PEM material) so that the frontend can pre-fill the edit form.
+func (s *ClusterService) GetWorkerConfig(workerID string) (WorkerConfigResponse, error) {
+	ctx := context.Background()
+	node, err := s.repository.Worker(ctx, workerID)
+	if err != nil {
+		return WorkerConfigResponse{}, fmt.Errorf("worker %s not found: %w", workerID, err)
+	}
+	tlsConfig, err := s.repository.WorkerTLS(ctx, workerID)
+	if err != nil {
+		return WorkerConfigResponse{}, fmt.Errorf("TLS config for worker %s not found: %w", workerID, err)
+	}
+	return WorkerConfigResponse{
+		ID:            node.ID,
+		Name:          node.Name,
+		Address:       node.Address,
+		Role:          node.Role,
+		CACert:        string(tlsConfig.CACertPEM),
+		ClientCert:    string(tlsConfig.ClientCertPEM),
+		ClientKey:     string(tlsConfig.ClientKeyPEM),
+		TLSServerName: node.TLSServerName,
+	}, nil
+}
+
 func (s *ClusterService) DeleteWorker(workerID string) error {
 	if workerID == "local" {
 		return fmt.Errorf("the automatically managed local worker cannot be deleted")
@@ -744,9 +842,10 @@ type GenerateRemoteWorkerConfigResponse struct {
 
 // GenerateRemoteWorkerConfig creates TLS material and a complete configuration
 // for a remote worker, then encodes it as a Base4096 string for copy-paste
-// distribution.  The employer-side credentials are automatically stored in
-// the repository and registered with the WorkerClient so that the employer
-// can establish mTLS connections to the worker once it comes online.
+// distribution.  Only the employer-side TLS credentials are stored so that
+// mTLS works once the worker comes online; the worker is **not** added to
+// the repository list (the user must add it manually via AddWorker after
+// the worker is deployed).
 //
 // Parameters:
 //   - workerID: unique identifier for the worker (e.g. "home-server")
@@ -761,7 +860,6 @@ func (s *ClusterService) GenerateRemoteWorkerConfig(workerID, listen, hosts stri
 		listen = "0.0.0.0:18080"
 	}
 	hostList := strings.Split(hosts, ",")
-	// Trim whitespace and filter empty entries.
 	filtered := hostList[:0]
 	for _, h := range hostList {
 		h = strings.TrimSpace(h)
@@ -774,13 +872,35 @@ func (s *ClusterService) GenerateRemoteWorkerConfig(workerID, listen, hosts stri
 		hostList = []string{"localhost", "127.0.0.1"}
 	}
 
-	rc, bundle, err := clusterworker.GenerateRemoteWorkerConfig(hostList, workerID, clusterworker.RemoteWorkerOptions{
-		Listen:          listen,
-		WorkerID:        workerID,
-		DataDir:         "data/worker",
-		PollIntervalSec: 15,
-		CalibrateClock:  true,
-	})
+	// Load the employer's persistent CA and client certificate from disk.
+	// These are auto-generated by LoadOrGenerateLocalTLS on startup and
+	// stored in data/local-worker/.  Reusing them gives the employer a
+	// single identity across all remote workers.
+	employerTLSBundle, _, tlsLoadErr := clusterworker.LoadOrGenerateLocalTLS("data/local-worker")
+	if tlsLoadErr != nil {
+		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("load employer TLS: %w", tlsLoadErr)
+	}
+	caCertPEM := employerTLSBundle.CAPEM
+	clientCertPEM := employerTLSBundle.CertPEM
+	clientKeyPEM := employerTLSBundle.KeyPEM
+
+	// Load the CA private key (needed for signing server certs).
+	caKeyPEM, caKeyErr := os.ReadFile("data/local-worker/ca-key.pem")
+	if caKeyErr != nil {
+		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("read employer CA key: %w", caKeyErr)
+	}
+
+	rc, bundle, err := clusterworker.GenerateRemoteWorkerConfig(
+		caCertPEM, caKeyPEM, clientCertPEM, clientKeyPEM,
+		hostList, workerID,
+		clusterworker.RemoteWorkerOptions{
+			Listen:          listen,
+			WorkerID:        workerID,
+			DataDir:         "data/worker",
+			PollIntervalSec: 15,
+			CalibrateClock:  true,
+		},
+	)
 	if err != nil {
 		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("generate remote worker config: %w", err)
 	}
@@ -790,38 +910,88 @@ func (s *ClusterService) GenerateRemoteWorkerConfig(workerID, listen, hosts stri
 		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("encode config: %w", err)
 	}
 
-	// Register the worker node and its employer-side TLS material.
-	node := domain.WorkerNode{
-		ID:            workerID,
-		Name:          workerID,
-		Address:       listen,
-		Role:          domain.RolePrimary,
-		Enabled:       true,
-		TLSServerName: bundle.ServerName,
-	}
+	// Register the employer-side TLS credentials both in-memory and in the
+	// repository so the worker can be added later via AddWorkerFromEncodedConfig.
 	tlsConfig := domain.WorkerTLSConfig{
 		CACertPEM:     bundle.CAPEM,
 		ClientCertPEM: bundle.CertPEM,
 		ClientKeyPEM:  bundle.KeyPEM,
 		ServerName:    bundle.ServerName,
 	}
+	// Keep TLS in memory only — the worker row does not exist yet in the
+	// workers table, so PutWorkerTLS would fail with an FK constraint.
+	// Persistence happens later when the worker is actually added via
+	// AddWorker or AddWorkerFromEncodedConfig.
 	if err := s.client.SetTLSFromConfig(workerID, tlsConfig); err != nil {
 		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("set worker TLS: %w", err)
 	}
-	ctx := context.Background()
-	if err := s.repository.PutWorker(ctx, node); err != nil {
-		return GenerateRemoteWorkerConfigResponse{}, err
-	}
-	if err := s.repository.PutWorkerTLS(ctx, workerID, tlsConfig); err != nil {
-		return GenerateRemoteWorkerConfigResponse{}, err
-	}
-	_ = s.refreshResources(ctx)
 
 	return GenerateRemoteWorkerConfigResponse{
 		EncodedConfig: encoded,
 		WorkerID:      workerID,
 		Listen:        listen,
 	}, nil
+}
+
+// AddWorkerFromEncodedConfig decodes a Base4096-encoded worker configuration
+// and adds the worker to the repository.  The encoded string carries both
+// the worker-side and employer-side TLS material, so no prior TLS setup
+// is required — it is extracted directly from the config.
+func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string) error {
+	rc, err := clusterworker.DecodeRemoteWorkerConfig(encodedConfig)
+	if err != nil {
+		return fmt.Errorf("decode worker config: %w", err)
+	}
+	if rc.WorkerID == "" || rc.Listen == "" {
+		return fmt.Errorf("worker config missing required fields (workerId, listen)")
+	}
+	if rc.WorkerID == "local" {
+		return fmt.Errorf("cannot import the local worker")
+	}
+	ctx := context.Background()
+
+	// Build TLS config.  Prefer the employer fields embedded in the encoded
+	// string (populated by GenerateRemoteWorkerConfig).  Fall back to the
+	// repository for configs generated before employer fields were added.
+	var tlsConfig domain.WorkerTLSConfig
+	if rc.EmployerCertPEM != "" && rc.EmployerKeyPEM != "" {
+		tlsConfig = domain.WorkerTLSConfig{
+			CACertPEM:     []byte(rc.CACertPEM),
+			ClientCertPEM: []byte(rc.EmployerCertPEM),
+			ClientKeyPEM:  []byte(rc.EmployerKeyPEM),
+		}
+	} else {
+		stored, tlsErr := s.repository.WorkerTLS(ctx, rc.WorkerID)
+		if tlsErr != nil {
+			return fmt.Errorf("no TLS credentials found for worker %q — the encoded config is too old (missing employer fields); run 'Generate Remote Worker Config' first to create a new config, or add the worker manually with CA/client cert/key", rc.WorkerID)
+		}
+		tlsConfig = stored
+	}
+
+	// Set TLS server name from the worker node or derive from config.
+	if tlsConfig.ServerName == "" {
+		// Use the worker ID as a fallback SNI hostname.
+		tlsConfig.ServerName = rc.WorkerID
+	}
+
+	if err := s.client.SetTLSFromConfig(rc.WorkerID, tlsConfig); err != nil {
+		return fmt.Errorf("apply TLS config: %w", err)
+	}
+
+	node := domain.WorkerNode{
+		ID:            rc.WorkerID,
+		Address:       rc.Listen,
+		Role:          domain.RolePrimary,
+		Enabled:       true,
+		TLSServerName: tlsConfig.ServerName,
+	}
+	if err := s.repository.PutWorker(ctx, node); err != nil {
+		return err
+	}
+	if err := s.repository.PutWorkerTLS(ctx, rc.WorkerID, tlsConfig); err != nil {
+		return err
+	}
+	return s.refreshResources(ctx)
 }
 
 func (s *ClusterService) SaveMacro(document string) error {

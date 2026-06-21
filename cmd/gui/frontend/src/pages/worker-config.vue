@@ -13,6 +13,7 @@ const hosts = ref('')
 const loading = ref(false)
 const result = ref<GenerateRemoteWorkerConfigResponse | null>(null)
 const copied = ref(false)
+const importing = ref(false)
 
 async function generate() {
   if (!workerId.value.trim()) {
@@ -34,6 +35,19 @@ async function generate() {
     messages.add({ text: String(e), color: 'error', timeout: 5000 })
   } finally {
     loading.value = false
+  }
+}
+
+async function importWorker() {
+  if (!result.value?.encodedConfig) return
+  importing.value = true
+  try {
+    await clusterCall('AddWorkerFromEncodedConfig', result.value.encodedConfig)
+    messages.add({ text: t('workerConfig.imported'), color: 'success', timeout: 3000 })
+  } catch (e: any) {
+    messages.add({ text: String(e), color: 'error', timeout: 5000 })
+  } finally {
+    importing.value = false
   }
 }
 
@@ -139,6 +153,17 @@ async function copyConfig() {
           @click="copyConfig"
         >
           {{ copied ? t('workerConfig.copied') : t('workerConfig.copy') }}
+        </v-btn>
+        <v-spacer />
+        <v-btn
+          prepend-icon="mdi-server-plus"
+          color="primary"
+          variant="tonal"
+          size="small"
+          :loading="importing"
+          @click="importWorker"
+        >
+          {{ t('workerConfig.importToEmployer') }}
         </v-btn>
       </v-card-actions>
     </v-card>

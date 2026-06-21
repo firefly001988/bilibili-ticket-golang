@@ -294,40 +294,21 @@ type RemoteWorkerOptions struct {
 }
 
 // GenerateRemoteWorkerConfig creates a complete TLS setup for a remote worker
-// and the corresponding employer-side credentials.
+// by reusing the employer's existing CA and client certificate (typically
+// stored in the employer's data directory).  Only the worker's server
+// certificate is newly generated and signed by the employer's CA.
 //
-// It generates:
-//   - A self-signed CA
-//   - A server certificate for the worker (signed by the CA, valid for the
-//     given hosts)
-//   - A client certificate for the employer (signed by the same CA)
+// There is exactly ONE CA — the employer's.  Every remote worker's server
+// cert is signed by that same CA, and the employer uses its single client
+// cert to authenticate to all workers.
 //
-// Returns:
-//   - RemoteWorkerConfig — the full worker configuration including PEM, ready
-//     to be Base4096-encoded and distributed to the worker
-//   - TLSBundle — the employer-side credentials (CA + client cert + key) that
-//     the employer must keep to establish mTLS connections
-func GenerateRemoteWorkerConfig(hosts []string, clientCommonName string, opts RemoteWorkerOptions) (*RemoteWorkerConfig, *TLSBundle, error) {
-	// Generate CA
-	caCertPEM, caKeyPEM, err := GenerateCA()
-	if err != nil {
-		return nil, nil, fmt.Errorf("generate CA: %w", err)
-	}
-
-	// Generate server certificate for the worker
+// caCertPEM / caKeyPEM — the employer's existing CA
+// clientCertPEM / clientKeyPEM — the employer's existing client certificate
+func GenerateRemoteWorkerConfig(caCertPEM, caKeyPEM, clientCertPEM, clientKeyPEM []byte, hosts []string, clientCommonName string, opts RemoteWorkerOptions) (*RemoteWorkerConfig, *TLSBundle, error) {
+	// Generate server certificate for the worker (signed by existing CA)
 	serverCertPEM, serverKeyPEM, err := GenerateServerCert(caCertPEM, caKeyPEM, hosts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate server cert: %w", err)
-	}
-
-	// Generate client certificate for the employer
-	cn := clientCommonName
-	if cn == "" {
-		cn = "employer-client"
-	}
-	clientCertPEM, clientKeyPEM, err := GenerateClientCert(caCertPEM, caKeyPEM, cn)
-	if err != nil {
-		return nil, nil, fmt.Errorf("generate client cert: %w", err)
 	}
 
 	serverName := "worker"
@@ -348,6 +329,8 @@ func GenerateRemoteWorkerConfig(hosts []string, clientCommonName string, opts Re
 		CACertPEM:        string(caCertPEM),
 		ServerCertPEM:    string(serverCertPEM),
 		ServerKeyPEM:     string(serverKeyPEM),
+		EmployerCertPEM:  string(clientCertPEM),
+		EmployerKeyPEM:   string(clientKeyPEM),
 	}
 
 	bundle := &TLSBundle{

@@ -1,4 +1,40 @@
 {
+    "$vuetify": {
+        "badge": "徽章",
+        "close": "关闭",
+        "dataFooter": {
+            "itemsPerPageText": "每页行数",
+            "pageText": "{0}-{1} 共 {2}",
+            "itemsPerPageAll": "全部",
+            "firstPage": "首页",
+            "prevPage": "上一页",
+            "nextPage": "下一页",
+            "lastPage": "末页"
+        },
+        "dataIterator": {
+            "pageText": "{0}-{1} 共 {2}",
+            "noResultsText": "无匹配记录",
+            "loadingText": "加载中..."
+        },
+        "dataTable": {
+            "itemsPerPageText": "每页行数",
+            "pageText": "{0}-{1} 共 {2}",
+            "noDataText": "暂无数据",
+            "noResultsText": "无匹配记录"
+        },
+        "datePicker": {
+            "ok": "确定",
+            "cancel": "取消",
+            "title": "选择日期",
+            "itemsSelected": "已选择 {0}"
+        },
+        "fileInput": {
+            "counter": "{0} 个文件",
+            "counterSize": "{0} 个文件 (共 {1})"
+        },
+        "noDataText": "暂无数据",
+        "noResultsText": "无匹配结果"
+    },
     "common": {
         "ok": "确定",
         "cancel": "取消",
@@ -52,7 +88,9 @@
         "copied": "已复制",
         "usage": "将以下字符串发送给 Worker 操作者，在 Worker 机器上运行：",
         "usageCommand": "ticket-worker import \"<粘贴字符串>\"",
-        "notice": "注意：雇主端已自动保存连接凭证。Worker 导入后即可通过 mTLS 安全通信。"
+        "notice": "注意：雇主端已自动保存连接凭证。Worker 导入后即可通过 mTLS 安全通信。",
+        "importToEmployer": "导入雇主端",
+        "imported": "Worker 已导入雇主端列表"
     },
     "verified": {
         "title": "验证声明",

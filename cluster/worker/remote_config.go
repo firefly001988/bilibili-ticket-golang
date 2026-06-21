@@ -24,10 +24,18 @@ type RemoteWorkerConfig struct {
 	CalibrateClock   bool   `json:"calibrateClock,omitempty"`
 
 	// TLS material — these are the PEM-encoded certificates and keys
-	// that the worker needs to serve gRPC with mTLS.
+	// needed by both the worker (server side) and the employer (client side)
+	// to establish mTLS.
+	//
+	// Worker side:
 	CACertPEM     string `json:"caCertPEM"`
 	ServerCertPEM string `json:"serverCertPEM"`
 	ServerKeyPEM  string `json:"serverKeyPEM"`
+
+	// Employer side — allows the employer to connect without having
+	// previously generated or stored the client certificate.
+	EmployerCertPEM string `json:"employerCertPEM,omitempty"`
+	EmployerKeyPEM  string `json:"employerKeyPEM,omitempty"`
 }
 
 // ToWorkerConfig converts the remote configuration to a standard worker.Config.

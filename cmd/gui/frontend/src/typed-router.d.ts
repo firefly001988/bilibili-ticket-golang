@@ -51,9 +51,37 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/cluster-accounts': RouteRecordInfo<
+      '/cluster-accounts',
+      '/cluster-accounts',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/cluster-attempts': RouteRecordInfo<
+      '/cluster-attempts',
+      '/cluster-attempts',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/cluster-scheduler': RouteRecordInfo<
       '/cluster-scheduler',
       '/cluster-scheduler',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/cluster-tasks': RouteRecordInfo<
+      '/cluster-tasks',
+      '/cluster-tasks',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/cluster-workers': RouteRecordInfo<
+      '/cluster-workers',
+      '/cluster-workers',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -152,9 +180,33 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
+    'src/pages/cluster-accounts.vue': {
+      routes:
+        | '/cluster-accounts'
+      views:
+        | never
+    }
+    'src/pages/cluster-attempts.vue': {
+      routes:
+        | '/cluster-attempts'
+      views:
+        | never
+    }
     'src/pages/cluster-scheduler.vue': {
       routes:
         | '/cluster-scheduler'
+      views:
+        | never
+    }
+    'src/pages/cluster-tasks.vue': {
+      routes:
+        | '/cluster-tasks'
+      views:
+        | never
+    }
+    'src/pages/cluster-workers.vue': {
+      routes:
+        | '/cluster-workers'
       views:
         | never
     }

@@ -244,6 +244,16 @@ func (r *Repository) DeleteWorker(ctx context.Context, id string) error {
 	return tx.Commit()
 }
 
+func (r *Repository) Worker(ctx context.Context, id string) (domain.WorkerNode, error) {
+	var b []byte
+	if err := r.db.QueryRowContext(ctx, `SELECT payload FROM workers WHERE id=?`, id).Scan(&b); err != nil {
+		return domain.WorkerNode{}, err
+	}
+	var node domain.WorkerNode
+	err := json.Unmarshal(b, &node)
+	return node, err
+}
+
 func (r *Repository) PutWorkerTLS(ctx context.Context, workerID string, tls domain.WorkerTLSConfig) error {
 	b, err := marshal(tls)
 	if err != nil {

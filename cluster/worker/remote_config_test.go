@@ -5,8 +5,19 @@ import (
 )
 
 func TestRemoteWorkerConfigRoundTrip(t *testing.T) {
-	// Generate a real config using the TLS generation functions.
+	// Generate a one-time CA + client cert to act as the "employer".
+	caCertPEM, caKeyPEM, err := GenerateCA()
+	if err != nil {
+		t.Fatalf("GenerateCA: %v", err)
+	}
+	clientCertPEM, clientKeyPEM, err := GenerateClientCert(caCertPEM, caKeyPEM, "test-employer")
+	if err != nil {
+		t.Fatalf("GenerateClientCert: %v", err)
+	}
+
+	// Generate a remote worker config using the employer's CA.
 	rc, _, err := GenerateRemoteWorkerConfig(
+		caCertPEM, caKeyPEM, clientCertPEM, clientKeyPEM,
 		[]string{"test-worker.local", "192.168.1.100"},
 		"test-employer",
 		RemoteWorkerOptions{

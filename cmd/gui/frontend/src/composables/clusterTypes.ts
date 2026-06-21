@@ -108,6 +108,17 @@ export interface GenerateRemoteWorkerConfigResponse {
   listen: string
 }
 
+export interface WorkerConfigResponse {
+  id: string
+  name: string
+  address: string
+  role: ResourceRole
+  caCert: string
+  clientCert: string
+  clientKey: string
+  tlsServerName: string
+}
+
 export interface ClusterSnapshot {
   taskGroups: Array<{ id: string; name: string; createdAt: string }>
   accounts: AccountSummary[]
