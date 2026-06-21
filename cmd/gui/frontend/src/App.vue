@@ -94,31 +94,18 @@ onMounted(async () => {
           {{ t('nav.uncategorized') }}
         </v-list-subheader>
         <v-list-item :title="t('nav.home')" value="home" prepend-icon="mdi-home" @click="router.push('/')" />
-        <v-list-item :title="t('nav.account')" value="account" :class="{
-          'text-red': !auth.isLogin && calculatedPath !== 'account',
-          'text-red-darken-2': !auth.isLogin && calculatedPath === 'account',
-        }" @click="router.push('/account')">
-          <template #prepend>
-            <v-icon v-if="auth.isLogin">mdi-account-check</v-icon>
-            <v-icon v-else>mdi-account-alert</v-icon>
-          </template>
-        </v-list-item>
         <v-divider class="mt-1" />
         <v-list-subheader>
           {{ t('nav.ticketArea') }}
         </v-list-subheader>
-        <v-list-item :title="t('nav.overview')" value="ticket-overview" :disabled="!auth.isLogin"
-          @click="router.push('/ticket-overview')" prepend-icon="mdi-eye" />
-        <v-list-item :title="t('nav.projectLookup')" value="ticket-project" :disabled="!auth.isLogin"
-          @click="router.push('/ticket-project')" prepend-icon="mdi-magnify" />
         <v-list-item :title="t('nav.bwsReservation')" value="bws-reservation" :disabled="!auth.isLogin || !bwsAvailable"
           @click="router.push('/bws-reservation')" prepend-icon="mdi-ticket-confirmation">
           <v-tooltip v-if="auth.isLogin && !bwsAvailable" activator="parent" location="right">
             {{ bwsTooltip }}
           </v-tooltip>
         </v-list-item>
-        <v-list-item :title="t('nav.scheduler')" value="scheduler" :disabled="!auth.isLogin"
-          @click="router.push('/scheduler')" prepend-icon="mdi-calendar-clock" />
+        <v-list-item :title="t('nav.scheduler')" value="scheduler" @click="router.push('/scheduler')"
+          prepend-icon="mdi-calendar-clock" />
         <v-divider class="mt-1" />
         <v-list-subheader>
           {{ t('nav.pluginArea') }}
