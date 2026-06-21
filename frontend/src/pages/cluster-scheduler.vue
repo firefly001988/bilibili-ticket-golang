@@ -13,7 +13,7 @@ const accountJSON = ref('')
 const worker = ref({ id: '', name: '', baseUrl: 'http://127.0.0.1:18080', key: '', role: 'primary' as ResourceRole })
 const taskGroup = ref({ name: '' })
 const macro = ref({ id: '', taskGroupId: '', projectId: 0, projectName: '', screenId: 0, screenName: '', skuId: 0, skuName: '', eventDay: '', orderCapacity: 4, capacitySource: 'default', smartMerge: false, priority: 0, desiredReplicas: 1, hardConcurrency: 1, startAt: '', deadline: '' })
-const purchase = ref({ macroTaskId: '', allowSplit: false, buyerIds: [] as string[] })
+const purchase = ref({ id: '', macroTaskId: '', allowSplit: false, buyerIds: [] as string[], createdAt: '' })
 const login = ref({ name: '', role: 'primary' as ResourceRole, sessionId: '', url: '', message: '' })
 const projectId = ref('')
 const project = ref<ProjectCatalog | null>(null)
@@ -41,8 +41,8 @@ async function refresh() {
 
 async function invoke(method: string, ...args: any[]) {
   loading.value = true
-  try { await clusterCall(method, ...args); await refresh() }
-  catch (e) { error.value = String(e) }
+  try { await clusterCall(method, ...args); await refresh(); return true }
+  catch (e) { error.value = String(e); return false }
   finally { loading.value = false }
 }
 
@@ -64,8 +64,7 @@ const switchReflow = () => invoke('SwitchToReflow')
 
 async function saveTaskGroup() {
   if (!taskGroup.value.name.trim()) { error.value = '请输入任务组名称'; return }
-  await invoke('SaveTaskGroup', JSON.stringify(taskGroup.value))
-  taskGroup.value.name = ''
+  if (await invoke('SaveTaskGroup', JSON.stringify(taskGroup.value))) taskGroup.value.name = ''
 }
 
 async function saveMacro() {
@@ -79,8 +78,7 @@ async function savePurchase() {
   const selected = new Set(purchase.value.buyerIds)
   const buyers = snapshot.value.buyers.filter(item => selected.has(item.logicalId))
   if (!purchase.value.macroTaskId || buyers.length === 0) { error.value = '请选择宏任务并至少填写一名购票人'; return }
-  await invoke('SavePurchaseGroup', JSON.stringify({ id: `purchase-${Date.now()}`, macroTaskId: purchase.value.macroTaskId, allowSplit: purchase.value.allowSplit, buyers }))
-  purchase.value.buyerIds = []
+  if (await invoke('SavePurchaseGroup', JSON.stringify({ id: purchase.value.id || `purchase-${Date.now()}`, macroTaskId: purchase.value.macroTaskId, allowSplit: purchase.value.allowSplit, buyers, createdAt: purchase.value.createdAt || undefined }))) resetPurchaseEditor()
 }
 
 const selectedMacro = computed(() => snapshot.value.macros.find(item => item.id === purchase.value.macroTaskId))
@@ -158,8 +156,22 @@ function editMacro(item: (typeof snapshot.value.macros)[number]) {
 async function deleteMacro(item: (typeof snapshot.value.macros)[number]) {
   const name = `${item.projectName || `项目 ${item.projectId}`} · ${item.skuName || item.skuId}`
   if (!window.confirm(`确定删除宏任务“${name}”及其全部购票组和执行记录吗？`)) return
-  await invoke('DeleteMacro', item.id)
-  expandedMacros.value = expandedMacros.value.filter(id => id !== item.id)
+  if (await invoke('DeleteMacro', item.id)) expandedMacros.value = expandedMacros.value.filter(id => id !== item.id)
+}
+
+function editPurchase(group: (typeof snapshot.value.macros)[number]['purchaseGroups'][number]) {
+  purchase.value = { id: group.id, macroTaskId: group.macroTaskId, allowSplit: group.allowSplit, buyerIds: group.buyers.map(buyer => buyer.logicalId), createdAt: group.createdAt }
+  taskEditorPanel.value = 2
+  window.setTimeout(() => document.querySelector('[data-purchase-editor]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
+}
+
+function resetPurchaseEditor() {
+  purchase.value = { id: '', macroTaskId: purchase.value.macroTaskId, allowSplit: false, buyerIds: [], createdAt: '' }
+}
+
+async function deletePurchase(group: (typeof snapshot.value.macros)[number]['purchaseGroups'][number]) {
+  if (!window.confirm(`确定删除包含“${group.buyers.map(buyer => buyer.name).join('、')}”的购票组吗？`)) return
+  if (await invoke('DeletePurchaseGroup', group.macroTaskId, group.id) && purchase.value.id === group.id) resetPurchaseEditor()
 }
 
 onMounted(async () => { await refresh(); timer = window.setInterval(refresh, 5000) })
@@ -206,7 +218,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
               </tr>
               <tr v-if="expandedMacros.includes(item.id)"><td colspan="7" class="bg-grey-lighten-4 pa-4">
                 <div v-if="item.purchaseGroups.length === 0" class="text-medium-emphasis">尚未配置购票组。</div>
-                <v-row v-else dense><v-col v-for="(group, index) in item.purchaseGroups" :key="group.id" cols="12" md="6"><v-card variant="outlined"><v-card-title class="text-subtitle-1">购票组 {{ index + 1 }}<v-chip class="ml-2" size="x-small" :color="group.allowSplit ? 'warning' : 'default'">{{ group.allowSplit ? '回流可拆单' : '保持整单' }}</v-chip></v-card-title><v-card-text><v-chip v-for="buyer in group.buyers" :key="buyer.logicalId" class="mr-2 mb-1" prepend-icon="mdi-account">{{ buyer.name }}<v-tooltip activator="parent">{{ buyer.tel || '无手机号' }}</v-tooltip></v-chip></v-card-text></v-card></v-col></v-row>
+                <v-row v-else dense><v-col v-for="(group, index) in item.purchaseGroups" :key="group.id" cols="12" md="6"><v-card variant="outlined"><v-card-title class="d-flex align-center text-subtitle-1">购票组 {{ index + 1 }}<v-chip class="ml-2" size="x-small" :color="group.allowSplit ? 'warning' : 'default'">{{ group.allowSplit ? '回流可拆单' : '保持整单' }}</v-chip><v-spacer /><v-btn size="x-small" variant="text" icon="mdi-pencil" @click="editPurchase(group)" /><v-btn size="x-small" variant="text" color="error" icon="mdi-delete" @click="deletePurchase(group)" /></v-card-title><v-card-text><v-chip v-for="buyer in group.buyers" :key="buyer.logicalId" class="mr-2 mb-1" prepend-icon="mdi-account">{{ buyer.name }}<v-tooltip activator="parent">{{ buyer.tel || '无手机号' }}</v-tooltip></v-chip></v-card-text></v-card></v-col></v-row>
               </td></tr>
               </template>
             </tbody>
@@ -226,13 +238,13 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
               <v-btn color="primary" @click="saveMacro">保存宏任务</v-btn>
               </template>
             </v-expansion-panel-text></v-expansion-panel>
-            <v-expansion-panel title="添加购票组"><v-expansion-panel-text>
+            <v-expansion-panel :title="purchase.id ? '编辑购票组' : '添加购票组'" data-purchase-editor><v-expansion-panel-text>
               <v-select v-model="purchase.macroTaskId" :items="snapshot.macros" :item-title="item => `${item.projectName || `项目 ${item.projectId}`} · ${item.screenName || item.screenId} · ${item.skuName || item.skuId}`" item-value="id" label="宏任务" />
               <v-switch v-model="purchase.allowSplit" label="回流阶段允许拆成单人订单" color="warning" />
               <v-alert v-if="snapshot.buyers.length === 0" type="warning" variant="tonal" class="mb-3">尚未同步购票人。请先到“账号池”对至少一个账号执行“同步购票人”。</v-alert>
               <v-select v-model="purchase.buyerIds" :items="snapshot.buyers" item-title="name" item-value="logicalId" label="选择购票人" multiple chips closable-chips><template #item="{ props, item }"><v-list-item v-bind="props" :subtitle="`${item.tel || '无手机号'} · ${item.idCard || '无证件信息'}`" /></template></v-select>
               <v-alert v-if="selectedMacro && selectedBuyerCount > selectedMacro.orderCapacity" type="error" density="compact" class="mb-3">已选 {{ selectedBuyerCount }} 人，超过该 SKU 单订单 {{ selectedMacro.orderCapacity }} 人上限。</v-alert>
-              <v-btn color="primary" :disabled="!selectedMacro || selectedBuyerCount === 0 || selectedBuyerCount > (selectedMacro?.orderCapacity || 0)" @click="savePurchase">保存购票组</v-btn>
+              <v-btn color="primary" :disabled="!selectedMacro || selectedBuyerCount === 0 || selectedBuyerCount > (selectedMacro?.orderCapacity || 0)" @click="savePurchase">{{ purchase.id ? '更新购票组' : '保存购票组' }}</v-btn><v-btn v-if="purchase.id" class="ml-2" variant="text" @click="resetPurchaseEditor">取消编辑</v-btn>
             </v-expansion-panel-text></v-expansion-panel>
           </v-expansion-panels>
         </v-card-text>

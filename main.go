@@ -159,10 +159,16 @@ func main() {
 		if saveErr := store.Save(); saveErr != nil {
 			log.Printf("[main] Failed to persist cookies: %v", saveErr)
 		}
+		if syncErr := clusterSvc.SyncMainAccount(); syncErr != nil {
+			log.Printf("[main] Failed to sync main account into pool: %v", syncErr)
+		}
 	})
 
 	// Restore refresh token from previous session
 	c.SetRefreshToken(store.RefreshToken)
+	if syncErr := clusterSvc.SyncMainAccount(); syncErr != nil {
+		log.Printf("[main] Main account is not available for pool sync: %v", syncErr)
+	}
 
 	// Log broker for real-time task log streaming to the frontend
 	logStorage := scheduler.NewLogStorage()

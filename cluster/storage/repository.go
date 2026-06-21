@@ -139,6 +139,63 @@ func (r *Repository) PutPurchaseGroup(ctx context.Context, value domain.Purchase
 	_, err = r.db.ExecContext(ctx, `INSERT INTO purchase_groups(id,macro_task_id,payload) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload`, value.ID, value.MacroTaskID, b)
 	return err
 }
+
+func (r *Repository) PurchaseGroup(ctx context.Context, id string) (domain.PurchaseGroup, error) {
+	var payload []byte
+	if err := r.db.QueryRowContext(ctx, `SELECT payload FROM purchase_groups WHERE id=?`, id).Scan(&payload); err != nil {
+		return domain.PurchaseGroup{}, err
+	}
+	var value domain.PurchaseGroup
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return domain.PurchaseGroup{}, err
+	}
+	return value, nil
+}
+
+func (r *Repository) DeletePurchaseGroup(ctx context.Context, id, macroID string) error {
+	result, err := r.db.ExecContext(ctx, `DELETE FROM purchase_groups WHERE id=? AND macro_task_id=?`, id, macroID)
+	if err != nil {
+		return err
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// ResetMacroExecution removes plans produced from an obsolete macro or
+// purchase-group configuration. Successful intents are deliberately retained
+// and prevent the configuration from being changed into a duplicate order.
+func (r *Repository) ResetMacroExecution(ctx context.Context, macroID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var succeeded int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM intents WHERE macro_task_id=? AND succeeded=1`, macroID).Scan(&succeeded); err != nil {
+		return err
+	}
+	if succeeded > 0 {
+		return fmt.Errorf("macro task has a successful order and can no longer be changed")
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM leases WHERE attempt_id IN (SELECT id FROM attempts WHERE intent_id IN (SELECT id FROM intents WHERE macro_task_id=?))`, macroID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM execution_results WHERE attempt_id IN (SELECT id FROM attempts WHERE intent_id IN (SELECT id FROM intents WHERE macro_task_id=?))`, macroID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM buyer_day_occupancy WHERE intent_id IN (SELECT id FROM intents WHERE macro_task_id=?)`, macroID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM attempts WHERE intent_id IN (SELECT id FROM intents WHERE macro_task_id=?)`, macroID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM intents WHERE macro_task_id=?`, macroID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 func (r *Repository) PutIntent(ctx context.Context, value domain.LogicalOrderIntent) error {
 	b, err := marshal(value)
 	if err != nil {

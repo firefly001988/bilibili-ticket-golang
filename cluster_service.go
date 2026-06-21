@@ -76,6 +76,7 @@ type ClusterService struct {
 	accounts      *accounts.Manager
 	local         employer.LocalWorkerManager
 	mu            sync.RWMutex
+	mainAccountMu sync.Mutex
 	phases        map[string]domain.Phase
 	loginSessions map[string]*accountLoginSession
 	catalog       *biliutils.BiliClient
@@ -84,6 +85,58 @@ type ClusterService struct {
 }
 
 func (s *ClusterService) SetCatalogClient(client *biliutils.BiliClient) { s.catalog = client }
+
+// SyncMainAccount mirrors the credentials used by the employer UI into the
+// account pool. The UID-derived ID makes this converge with an independently
+// scanned pool account instead of creating a duplicate.
+func (s *ClusterService) SyncMainAccount() error {
+	s.mainAccountMu.Lock()
+	defer s.mainAccountMu.Unlock()
+	if s.catalog == nil {
+		return fmt.Errorf("catalog client is unavailable")
+	}
+	jar, ok := s.catalog.GetCookieJar().(*cookiejar.Jar)
+	if !ok {
+		return fmt.Errorf("main account cookie jar cannot be exported")
+	}
+	credentials := credentialsFrom(s.catalog, jar, domain.Credentials{})
+	if credentials.Cookies["SESSDATA"] == "" || credentials.Cookies["bili_jct"] == "" {
+		return fmt.Errorf("main account is not logged in")
+	}
+	info, err := s.catalog.GetAccountStatus()
+	if err != nil {
+		return err
+	}
+	if info == nil || !info.Login || info.UID == 0 {
+		return fmt.Errorf("main account is not logged in")
+	}
+	ctx := context.Background()
+	accountID := fmt.Sprintf("bili-%d", info.UID)
+	account := domain.Account{ID: accountID, Name: info.Name, Role: domain.RolePrimary, Enabled: true, Credentials: credentials}
+	if existing, existingErr := s.repository.Account(ctx, accountID); existingErr == nil {
+		account.Name = existing.Name
+		if account.Name == "" {
+			account.Name = info.Name
+		}
+		account.Role = existing.Role
+		account.Enabled = existing.Enabled
+		account.CooldownUntil = existing.CooldownUntil
+		account.Credentials.Version = existing.Credentials.Version + 1
+	} else if !errors.Is(existingErr, sql.ErrNoRows) {
+		return existingErr
+	} else {
+		account.Credentials.Version = 1
+	}
+	if err := s.repository.PutAccount(ctx, account, nil); err != nil {
+		return err
+	}
+	// Once the UID is known, the anonymous legacy migration row is obsolete.
+	if err := s.repository.DeleteAccount(ctx, "migrated-account"); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	_, _ = s.accounts.SyncBuyers(ctx, accountID)
+	return s.refreshResources(ctx)
+}
 
 type SKUInspection struct {
 	EventDay       string                `json:"eventDay"`
@@ -628,6 +681,9 @@ func (s *ClusterService) SaveMacro(document string) error {
 			return fmt.Errorf("dispatchable macro requires a deadline after startAt")
 		}
 	}
+	if err := s.invalidateMacroConfiguration(value.ID); err != nil {
+		return err
+	}
 	return s.repository.PutMacroTask(context.Background(), value)
 }
 
@@ -656,6 +712,15 @@ func (s *ClusterService) SavePurchaseGroup(document string) error {
 	}
 	if value.ID == "" {
 		value.ID = randomClusterID("purchase")
+	} else if existing, existingErr := s.repository.PurchaseGroup(context.Background(), value.ID); existingErr == nil {
+		if existing.MacroTaskID != value.MacroTaskID {
+			return fmt.Errorf("purchase group belongs to another macro task")
+		}
+		if value.CreatedAt.IsZero() {
+			value.CreatedAt = existing.CreatedAt
+		}
+	} else if !errors.Is(existingErr, sql.ErrNoRows) {
+		return existingErr
 	}
 	macros, err := s.repository.ListMacroTasks(context.Background())
 	if err != nil {
@@ -688,7 +753,37 @@ func (s *ClusterService) SavePurchaseGroup(document string) error {
 	if value.CreatedAt.IsZero() {
 		value.CreatedAt = time.Now()
 	}
+	if err := s.invalidateMacroConfiguration(value.MacroTaskID); err != nil {
+		return err
+	}
 	return s.repository.PutPurchaseGroup(context.Background(), value)
+}
+
+func (s *ClusterService) DeletePurchaseGroup(macroID, purchaseGroupID string) error {
+	if strings.TrimSpace(macroID) == "" || strings.TrimSpace(purchaseGroupID) == "" {
+		return fmt.Errorf("macroId and purchaseGroupId are required")
+	}
+	group, err := s.repository.PurchaseGroup(context.Background(), purchaseGroupID)
+	if err != nil {
+		return err
+	}
+	if group.MacroTaskID != macroID {
+		return fmt.Errorf("purchase group belongs to another macro task")
+	}
+	if err := s.invalidateMacroConfiguration(macroID); err != nil {
+		return err
+	}
+	return s.repository.DeletePurchaseGroup(context.Background(), purchaseGroupID, macroID)
+}
+
+func (s *ClusterService) invalidateMacroConfiguration(macroID string) error {
+	if s.dispatcher.MacroActive(macroID) {
+		return fmt.Errorf("macro task cannot be changed while an attempt is active")
+	}
+	if err := s.repository.ResetMacroExecution(context.Background(), macroID); err != nil {
+		return err
+	}
+	return s.dispatcher.RemoveMacro(macroID)
 }
 
 func (s *ClusterService) StartMacro(macroID string) error {
