@@ -272,7 +272,16 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 	}
 
 	firstBuyer := buyers[0]
-	if firstBuyer.BuyerType == r.ForceRealName {
+	// Infer buyer type if unset: ID>0 → ForceRealName, Name+Tel → Ordinary.
+	bt := firstBuyer.BuyerType
+	if bt == 0 {
+		if firstBuyer.ID > 0 {
+			bt = r.ForceRealName
+		} else if firstBuyer.Name != "" && firstBuyer.Tel != "" {
+			bt = r.Ordinary
+		}
+	}
+	if bt == r.ForceRealName {
 		// Build buyer_info as an array of real-name buyer entries
 		buyerInfoList := make([]map[string]any, 0, count)
 		for _, bt := range confirmInfo.BuyerList.List {
@@ -307,7 +316,7 @@ func (c *BiliClient) SubmitOrder(tokenGen token.Generator, whenGenPToken time.Ti
 		}
 		form["buyer_info"] = string(bs)
 		form["contactInfo"] = nil
-	} else if firstBuyer.BuyerType == r.Ordinary {
+	} else if bt == r.Ordinary {
 		// Ordinary: only supports single buyer
 		form["tel"] = firstBuyer.Tel
 		form["buyer"] = firstBuyer.Name

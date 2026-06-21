@@ -11,13 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"bilibili-ticket-golang/cluster/domain"
+	"bilibili-ticket-golang/cmd/gui/store/cookiejar"
 	"bilibili-ticket-golang/lib/biliutils"
 	"bilibili-ticket-golang/lib/biliutils/token"
-	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/lib/global"
 	api "bilibili-ticket-golang/lib/models/bili/api"
 	response "bilibili-ticket-golang/lib/models/bili/response"
-	"bilibili-ticket-golang/cmd/gui/store/cookiejar"
 )
 
 // BilibiliBackend adapts the existing ticket APIs into one immutable execution
@@ -178,7 +178,11 @@ func (b *BilibiliBackend) prepare(spec domain.ExecutionSpec) Outcome {
 	}
 	b.buyers = make([]response.TicketBuyer, len(spec.Buyers))
 	for i, buyer := range spec.Buyers {
-		b.buyers[i] = response.TicketBuyer{BuyerType: response.BuyerType(buyer.Type), ID: buyer.BuyerID, Name: buyer.Name, Tel: buyer.Tel}
+		bt := response.Ordinary
+		if project.IsForceRealName {
+			bt = response.ForceRealName
+		}
+		b.buyers[i] = response.TicketBuyer{BuyerType: bt, ID: buyer.BuyerID, Name: buyer.Name, Tel: buyer.Tel}
 	}
 	b.generatedAt, b.prepared = time.Now(), true
 	return Outcome{}
