@@ -1,0 +1,8 @@
+go 1.25.0
+
+use (
+	./cluster
+	./cmd/gui
+	./cmd/ticket-worker
+	./lib
+)
