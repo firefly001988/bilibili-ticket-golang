@@ -1,0 +1,222 @@
+syntax = "proto3";
+
+package worker;
+
+option go_package = "bilibili-ticket-golang/cluster/worker/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum AttemptState {
+  ATTEMPT_QUEUED = 0;
+  ATTEMPT_WAITING = 1;
+  ATTEMPT_RUNNING = 2;
+  ATTEMPT_STOPPING = 3;
+  ATTEMPT_STOPPED = 4;
+  ATTEMPT_SUCCEEDED = 5;
+  ATTEMPT_FAILED = 6;
+}
+
+enum StartMode {
+  START_IMMEDIATE = 0;
+  START_SCHEDULED = 1;
+}
+
+enum FailureReason {
+  FAILURE_NONE = 0;
+  FAILURE_DEADLINE = 1;
+  FAILURE_STOPPED = 2;
+  FAILURE_COOKIE_INVALID = 3;
+  FAILURE_HTTP_412 = 4;
+  FAILURE_CAPTCHA = 5;
+  FAILURE_ACCOUNT_RISK = 6;
+  FAILURE_WORKER_LOST = 7;
+  FAILURE_UNRECOVERABLE = 8;
+  FAILURE_INTERNAL = 9;
+}
+
+// =============================================================================
+// Shared types
+// =============================================================================
+
+message Buyer {
+  string logical_id = 1;
+  int64 buyer_id = 2;
+  string name = 3;
+  string tel = 4;
+  string id_card = 5;
+  int32 type = 6;
+}
+
+message Credentials {
+  map<string, string> cookies = 1;
+  repeated HTTPCookie cookie_jar = 2;
+  string refresh_token = 3;
+  int64 version = 4;
+  bytes device_profile = 5;
+}
+
+message HTTPCookie {
+  string name = 1;
+  string value = 2;
+  string domain = 3;
+  string path = 4;
+  bool secure = 5;
+  bool http_only = 6;
+  int64 expires = 7;
+}
+
+message ExecutionSpec {
+  string attempt_id = 1;
+  string intent_id = 2;
+  int64 project_id = 3;
+  int64 screen_id = 4;
+  int64 sku_id = 5;
+  repeated Buyer buyers = 6;
+  StartMode start_mode = 7;
+  google.protobuf.Timestamp start_at = 8;
+  google.protobuf.Timestamp deadline = 9;
+  int64 interval_ms = 10;
+  Credentials credentials = 11;
+}
+
+message ExecutionResult {
+  string attempt_id = 1;
+  string intent_id = 2;
+  string spec_hash = 3;
+  AttemptState state = 4;
+  bool success = 5;
+  string order_id = 6;
+  FailureReason reason = 7;
+  string message = 8;
+  bool retryable = 9;
+  Credentials credentials = 10;
+  google.protobuf.Timestamp started_at = 11;
+  google.protobuf.Timestamp finished_at = 12;
+}
+
+message LogEntry {
+  int64 sequence = 1;
+  google.protobuf.Timestamp time = 2;
+  string stage = 3;
+  string message = 4;
+  int32 code = 5;
+  bool retryable = 6;
+}
+
+// =============================================================================
+// Status (snapshot of a task)
+// =============================================================================
+
+message TaskStatus {
+  string attempt_id = 1;
+  string spec_hash = 2;
+  AttemptState state = 3;
+  google.protobuf.Timestamp lease_until = 4;
+  ExecutionResult result = 5;
+}
+
+// =============================================================================
+// RPC request / response messages
+// =============================================================================
+
+message HealthRequest {}
+
+message HealthResponse {
+  string worker_id = 1;
+  string version = 2;
+  string plugin_version = 3;
+  string algorithm_version = 4;
+  string captcha_plugin = 5;
+  bool clock_calibration = 6;
+  string active_attempt_id = 7;
+}
+
+message SubmitRequest {
+  ExecutionSpec spec = 1;
+}
+
+message SubmitResponse {
+  TaskStatus status = 1;
+}
+
+message StatusRequest {
+  string attempt_id = 1;
+}
+
+message StatusResponse {
+  TaskStatus status = 1;
+}
+
+message LogsRequest {
+  string attempt_id = 1;
+}
+
+message LogsResponse {
+  repeated LogEntry entries = 1;
+}
+
+message StopRequest {
+  string attempt_id = 1;
+}
+
+message StopResponse {
+  TaskStatus status = 1;
+}
+
+message AckRequest {
+  string attempt_id = 1;
+}
+
+message AckResponse {}
+
+// =============================================================================
+// Heartbeat – bidirectional streaming for liveness detection
+// =============================================================================
+
+message HeartbeatMsg {
+  string worker_id = 1;
+  string active_attempt_id = 2;
+  int64 sequence = 3;
+  google.protobuf.Timestamp time = 4;
+}
+
+// =============================================================================
+// WorkerService
+// =============================================================================
+
+service WorkerService {
+  // Health returns the worker's health and metadata.
+  rpc Health(HealthRequest) returns (HealthResponse);
+
+  // Submit creates a new task or returns an existing one idempotently.
+  // Returns ALREADY_EXISTS if attemptId exists with a different spec.
+  // Returns RESOURCE_EXHAUSTED if the worker is already busy.
+  rpc Submit(SubmitRequest) returns (SubmitResponse);
+
+  // Status returns the current status of a task, renewing its lease.
+  // Returns NOT_FOUND if the attempt is unknown.
+  rpc Status(StatusRequest) returns (StatusResponse);
+
+  // Logs returns all log entries for a task.
+  // Returns NOT_FOUND if the attempt is unknown.
+  rpc Logs(LogsRequest) returns (LogsResponse);
+
+  // Stop requests cancellation of a running task.
+  // Returns NOT_FOUND if the attempt is unknown.
+  rpc Stop(StopRequest) returns (StopResponse);
+
+  // Ack acknowledges a terminal task, allowing the worker to clean up.
+  // Returns NOT_FOUND if the attempt is unknown.
+  // Returns FAILED_PRECONDITION if the attempt is not terminal.
+  rpc Ack(AckRequest) returns (AckResponse);
+
+  // Heartbeat is a bidirectional stream for liveness detection.
+  // The worker periodically sends HeartbeatMsg; the master echoes them
+  // back. Either side treats silence longer than the heartbeat interval
+  // as a dead connection, triggering a reconnect.
+  rpc Heartbeat(stream HeartbeatMsg) returns (stream HeartbeatMsg);
+}

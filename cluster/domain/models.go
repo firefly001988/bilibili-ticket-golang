@@ -225,12 +225,21 @@ type AccountBuyerMapping struct {
 }
 
 type WorkerNode struct {
-	ID       string       `json:"id"`
-	Name     string       `json:"name"`
-	BaseURL  string       `json:"baseUrl"`
-	Role     ResourceRole `json:"role"`
-	Enabled  bool         `json:"enabled"`
-	LastSeen time.Time    `json:"lastSeen,omitempty"`
+	ID            string       `json:"id"`
+	Name          string       `json:"name"`
+	Address       string       `json:"address"`
+	Role          ResourceRole `json:"role"`
+	Enabled       bool         `json:"enabled"`
+	TLSServerName string       `json:"tlsServerName,omitempty"`
+	LastSeen      time.Time    `json:"lastSeen,omitempty"`
+}
+
+// WorkerTLSConfig holds the mTLS material for connecting to a worker.
+type WorkerTLSConfig struct {
+	CACertPEM     []byte `json:"caCert"`
+	ClientCertPEM []byte `json:"clientCert"`
+	ClientKeyPEM  []byte `json:"clientKey"`
+	ServerName    string `json:"serverName,omitempty"`
 }
 
 type Lease struct {

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
-	"bilibili-ticket-golang/store/configuration"
+	"bilibili-ticket-golang/cmd/gui/store/configuration"
 )
 
 const LegacyMigrationName = "legacy-messagepack-v1"

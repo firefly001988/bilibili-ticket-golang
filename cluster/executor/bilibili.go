@@ -11,13 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"bilibili-ticket-golang/biliutils"
-	"bilibili-ticket-golang/biliutils/token"
+	"bilibili-ticket-golang/lib/biliutils"
+	"bilibili-ticket-golang/lib/biliutils/token"
 	"bilibili-ticket-golang/cluster/domain"
-	"bilibili-ticket-golang/global"
-	api "bilibili-ticket-golang/models/bili/api"
-	response "bilibili-ticket-golang/models/bili/response"
-	"bilibili-ticket-golang/store/cookiejar"
+	"bilibili-ticket-golang/lib/global"
+	api "bilibili-ticket-golang/lib/models/bili/api"
+	response "bilibili-ticket-golang/lib/models/bili/response"
+	"bilibili-ticket-golang/cmd/gui/store/cookiejar"
 )
 
 // BilibiliBackend adapts the existing ticket APIs into one immutable execution

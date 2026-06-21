@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
-	response "bilibili-ticket-golang/models/bili/response"
-	"bilibili-ticket-golang/store/configuration"
+	response "bilibili-ticket-golang/lib/models/bili/response"
+	"bilibili-ticket-golang/cmd/gui/store/configuration"
 )
 
 func openTestRepository(t *testing.T) *Repository {

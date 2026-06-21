@@ -2,7 +2,8 @@ package integration
 
 import (
 	"context"
-	"net/http/httptest"
+	"crypto/tls"
+	"net"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,6 +15,10 @@ import (
 	"bilibili-ticket-golang/cluster/planner"
 	"bilibili-ticket-golang/cluster/storage"
 	"bilibili-ticket-golang/cluster/worker"
+	pb "bilibili-ticket-golang/cluster/worker/proto"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 type successfulBackend struct{}
@@ -33,6 +38,58 @@ func (resolver) Resolve(_ context.Context, _ string, buyers []domain.Buyer) ([]d
 	return result, nil
 }
 
+func startIntegrationWorker(t *testing.T) (address string, clientTLS *tls.Config, cleanup func()) {
+	t.Helper()
+	caCertPEM, caKeyPEM, err := worker.GenerateCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverCertPEM, serverKeyPEM, err := worker.GenerateServerCert(caCertPEM, caKeyPEM, []string{"localhost", "127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientCertPEM, clientKeyPEM, err := worker.GenerateClientCert(caCertPEM, caKeyPEM, "integration-client")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	serverTLS, err := worker.NewServerTLSConfig(caCertPEM, serverCertPEM, serverKeyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS, err = worker.NewClientTLSConfig(caCertPEM, clientCertPEM, clientKeyPEM, "localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := worker.Config{
+		Listen:        lis.Addr().String(),
+		DataDir:       t.TempDir(),
+		PollInterval:  10 * time.Second,
+		CACertPEM:     caCertPEM,
+		ServerCertPEM: serverCertPEM,
+		ServerKeyPEM:  serverKeyPEM,
+	}
+	srv, err := worker.NewServer(config, func(domain.ExecutionSpec) (executor.Backend, error) { return successfulBackend{}, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	grpcSrv := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
+	pb.RegisterWorkerServiceServer(grpcSrv, worker.NewGRPCService(srv))
+	go func() { _ = grpcSrv.Serve(lis) }()
+
+	return lis.Addr().String(), clientTLS, func() {
+		grpcSrv.Stop()
+		_ = lis.Close()
+	}
+}
+
 func TestEmployerWorkerPlanningDispatchAndSuccessCommit(t *testing.T) {
 	ctx := context.Background()
 	repository, err := storage.Open(filepath.Join(t.TempDir(), "employer.db"))
@@ -40,16 +97,14 @@ func TestEmployerWorkerPlanningDispatchAndSuccessCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer repository.Close()
-	workerServer, err := worker.NewServer(worker.Config{BearerKey: "secret", DataDir: t.TempDir(), PollInterval: 10 * time.Second}, func(domain.ExecutionSpec) (executor.Backend, error) { return successfulBackend{}, nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	httpServer := httptest.NewServer(workerServer.Handler())
-	defer httpServer.Close()
+
+	address, tlsCfg, cleanup := startIntegrationWorker(t)
+	defer cleanup()
 
 	client := employer.NewWorkerClient()
-	node := domain.WorkerNode{ID: "w", BaseURL: httpServer.URL, Role: domain.RolePrimary, Enabled: true}
-	client.SetKey(node.ID, "secret")
+	node := domain.WorkerNode{ID: "w", Address: address, Role: domain.RolePrimary, Enabled: true, TLSServerName: "localhost"}
+	client.SetTLS(node.ID, tlsCfg)
+
 	account := domain.Account{ID: "a", Role: domain.RolePrimary, Enabled: true, Credentials: domain.Credentials{Version: 1}}
 	if err := repository.PutAccount(ctx, account, nil); err != nil {
 		t.Fatal(err)

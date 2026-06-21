@@ -2,25 +2,29 @@ package worker
 
 import (
 	"context"
-	"crypto/subtle"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	biliclock "bilibili-ticket-golang/biliutils/clock"
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/executor"
+	pb "bilibili-ticket-golang/cluster/worker/proto"
+	biliclock "bilibili-ticket-golang/lib/biliutils/clock"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type Config struct {
 	Listen           string        `json:"listen"`
-	BearerKey        string        `json:"bearerKey"`
 	DataDir          string        `json:"dataDir"`
 	PollInterval     time.Duration `json:"-"`
 	PollIntervalSec  int           `json:"pollIntervalSec"`
@@ -33,14 +37,15 @@ type Config struct {
 	PluginDir        string        `json:"pluginDir,omitempty"`
 	CaptchaPlugin    string        `json:"captchaPlugin,omitempty"`
 	CalibrateClock   bool          `json:"calibrateClock,omitempty"`
+	// TLS fields – if empty, auto‑generate a local CA + server cert.
+	CACertPEM     []byte `json:"-"`
+	ServerCertPEM []byte `json:"-"`
+	ServerKeyPEM  []byte `json:"-"`
 }
 
 func (c *Config) Normalize() error {
 	if c.Listen == "" {
 		c.Listen = "127.0.0.1:18080"
-	}
-	if c.BearerKey == "" {
-		return errors.New("bearerKey is required")
 	}
 	if c.DataDir == "" {
 		c.DataDir = "data/worker"
@@ -63,6 +68,22 @@ func (c *Config) Normalize() error {
 	}
 	if c.LeaseDuration < minimum {
 		c.LeaseDuration = minimum
+	}
+	// Auto‑generate TLS if not provided.
+	if len(c.CACertPEM) == 0 || len(c.ServerCertPEM) == 0 || len(c.ServerKeyPEM) == 0 {
+		if err := os.MkdirAll(c.DataDir, 0700); err != nil {
+			return err
+		}
+		bundle, _, err := LoadOrGenerateLocalTLS(c.DataDir)
+		if err != nil {
+			return fmt.Errorf("auto‑generate TLS: %w", err)
+		}
+		caPEM, certPEM, keyPEM, err := LoadLocalServerTLS(c.DataDir)
+		if err != nil {
+			return fmt.Errorf("load server TLS: %w", err)
+		}
+		c.CACertPEM, c.ServerCertPEM, c.ServerKeyPEM = caPEM, certPEM, keyPEM
+		_ = bundle
 	}
 	return nil
 }
@@ -120,74 +141,434 @@ func NewServer(config Config, factory BackendFactory) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/health", s.health)
-	mux.HandleFunc("POST /v1/tasks", s.create)
-	mux.HandleFunc("GET /v1/tasks/{attemptId}", s.status)
-	mux.HandleFunc("GET /v1/tasks/{attemptId}/logs", s.logs)
-	mux.HandleFunc("POST /v1/tasks/{attemptId}/stop", s.stop)
-	mux.HandleFunc("POST /v1/tasks/{attemptId}/ack", s.ack)
-	return s.authenticate(mux)
+// NewGRPCService returns a gRPC WorkerServiceServer backed by the given Server.
+// This is exported for testing and for callers that manage their own gRPC server.
+func NewGRPCService(s *Server) pb.WorkerServiceServer {
+	return &workerService{server: s}
 }
 
-func (s *Server) ListenAndServe() error { return http.ListenAndServe(s.config.Listen, s.Handler()) }
-
-func (s *Server) authenticate(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if len(provided) != len(s.config.BearerKey) || subtle.ConstantTimeCompare([]byte(provided), []byte(s.config.BearerKey)) != 1 {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+func (s *Server) ListenAndServe() error {
+	tlsCfg, err := NewServerTLSConfig(s.config.CACertPEM, s.config.ServerCertPEM, s.config.ServerKeyPEM)
+	if err != nil {
+		return fmt.Errorf("build server TLS config: %w", err)
+	}
+	lis, err := net.Listen("tcp", s.config.Listen)
+	if err != nil {
+		return err
+	}
+	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsCfg)))
+	pb.RegisterWorkerServiceServer(grpcServer, &workerService{server: s})
+	return grpcServer.Serve(lis)
 }
 
-func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
+// ---------------------------------------------------------------------------
+// gRPC service implementation (thin adapter over Server)
+// ---------------------------------------------------------------------------
+
+type workerService struct {
+	pb.UnimplementedWorkerServiceServer
+	server *Server
+}
+
+// =============================================================================
+// Health
+// =============================================================================
+
+func (ws *workerService) Health(_ context.Context, _ *pb.HealthRequest) (*pb.HealthResponse, error) {
+	s := ws.server
 	s.mu.Lock()
 	active := s.active
 	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, map[string]any{"workerId": s.config.WorkerID, "version": s.config.Version, "pluginVersion": s.config.PluginVersion, "algorithmVersion": s.config.AlgorithmVersion, "captchaPlugin": s.config.CaptchaPlugin, "clockCalibration": s.config.CalibrateClock, "activeAttemptId": active})
+	return &pb.HealthResponse{
+		WorkerId:         s.config.WorkerID,
+		Version:          s.config.Version,
+		PluginVersion:    s.config.PluginVersion,
+		AlgorithmVersion: s.config.AlgorithmVersion,
+		CaptchaPlugin:    s.config.CaptchaPlugin,
+		ClockCalibration: s.config.CalibrateClock,
+		ActiveAttemptId:  active,
+	}, nil
 }
 
-func (s *Server) create(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
-	var spec domain.ExecutionSpec
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&spec); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+// =============================================================================
+// Submit
+// =============================================================================
+
+func (ws *workerService) Submit(_ context.Context, req *pb.SubmitRequest) (*pb.SubmitResponse, error) {
+	s := ws.server
+	spec, err := specFromProto(req.Spec)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if err := spec.Validate(); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	hash := spec.Hash()
+
 	s.mu.Lock()
 	if existing, ok := s.tasks[spec.AttemptID]; ok {
 		if existing.specHash != hash {
 			s.mu.Unlock()
-			writeError(w, http.StatusConflict, "attemptId already exists with different spec")
-			return
+			return nil, status.Error(codes.AlreadyExists, "attemptId already exists with a different spec")
 		}
-		response := s.snapshot(existing)
+		resp := &pb.SubmitResponse{Status: statusToProto(s.snapshot(existing))}
 		s.mu.Unlock()
-		writeJSON(w, http.StatusOK, response)
-		return
+		return resp, nil
 	}
 	if s.active != "" {
 		s.mu.Unlock()
-		writeError(w, http.StatusConflict, "worker is busy")
-		return
+		return nil, status.Error(codes.ResourceExhausted, "worker is busy")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t := &task{spec: spec, specHash: hash, state: domain.AttemptWaiting, leaseUntil: s.now().Add(s.config.LeaseDuration), cancel: cancel}
 	s.tasks[spec.AttemptID], s.active = t, spec.AttemptID
-	response := s.snapshot(t)
+	resp := &pb.SubmitResponse{Status: statusToProto(s.snapshot(t))}
 	s.mu.Unlock()
 	s.logTask(t, "accepted", "task accepted for intent "+spec.IntentID, 0, false)
 	go s.run(ctx, t)
-	writeJSON(w, http.StatusAccepted, response)
+	return resp, nil
+}
+
+// =============================================================================
+// Status
+// =============================================================================
+
+func (ws *workerService) Status(_ context.Context, req *pb.StatusRequest) (*pb.StatusResponse, error) {
+	s := ws.server
+	s.mu.Lock()
+	t, ok := s.tasks[req.AttemptId]
+	if !ok {
+		s.mu.Unlock()
+		return nil, status.Error(codes.NotFound, "attempt not found")
+	}
+	if !t.state.Terminal() {
+		t.leaseUntil = s.now().Add(s.config.LeaseDuration)
+	}
+	resp := &pb.StatusResponse{Status: statusToProto(s.snapshot(t))}
+	s.mu.Unlock()
+	return resp, nil
+}
+
+// =============================================================================
+// Logs
+// =============================================================================
+
+func (ws *workerService) Logs(_ context.Context, req *pb.LogsRequest) (*pb.LogsResponse, error) {
+	s := ws.server
+	s.mu.Lock()
+	t, ok := s.tasks[req.AttemptId]
+	if !ok {
+		s.mu.Unlock()
+		return nil, status.Error(codes.NotFound, "attempt not found")
+	}
+	entries := make([]*pb.LogEntry, len(t.logs))
+	for i, e := range t.logs {
+		entries[i] = logEntryToProto(e)
+	}
+	s.mu.Unlock()
+	return &pb.LogsResponse{Entries: entries}, nil
+}
+
+// =============================================================================
+// Stop
+// =============================================================================
+
+func (ws *workerService) Stop(_ context.Context, req *pb.StopRequest) (*pb.StopResponse, error) {
+	s := ws.server
+	s.mu.Lock()
+	t, ok := s.tasks[req.AttemptId]
+	if !ok {
+		s.mu.Unlock()
+		return nil, status.Error(codes.NotFound, "attempt not found")
+	}
+	if !t.state.Terminal() {
+		t.state = domain.AttemptStopping
+		t.cancel()
+	}
+	resp := &pb.StopResponse{Status: statusToProto(s.snapshot(t))}
+	s.mu.Unlock()
+	return resp, nil
+}
+
+// =============================================================================
+// Ack
+// =============================================================================
+
+func (ws *workerService) Ack(_ context.Context, req *pb.AckRequest) (*pb.AckResponse, error) {
+	s := ws.server
+	id := req.AttemptId
+	s.mu.Lock()
+	t, ok := s.tasks[id]
+	if !ok {
+		s.mu.Unlock()
+		return nil, status.Error(codes.NotFound, "attempt not found")
+	}
+	if !t.state.Terminal() {
+		s.mu.Unlock()
+		return nil, status.Error(codes.FailedPrecondition, "attempt is not terminal")
+	}
+	if !t.result.Success {
+		delete(s.tasks, id)
+	}
+	s.mu.Unlock()
+	return &pb.AckResponse{}, nil
+}
+
+// Heartbeat
+// =============================================================================
+
+const heartbeatInterval = 5 * time.Second
+
+func (ws *workerService) Heartbeat(stream pb.WorkerService_HeartbeatServer) error {
+	s := ws.server
+	ctx, cancel := context.WithCancel(stream.Context())
+	defer cancel()
+
+	// Send heartbeats to the master.
+	errCh := make(chan error, 1)
+	go func() {
+		defer cancel()
+		seq := int64(0)
+		ticker := time.NewTicker(heartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.mu.Lock()
+				active := s.active
+				s.mu.Unlock()
+				seq++
+				msg := &pb.HeartbeatMsg{
+					WorkerId:        s.config.WorkerID,
+					ActiveAttemptId: active,
+					Sequence:        seq,
+					Time:            timestamppb.New(s.now()),
+				}
+				if err := stream.Send(msg); err != nil {
+					errCh <- err
+					return
+				}
+			}
+		}
+	}()
+
+	// Read echo messages (acknowledgements) to keep the stream alive.
+	go func() {
+		defer cancel()
+		for {
+			_, err := stream.Recv()
+			if err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	// Block until either side closes.
+	err := <-errCh
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Proto ↔ domain conversions
+// ---------------------------------------------------------------------------
+
+func specFromProto(p *pb.ExecutionSpec) (domain.ExecutionSpec, error) {
+	if p == nil {
+		return domain.ExecutionSpec{}, errors.New("nil ExecutionSpec")
+	}
+	s := domain.ExecutionSpec{
+		AttemptID:   p.AttemptId,
+		IntentID:    p.IntentId,
+		ProjectID:   p.ProjectId,
+		ScreenID:    p.ScreenId,
+		SKUID:       p.SkuId,
+		StartMode:   startModeFromProto(p.StartMode),
+		IntervalMS:  p.IntervalMs,
+		Credentials: credentialsFromProto(p.Credentials),
+	}
+	if p.StartAt != nil {
+		s.StartAt = p.StartAt.AsTime()
+	}
+	if p.Deadline != nil {
+		s.Deadline = p.Deadline.AsTime()
+	}
+	for _, buyer := range p.Buyers {
+		s.Buyers = append(s.Buyers, buyerFromProto(buyer))
+	}
+	return s, nil
+}
+
+func buyerFromProto(p *pb.Buyer) domain.Buyer {
+	if p == nil {
+		return domain.Buyer{}
+	}
+	return domain.Buyer{
+		LogicalID: p.LogicalId,
+		BuyerID:   p.BuyerId,
+		Name:      p.Name,
+		Tel:       p.Tel,
+		IDCard:    p.IdCard,
+		Type:      int(p.Type),
+	}
+}
+
+func buyerToProto(b domain.Buyer) *pb.Buyer {
+	return &pb.Buyer{
+		LogicalId: b.LogicalID,
+		BuyerId:   b.BuyerID,
+		Name:      b.Name,
+		Tel:       b.Tel,
+		IdCard:    b.IDCard,
+		Type:      int32(b.Type),
+	}
+}
+
+func credentialsFromProto(p *pb.Credentials) domain.Credentials {
+	if p == nil {
+		return domain.Credentials{}
+	}
+	c := domain.Credentials{
+		Cookies:      p.Cookies,
+		RefreshToken: p.RefreshToken,
+		Version:      p.Version,
+	}
+	if len(p.DeviceProfile) > 0 {
+		c.DeviceProfile = p.DeviceProfile
+	}
+	for _, hc := range p.CookieJar {
+		c.CookieJar = append(c.CookieJar, domain.HTTPCookie{
+			Name:     hc.Name,
+			Value:    hc.Value,
+			Domain:   hc.Domain,
+			Path:     hc.Path,
+			Secure:   hc.Secure,
+			HTTPOnly: hc.HttpOnly,
+			Expires:  hc.Expires,
+		})
+	}
+	return c
+}
+
+func startModeFromProto(m pb.StartMode) domain.StartMode {
+	switch m {
+	case pb.StartMode_START_SCHEDULED:
+		return domain.StartScheduled
+	default:
+		return domain.StartImmediate
+	}
+}
+
+func statusToProto(st Status) *pb.TaskStatus {
+	ts := &pb.TaskStatus{
+		AttemptId: st.AttemptID,
+		SpecHash:  st.SpecHash,
+		State:     attemptStateToProto(st.State),
+		Result:    executionResultToProto(st.Result),
+	}
+	if !st.LeaseUntil.IsZero() {
+		ts.LeaseUntil = timestamppb.New(st.LeaseUntil)
+	}
+	return ts
+}
+
+func attemptStateToProto(s domain.AttemptState) pb.AttemptState {
+	switch s {
+	case domain.AttemptQueued:
+		return pb.AttemptState_ATTEMPT_QUEUED
+	case domain.AttemptWaiting:
+		return pb.AttemptState_ATTEMPT_WAITING
+	case domain.AttemptRunning:
+		return pb.AttemptState_ATTEMPT_RUNNING
+	case domain.AttemptStopping:
+		return pb.AttemptState_ATTEMPT_STOPPING
+	case domain.AttemptStopped:
+		return pb.AttemptState_ATTEMPT_STOPPED
+	case domain.AttemptSucceeded:
+		return pb.AttemptState_ATTEMPT_SUCCEEDED
+	case domain.AttemptFailed:
+		return pb.AttemptState_ATTEMPT_FAILED
+	default:
+		return pb.AttemptState_ATTEMPT_QUEUED
+	}
+}
+
+func executionResultToProto(r domain.ExecutionResult) *pb.ExecutionResult {
+	er := &pb.ExecutionResult{
+		AttemptId: r.AttemptID,
+		IntentId:  r.IntentID,
+		SpecHash:  r.SpecHash,
+		State:     attemptStateToProto(r.State),
+		Success:   r.Success,
+		OrderId:   r.OrderID,
+		Reason:    failureReasonToProto(r.Reason),
+		Message:   r.Message,
+		Retryable: r.Retryable,
+		Credentials: &pb.Credentials{
+			Cookies:       r.Credentials.Cookies,
+			RefreshToken:  r.Credentials.RefreshToken,
+			Version:       r.Credentials.Version,
+			DeviceProfile: r.Credentials.DeviceProfile,
+		},
+	}
+	if len(r.Credentials.CookieJar) > 0 {
+		for _, hc := range r.Credentials.CookieJar {
+			er.Credentials.CookieJar = append(er.Credentials.CookieJar, &pb.HTTPCookie{
+				Name:     hc.Name,
+				Value:    hc.Value,
+				Domain:   hc.Domain,
+				Path:     hc.Path,
+				Secure:   hc.Secure,
+				HttpOnly: hc.HTTPOnly,
+				Expires:  hc.Expires,
+			})
+		}
+	}
+	if !r.StartedAt.IsZero() {
+		er.StartedAt = timestamppb.New(r.StartedAt)
+	}
+	if !r.FinishedAt.IsZero() {
+		er.FinishedAt = timestamppb.New(r.FinishedAt)
+	}
+	return er
+}
+
+func failureReasonToProto(r domain.FailureReason) pb.FailureReason {
+	switch r {
+	case domain.FailureDeadline:
+		return pb.FailureReason_FAILURE_DEADLINE
+	case domain.FailureStopped:
+		return pb.FailureReason_FAILURE_STOPPED
+	case domain.FailureCookieInvalid:
+		return pb.FailureReason_FAILURE_COOKIE_INVALID
+	case domain.FailureHTTP412:
+		return pb.FailureReason_FAILURE_HTTP_412
+	case domain.FailureCaptcha:
+		return pb.FailureReason_FAILURE_CAPTCHA
+	case domain.FailureAccountRisk:
+		return pb.FailureReason_FAILURE_ACCOUNT_RISK
+	case domain.FailureWorkerLost:
+		return pb.FailureReason_FAILURE_WORKER_LOST
+	case domain.FailureUnrecoverable:
+		return pb.FailureReason_FAILURE_UNRECOVERABLE
+	case domain.FailureInternal:
+		return pb.FailureReason_FAILURE_INTERNAL
+	default:
+		return pb.FailureReason_FAILURE_NONE
+	}
+}
+
+func logEntryToProto(e LogEntry) *pb.LogEntry {
+	return &pb.LogEntry{
+		Sequence:  e.Sequence,
+		Time:      timestamppb.New(e.Time),
+		Stage:     e.Stage,
+		Message:   e.Message,
+		Code:      int32(e.Code),
+		Retryable: e.Retryable,
+	}
 }
 
 func (s *Server) run(ctx context.Context, t *task) {
@@ -247,35 +628,6 @@ func (s *Server) snapshot(t *task) Status {
 	return Status{AttemptID: t.spec.AttemptID, SpecHash: t.specHash, State: t.state, LeaseUntil: t.leaseUntil, Result: t.result}
 }
 
-func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	t, ok := s.tasks[r.PathValue("attemptId")]
-	if !ok {
-		s.mu.Unlock()
-		writeError(w, http.StatusNotFound, "attempt not found")
-		return
-	}
-	if !t.state.Terminal() {
-		t.leaseUntil = s.now().Add(s.config.LeaseDuration)
-	}
-	response := s.snapshot(t)
-	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, response)
-}
-
-func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	t, ok := s.tasks[r.PathValue("attemptId")]
-	if !ok {
-		s.mu.Unlock()
-		writeError(w, http.StatusNotFound, "attempt not found")
-		return
-	}
-	entries := append([]LogEntry(nil), t.logs...)
-	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, entries)
-}
-
 func (s *Server) logTask(t *task, stage, message string, code int, retryable bool) {
 	message = redactLogLine(message)
 	entry := LogEntry{Time: s.now().UTC(), Stage: stage, Message: message, Code: code, Retryable: retryable}
@@ -290,44 +642,6 @@ func (s *Server) logTask(t *task, stage, message string, code int, retryable boo
 	_ = WriteRedactedLog(s.config.DataDir, fmt.Sprintf("%s attempt=%s stage=%s code=%d retryable=%t message=%s", entry.Time.Format(time.RFC3339Nano), t.spec.AttemptID, stage, code, retryable, message))
 }
 
-func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	t, ok := s.tasks[r.PathValue("attemptId")]
-	if !ok {
-		s.mu.Unlock()
-		writeError(w, http.StatusNotFound, "attempt not found")
-		return
-	}
-	if !t.state.Terminal() {
-		t.state = domain.AttemptStopping
-		t.cancel()
-	}
-	response := s.snapshot(t)
-	s.mu.Unlock()
-	writeJSON(w, http.StatusAccepted, response)
-}
-
-func (s *Server) ack(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("attemptId")
-	s.mu.Lock()
-	t, ok := s.tasks[id]
-	if !ok {
-		s.mu.Unlock()
-		writeError(w, http.StatusNotFound, "attempt not found")
-		return
-	}
-	if !t.state.Terminal() {
-		s.mu.Unlock()
-		writeError(w, http.StatusConflict, "attempt is not terminal")
-		return
-	}
-	if !t.result.Success {
-		delete(s.tasks, id)
-	}
-	s.mu.Unlock()
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func (s *Server) reapLeases() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -339,15 +653,6 @@ func (s *Server) reapLeases() {
 		}
 		s.mu.Unlock()
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
-}
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
 }
 
 func WriteRedactedLog(dataDir, line string) error {

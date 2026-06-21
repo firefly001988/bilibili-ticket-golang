@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"bilibili-ticket-golang/cluster/domain"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -243,15 +244,26 @@ func (r *Repository) DeleteWorker(ctx context.Context, id string) error {
 	return tx.Commit()
 }
 
-func (r *Repository) PutWorkerKey(ctx context.Context, workerID, key string) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO worker_keys(worker_id,control_key) VALUES(?,?) ON CONFLICT(worker_id) DO UPDATE SET control_key=excluded.control_key`, workerID, []byte(key))
+func (r *Repository) PutWorkerTLS(ctx context.Context, workerID string, tls domain.WorkerTLSConfig) error {
+	b, err := marshal(tls)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO worker_keys(worker_id,control_key) VALUES(?,?) ON CONFLICT(worker_id) DO UPDATE SET control_key=excluded.control_key`, workerID, b)
 	return err
 }
 
-func (r *Repository) WorkerKey(ctx context.Context, workerID string) (string, error) {
-	var key []byte
-	err := r.db.QueryRowContext(ctx, `SELECT control_key FROM worker_keys WHERE worker_id=?`, workerID).Scan(&key)
-	return string(key), err
+func (r *Repository) WorkerTLS(ctx context.Context, workerID string) (domain.WorkerTLSConfig, error) {
+	var raw []byte
+	err := r.db.QueryRowContext(ctx, `SELECT control_key FROM worker_keys WHERE worker_id=?`, workerID).Scan(&raw)
+	if err != nil {
+		return domain.WorkerTLSConfig{}, err
+	}
+	var tls domain.WorkerTLSConfig
+	if err := json.Unmarshal(raw, &tls); err != nil {
+		return domain.WorkerTLSConfig{}, err
+	}
+	return tls, nil
 }
 
 func (r *Repository) PutAccount(ctx context.Context, value domain.Account, expectedVersion *int64) error {

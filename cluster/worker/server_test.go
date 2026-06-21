@@ -2,9 +2,8 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"crypto/tls"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,13 @@ import (
 
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/executor"
+	pb "bilibili-ticket-golang/cluster/worker/proto"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type backend struct {
@@ -35,62 +41,177 @@ func (backend) Credentials() domain.Credentials { return domain.Credentials{Vers
 func workerSpec(id string) domain.ExecutionSpec {
 	return domain.ExecutionSpec{AttemptID: id, IntentID: "i", ProjectID: 1, ScreenID: 2, SKUID: 3, Buyers: []domain.Buyer{{LogicalID: "b"}}, StartMode: domain.StartImmediate, Deadline: time.Now().Add(time.Minute)}
 }
-func request(t *testing.T, h http.Handler, method, path, body, key string) *httptest.ResponseRecorder {
+
+// startTestServer creates a real gRPC worker server with auto-generated mTLS
+// and returns a ready client stub and a cleanup function.
+func startTestServer(t *testing.T, config Config, factory BackendFactory) (pb.WorkerServiceClient, func()) {
 	t.Helper()
-	r := httptest.NewRequest(method, path, strings.NewReader(body))
-	r.Header.Set("Authorization", "Bearer "+key)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, r)
-	return w
+	if err := config.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := NewServer(config, factory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS, err := NewServerTLSConfig(config.CACertPEM, config.ServerCertPEM, config.ServerKeyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lis, err := net.Listen("tcp", config.Listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcSrv := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
+	pb.RegisterWorkerServiceServer(grpcSrv, NewGRPCService(srv))
+	go func() { _ = grpcSrv.Serve(lis) }()
+
+	clientTLS := mustClientTLS(t, config.DataDir)
+
+	conn, err := grpc.NewClient(
+		lis.Addr().String(),
+		grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli := pb.NewWorkerServiceClient(conn)
+	return cli, func() {
+		conn.Close()
+		grpcSrv.Stop()
+		_ = lis.Close()
+	}
+}
+
+func mustClientTLS(t *testing.T, dir string) *tls.Config {
+	t.Helper()
+	caPEM, err := os.ReadFile(filepath.Join(dir, "ca.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	caKeyPEM, err := os.ReadFile(filepath.Join(dir, "ca-key.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientCertPEM, clientKeyPEM, err := GenerateClientCert(caPEM, caKeyPEM, "test-client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tlsCfg, err := NewClientTLSConfig(caPEM, clientCertPEM, clientKeyPEM, "localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tlsCfg
+}
+
+func mustSpecProto(t *testing.T, s domain.ExecutionSpec) *pb.ExecutionSpec {
+	t.Helper()
+	sp := &pb.ExecutionSpec{
+		AttemptId:  s.AttemptID,
+		IntentId:   s.IntentID,
+		ProjectId:  s.ProjectID,
+		ScreenId:   s.ScreenID,
+		SkuId:      s.SKUID,
+		Buyers:     []*pb.Buyer{{LogicalId: s.Buyers[0].LogicalID}},
+		StartMode:  pb.StartMode_START_IMMEDIATE,
+		IntervalMs: s.IntervalMS,
+		Deadline:   timestamppb.New(s.Deadline),
+	}
+	return sp
 }
 
 func TestAuthIdempotencyConflictAndSingleSlot(t *testing.T) {
 	block := make(chan struct{})
-	s, err := NewServer(Config{BearerKey: "secret", DataDir: t.TempDir(), PollInterval: 10 * time.Second}, func(domain.ExecutionSpec) (executor.Backend, error) { return backend{block: block}, nil })
+	config := Config{Listen: "127.0.0.1:0", DataDir: t.TempDir(), PollInterval: 10 * time.Second}
+	cli, cleanup := startTestServer(t, config, func(domain.ExecutionSpec) (executor.Backend, error) { return backend{block: block}, nil })
+	defer cleanup()
+
+	ctx := context.Background()
+	sp := mustSpecProto(t, workerSpec("a"))
+
+	// Create.
+	_, err := cli.Submit(ctx, &pb.SubmitRequest{Spec: sp})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create: %v", err)
 	}
-	b, _ := json.Marshal(workerSpec("a"))
-	h := s.Handler()
-	if got := request(t, h, http.MethodGet, "/v1/health", "", "bad").Code; got != http.StatusUnauthorized {
-		t.Fatalf("auth=%d", got)
+
+	// Idempotent.
+	_, err = cli.Submit(ctx, &pb.SubmitRequest{Spec: sp})
+	if err != nil {
+		t.Fatalf("idempotent: %v", err)
 	}
-	if got := request(t, h, http.MethodPost, "/v1/tasks", string(b), "secret").Code; got != http.StatusAccepted {
-		t.Fatalf("create=%d", got)
+
+	// Conflict with different spec.
+	copyOther := *sp
+	copyOther.SkuId = 9
+	_, err = cli.Submit(ctx, &pb.SubmitRequest{Spec: &copyOther})
+	if code := status.Code(err); code != codes.AlreadyExists {
+		t.Fatalf("conflict: code=%s err=%v", code, err)
 	}
-	if got := request(t, h, http.MethodPost, "/v1/tasks", string(b), "secret").Code; got != http.StatusOK {
-		t.Fatalf("idempotent=%d", got)
+
+	// Busy — worker single slot.
+	busySp := mustSpecProto(t, workerSpec("b"))
+	_, err = cli.Submit(ctx, &pb.SubmitRequest{Spec: busySp})
+	if code := status.Code(err); code != codes.ResourceExhausted {
+		t.Fatalf("busy: code=%s err=%v", code, err)
 	}
-	other := workerSpec("a")
-	other.SKUID = 9
-	changed, _ := json.Marshal(other)
-	if got := request(t, h, http.MethodPost, "/v1/tasks", string(changed), "secret").Code; got != http.StatusConflict {
-		t.Fatalf("conflict=%d", got)
-	}
-	busy, _ := json.Marshal(workerSpec("b"))
-	if got := request(t, h, http.MethodPost, "/v1/tasks", string(busy), "secret").Code; got != http.StatusConflict {
-		t.Fatalf("busy=%d", got)
-	}
-	if got := request(t, h, http.MethodPost, "/v1/tasks/a/stop", "", "secret").Code; got != http.StatusAccepted {
-		t.Fatalf("stop=%d", got)
+
+	// Stop.
+	_, err = cli.Stop(ctx, &pb.StopRequest{AttemptId: "a"})
+	if err != nil {
+		t.Fatalf("stop: %v", err)
 	}
 }
 
 func TestSuccessPersistsAndSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
-	cfg := Config{BearerKey: "secret", DataDir: dir, PollInterval: 10 * time.Second}
-	s, _ := NewServer(cfg, func(domain.ExecutionSpec) (executor.Backend, error) {
+	listen := "127.0.0.1:0"
+
+	config := Config{Listen: listen, DataDir: dir, PollInterval: 10 * time.Second}
+	_ = config.Normalize() // auto-generates TLS
+
+	factory := func(domain.ExecutionSpec) (executor.Backend, error) {
 		return backend{outcome: executor.Outcome{OrderID: "o"}}, nil
-	})
-	b, _ := json.Marshal(workerSpec("a"))
-	_ = request(t, s.Handler(), http.MethodPost, "/v1/tasks", string(b), "secret")
+	}
+	srv, err := NewServer(config, factory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS, err := NewServerTLSConfig(config.CACertPEM, config.ServerCertPEM, config.ServerKeyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lis, err := net.Listen("tcp", listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcSrv := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
+	pb.RegisterWorkerServiceServer(grpcSrv, NewGRPCService(srv))
+	go func() { _ = grpcSrv.Serve(lis) }()
+	defer grpcSrv.Stop()
+
+	clientTLS := mustClientTLS(t, dir)
+	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	cli := pb.NewWorkerServiceClient(conn)
+
+	ctx := context.Background()
+	sp := mustSpecProto(t, workerSpec("a"))
+	_, err = cli.Submit(ctx, &pb.SubmitRequest{Spec: sp})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	deadline := time.Now().Add(time.Second)
 	succeeded := false
 	for time.Now().Before(deadline) {
-		w := request(t, s.Handler(), http.MethodGet, "/v1/tasks/a", "", "secret")
-		var status Status
-		_ = json.Unmarshal(w.Body.Bytes(), &status)
-		if status.State == domain.AttemptSucceeded {
+		resp, err := cli.Status(ctx, &pb.StatusRequest{AttemptId: "a"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.Status.State == pb.AttemptState_ATTEMPT_SUCCEEDED {
 			succeeded = true
 			break
 		}
@@ -99,46 +220,74 @@ func TestSuccessPersistsAndSurvivesRestart(t *testing.T) {
 	if !succeeded {
 		t.Fatal("attempt did not succeed")
 	}
-	logsResponse := request(t, s.Handler(), http.MethodGet, "/v1/tasks/a/logs", "", "secret")
-	if logsResponse.Code != http.StatusOK {
-		t.Fatalf("logs=%d", logsResponse.Code)
-	}
-	var entries []LogEntry
-	if err := json.Unmarshal(logsResponse.Body.Bytes(), &entries); err != nil {
+
+	// Logs.
+	logsResp, err := cli.Logs(ctx, &pb.LogsRequest{AttemptId: "a"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	foundResponse := false
-	for _, entry := range entries {
+	for _, entry := range logsResp.Entries {
 		if entry.Stage == "response" {
 			foundResponse = true
 		}
 	}
 	if !foundResponse {
-		t.Fatalf("execution response missing from logs: %#v", entries)
+		t.Fatalf("execution response missing from logs: %#v", logsResp.Entries)
 	}
-	restarted, err := NewServer(cfg, func(domain.ExecutionSpec) (executor.Backend, error) { return backend{}, nil })
+
+	// Restart.
+	grpcSrv.Stop()
+	_ = conn.Close()
+
+	restarted, err := NewServer(config, factory)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := request(t, restarted.Handler(), http.MethodGet, "/v1/tasks/a", "", "secret").Code; got != http.StatusOK {
-		t.Fatalf("persisted status=%d", got)
+	lis2, err := net.Listen("tcp", lis.Addr().String())
+	if err != nil {
+		t.Fatal(err)
 	}
-	changed := workerSpec("a")
-	changed.SKUID = 99
-	changedJSON, _ := json.Marshal(changed)
-	if got := request(t, restarted.Handler(), http.MethodPost, "/v1/tasks", string(changedJSON), "secret").Code; got != http.StatusConflict {
-		t.Fatalf("persisted spec conflict=%d", got)
+	grpcSrv2 := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
+	pb.RegisterWorkerServiceServer(grpcSrv2, NewGRPCService(restarted))
+	go func() { _ = grpcSrv2.Serve(lis2) }()
+	defer grpcSrv2.Stop()
+
+	conn2, err := grpc.NewClient(lis2.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn2.Close()
+	cli2 := pb.NewWorkerServiceClient(conn2)
+
+	resp, err := cli2.Status(ctx, &pb.StatusRequest{AttemptId: "a"})
+	if err != nil {
+		t.Fatalf("persisted status: %v", err)
+	}
+	if resp.Status.State != pb.AttemptState_ATTEMPT_SUCCEEDED {
+		t.Fatalf("persisted state=%v", resp.Status.State)
+	}
+
+	changed := mustSpecProto(t, workerSpec("a"))
+	changed.SkuId = 99
+	_, err = cli2.Submit(ctx, &pb.SubmitRequest{Spec: changed})
+	if code := status.Code(err); code != codes.AlreadyExists {
+		t.Fatalf("persisted spec conflict: code=%s err=%v", code, err)
 	}
 }
 
 func TestTaskLogsAreBoundedAndRedacted(t *testing.T) {
-	s, err := NewServer(Config{BearerKey: "secret", DataDir: t.TempDir(), PollInterval: 10 * time.Second}, func(domain.ExecutionSpec) (executor.Backend, error) { return backend{}, nil })
+	config := Config{Listen: "127.0.0.1:0", DataDir: t.TempDir(), PollInterval: 10 * time.Second}
+	srv, err := NewServer(config, func(domain.ExecutionSpec) (executor.Backend, error) { return backend{}, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
-	task := &task{spec: workerSpec("a")}
+	_ = config.Normalize()
+
+	taskSpec := workerSpec("a")
+	task := &task{spec: taskSpec, specHash: taskSpec.Hash()}
 	for i := 0; i < 510; i++ {
-		s.logTask(task, "response", "SESSDATA=must-not-leak", 1, true)
+		srv.logTask(task, "response", "SESSDATA=must-not-leak", 1, true)
 	}
 	if len(task.logs) != 500 || task.logs[0].Sequence != 11 {
 		t.Fatalf("unexpected bounded log window: len=%d first=%d", len(task.logs), task.logs[0].Sequence)
@@ -149,21 +298,36 @@ func TestTaskLogsAreBoundedAndRedacted(t *testing.T) {
 }
 
 func TestLeaseDefaultsAndStatusRenews(t *testing.T) {
-	cfg := Config{BearerKey: "secret", DataDir: t.TempDir(), PollInterval: 10 * time.Second}
-	s, _ := NewServer(cfg, func(domain.ExecutionSpec) (executor.Backend, error) { return backend{block: make(chan struct{})}, nil })
-	b, _ := json.Marshal(workerSpec("a"))
-	_ = request(t, s.Handler(), http.MethodPost, "/v1/tasks", string(b), "secret")
-	s.mu.Lock()
-	first := s.tasks["a"].leaseUntil
-	s.mu.Unlock()
+	block := make(chan struct{})
+	config := Config{Listen: "127.0.0.1:0", DataDir: t.TempDir(), PollInterval: 10 * time.Second}
+	cli, cleanup := startTestServer(t, config, func(domain.ExecutionSpec) (executor.Backend, error) { return backend{block: block}, nil })
+	defer cleanup()
+
+	ctx := context.Background()
+	sp := mustSpecProto(t, workerSpec("a"))
+	_, err := cli.Submit(ctx, &pb.SubmitRequest{Spec: sp})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First status.
+	resp, err := cli.Status(ctx, &pb.StatusRequest{AttemptId: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := resp.Status.LeaseUntil.AsTime()
 	if first.Sub(time.Now()) < 179*time.Second {
 		t.Fatalf("lease too short: %v", first.Sub(time.Now()))
 	}
+
 	time.Sleep(2 * time.Millisecond)
-	_ = request(t, s.Handler(), http.MethodGet, "/v1/tasks/a", "", "secret")
-	s.mu.Lock()
-	renewed := s.tasks["a"].leaseUntil
-	s.mu.Unlock()
+
+	// Renewed status.
+	resp2, err := cli.Status(ctx, &pb.StatusRequest{AttemptId: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewed := resp2.Status.LeaseUntil.AsTime()
 	if !renewed.After(first) {
 		t.Fatal("status did not renew lease")
 	}
