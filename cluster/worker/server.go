@@ -189,6 +189,7 @@ func (s *Server) run(ctx context.Context, t *task) {
 		t.state = domain.AttemptRunning
 	}
 	s.mu.Unlock()
+	_ = WriteRedactedLog(s.config.DataDir, fmt.Sprintf("started attempt=%s mode=%s deadline=%s", t.spec.AttemptID, t.spec.StartMode, t.spec.Deadline.Format(time.RFC3339)))
 	var executionClock executor.Clock
 	if s.config.CalibrateClock {
 		if offset, err := biliclock.GetBilibiliClockOffset(); err == nil {

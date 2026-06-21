@@ -44,6 +44,9 @@ func TestClusterServiceValidatesRunnableMacroAndPurchaseShape(t *testing.T) {
 	if err := service.SaveMacro(document(t, macro)); err != nil {
 		t.Fatal(err)
 	}
+	if err := service.StartMacro(macro.ID); err == nil {
+		t.Fatal("starting a macro without purchase groups must fail")
+	}
 	tooLarge := domain.PurchaseGroup{MacroTaskID: macro.ID, Buyers: []domain.Buyer{{LogicalID: "a"}, {LogicalID: "b"}, {LogicalID: "c"}}}
 	if err := service.SavePurchaseGroup(document(t, tooLarge)); err == nil {
 		t.Fatal("expected oversized purchase group to be rejected")
@@ -55,6 +58,9 @@ func TestClusterServiceValidatesRunnableMacroAndPurchaseShape(t *testing.T) {
 	valid := domain.PurchaseGroup{MacroTaskID: macro.ID, Buyers: []domain.Buyer{{LogicalID: "a"}, {LogicalID: "b"}}, AllowSplit: true}
 	if err := service.SavePurchaseGroup(document(t, valid)); err != nil {
 		t.Fatal(err)
+	}
+	if err := service.StartMacro(macro.ID); err == nil {
+		t.Fatal("starting without an eligible account and worker must not silently succeed")
 	}
 	snapshot, err := service.Snapshot()
 	if err != nil {

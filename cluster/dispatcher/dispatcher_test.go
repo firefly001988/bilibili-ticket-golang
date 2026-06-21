@@ -205,3 +205,13 @@ func TestAccountWithoutBuyerMappingIsSkipped(t *testing.T) {
 		t.Fatalf("account without buyer mapping was selected: %#v", attempt)
 	}
 }
+
+func TestHealthyIdleWorkerReturnsToResourcePool(t *testing.T) {
+	d := New(&client{states: make(map[string]WorkerStatus)}, nil, nil)
+	d.failedWorkers["worker"] = time.Now()
+	d.degraded = true
+	d.MarkWorkerHealthy("worker")
+	if _, failed := d.failedWorkers["worker"]; failed || d.degraded {
+		t.Fatalf("worker was not rehabilitated: failed=%v degraded=%v", failed, d.degraded)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -196,6 +197,55 @@ func (s *ClusterService) Start(parent context.Context) error {
 			s.client.SetKey(node.ID, key)
 		}
 	}
+	pluginName := ""
+	pluginFile := "plugins/captcha-plugin"
+	if runtime.GOOS == "windows" {
+		pluginFile += ".exe"
+	}
+	if _, statErr := os.Stat(pluginFile); statErr == nil {
+		pluginName = "captcha-plugin"
+	}
+	var localNode domain.WorkerNode
+	localReady := false
+	for _, node := range workers {
+		if node.ID != "local" {
+			continue
+		}
+		healthCtx, healthCancel := context.WithTimeout(ctx, 800*time.Millisecond)
+		_, healthErr := s.client.Health(healthCtx, node)
+		healthCancel()
+		if healthErr == nil {
+			localNode, localReady = node, true
+		}
+		break
+	}
+	var localErr error
+	if !localReady {
+		localNode, localErr = s.local.Start(ctx, s.client, employer.LocalWorkerOptions{DataDir: "data/local-worker", PluginDir: "plugins", CaptchaPlugin: pluginName, Version: global.GitCommit})
+	}
+	if localErr == nil {
+		if err := s.repository.PutWorker(ctx, localNode); err != nil {
+			return err
+		}
+		if key, readErr := os.ReadFile("data/local-worker/control.key"); readErr == nil {
+			if err := s.repository.PutWorkerKey(ctx, localNode.ID, string(key)); err != nil {
+				return err
+			}
+		}
+		workers, err = s.repository.ListWorkers(ctx)
+		if err != nil {
+			return err
+		}
+	} else {
+		log.Printf("[cluster] local worker unavailable: %v", localErr)
+		filtered := workers[:0]
+		for _, node := range workers {
+			if node.ID != "local" {
+				filtered = append(filtered, node)
+			}
+		}
+		workers = filtered
+	}
 	s.dispatcher.SetResources(accountsList, workers)
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
@@ -237,24 +287,6 @@ func (s *ClusterService) Start(parent context.Context) error {
 			}
 		}
 	}()
-	go func() {
-		pluginName := ""
-		pluginFile := "plugins/captcha-plugin"
-		if runtime.GOOS == "windows" {
-			pluginFile += ".exe"
-		}
-		if _, statErr := os.Stat(pluginFile); statErr == nil {
-			pluginName = "captcha-plugin"
-		}
-		node, err := s.local.Start(ctx, s.client, employer.LocalWorkerOptions{DataDir: "data/local-worker", PluginDir: "plugins", CaptchaPlugin: pluginName, Version: global.GitCommit})
-		if err == nil {
-			_ = s.repository.PutWorker(ctx, node)
-			if key, readErr := os.ReadFile("data/local-worker/control.key"); readErr == nil {
-				_ = s.repository.PutWorkerKey(ctx, node.ID, string(key))
-			}
-			_ = s.refreshResources(ctx)
-		}
-	}()
 	return nil
 }
 
@@ -276,6 +308,17 @@ func (s *ClusterService) refreshResources(ctx context.Context) error {
 		return err
 	}
 	s.dispatcher.SetResources(accountList, workers)
+	for _, node := range workers {
+		healthCtx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
+		health, healthErr := s.client.Health(healthCtx, node)
+		cancel()
+		if healthErr == nil {
+			active, _ := health["activeAttemptId"].(string)
+			if active == "" {
+				s.dispatcher.MarkWorkerHealthy(node.ID)
+			}
+		}
+	}
 	return nil
 }
 
@@ -603,10 +646,10 @@ func (s *ClusterService) SavePurchaseGroup(document string) error {
 }
 
 func (s *ClusterService) StartMacro(macroID string) error {
-	return s.planAndStart(context.Background(), macroID, domain.PhasePunctual)
+	return s.planAndStart(context.Background(), macroID, domain.PhasePunctual, true)
 }
 
-func (s *ClusterService) planAndStart(ctx context.Context, macroID string, phase domain.Phase) error {
+func (s *ClusterService) planAndStart(ctx context.Context, macroID string, phase domain.Phase, requireActive bool) error {
 	s.dispatcher.ResumePhase(phase)
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
@@ -626,20 +669,45 @@ func (s *ClusterService) planAndStart(ctx context.Context, macroID string, phase
 	if err != nil {
 		return err
 	}
+	if len(groups) == 0 {
+		return fmt.Errorf("macro task has no purchase groups")
+	}
 	intents, err := planner.Plan(*selected, groups, phase, time.Now())
 	if err != nil {
 		return err
 	}
+	if len(intents) == 0 {
+		return fmt.Errorf("planner produced no order intents")
+	}
+	existing, err := s.repository.ListIntents(ctx)
+	if err != nil {
+		return err
+	}
+	existingByID := make(map[string]domain.LogicalOrderIntent, len(existing))
+	for _, intent := range existing {
+		existingByID[intent.ID] = intent
+	}
+	intentIDs := make(map[string]struct{}, len(intents))
 	for _, intent := range intents {
+		if previous, ok := existingByID[intent.ID]; ok && previous.Succeeded {
+			return fmt.Errorf("order intent %s has already succeeded and cannot be restarted", intent.ID)
+		}
 		if err := s.repository.PutIntent(ctx, intent); err != nil {
 			return err
 		}
 		s.dispatcher.Add(dispatcher.IntentPlan{Macro: *selected, Intent: intent})
+		intentIDs[intent.ID] = struct{}{}
 	}
 	s.mu.Lock()
 	s.phases[macroID] = phase
 	s.mu.Unlock()
-	return s.dispatcher.Reconcile(ctx)
+	if err := s.dispatcher.Reconcile(ctx); err != nil {
+		return err
+	}
+	if requireActive && s.dispatcher.ActiveAttemptsFor(intentIDs) == 0 {
+		return fmt.Errorf("task was planned but no attempt started: check deadline, healthy workers, enabled accounts, and buyer mappings")
+	}
+	return nil
 }
 
 func (s *ClusterService) SwitchToReflow() error {
@@ -663,7 +731,7 @@ func (s *ClusterService) SwitchToReflow() error {
 		return err
 	}
 	for _, macro := range macros {
-		if err := s.planAndStart(ctx, macro.ID, domain.PhaseReflow); err != nil {
+		if err := s.planAndStart(ctx, macro.ID, domain.PhaseReflow, false); err != nil {
 			return err
 		}
 	}

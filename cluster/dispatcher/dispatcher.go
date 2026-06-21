@@ -90,6 +90,27 @@ func (d *Dispatcher) SetResources(accounts []domain.Account, workers []domain.Wo
 	d.accounts, d.workers = nextAccounts, nextWorkers
 }
 
+func (d *Dispatcher) MarkWorkerHealthy(workerID string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.failedWorkers, workerID)
+	if len(d.failedWorkers) == 0 {
+		d.degraded = false
+	}
+}
+
+func (d *Dispatcher) ActiveAttemptsFor(intentIDs map[string]struct{}) int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	count := 0
+	for _, current := range d.attempts {
+		if _, ok := intentIDs[current.value.IntentID]; ok && !current.value.State.Terminal() {
+			count++
+		}
+	}
+	return count
+}
+
 func (d *Dispatcher) Add(plan IntentPlan) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -209,6 +230,7 @@ func (d *Dispatcher) poll(ctx context.Context) error {
 			current.isolatedUntil = now.Add(195 * time.Second)
 			d.degraded = true
 			current.value.State, current.value.UpdatedAt = domain.AttemptFailed, now
+			current.value.Result = domain.ExecutionResult{AttemptID: current.value.ID, IntentID: current.value.IntentID, SpecHash: current.value.SpecHash, State: domain.AttemptFailed, Reason: domain.FailureWorkerLost, Message: err.Error(), FinishedAt: now}
 			delete(d.accountBusy, current.value.AccountID)
 			delete(d.workerBusy, current.value.WorkerID)
 			if d.repository != nil {

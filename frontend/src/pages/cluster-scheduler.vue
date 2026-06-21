@@ -6,6 +6,8 @@ import VueQr from 'vue-qr'
 const tab = ref('tasks')
 const loading = ref(false)
 const error = ref('')
+const notice = ref('')
+const startingMacroId = ref('')
 const snapshot = ref<ClusterSnapshot>({ taskGroups: [], accounts: [], buyers: [], workers: [], macros: [], attempts: [] })
 const accountJSON = ref('')
 const worker = ref({ id: '', name: '', baseUrl: 'http://127.0.0.1:18080', key: '', role: 'primary' as ResourceRole })
@@ -41,6 +43,18 @@ async function invoke(method: string, ...args: any[]) {
   try { await clusterCall(method, ...args); await refresh() }
   catch (e) { error.value = String(e) }
   finally { loading.value = false }
+}
+
+async function startMacro(id: string) {
+  startingMacroId.value = id
+  notice.value = ''
+  try {
+    await clusterCall('StartMacro', id)
+    notice.value = '准点任务已创建并成功下发到 Worker。'
+    error.value = ''
+    await refresh()
+  } catch (e) { error.value = String(e) }
+  finally { startingMacroId.value = '' }
 }
 
 const importAccount = () => invoke('ImportAccount', accountJSON.value)
@@ -143,6 +157,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
       <v-btn :loading="loading" prepend-icon="mdi-refresh" variant="text" @click="refresh">刷新</v-btn>
     </v-card-title>
     <v-alert v-if="error" type="error" closable class="ma-4" @click:close="error = ''">{{ error }}</v-alert>
+    <v-alert v-if="notice" type="success" closable class="ma-4" @click:close="notice = ''">{{ notice }}</v-alert>
     <v-tabs v-model="tab" grow>
       <v-tab value="tasks">任务规划</v-tab>
       <v-tab value="accounts">账号池</v-tab>
@@ -169,7 +184,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); if (loginTimer) wind
                 <td><div>{{ item.projectName || `项目 ${item.projectId}` }}</div><div class="text-caption text-medium-emphasis">{{ item.screenName || item.screenId }} — {{ item.skuName || item.skuId }}</div></td><td>{{ item.eventDay || '未设置' }}</td><td>{{ item.orderCapacity }}</td>
                 <td>{{ item.desiredReplicas }} / {{ item.hardConcurrency }}</td><td>{{ item.priority }}</td>
                 <td><v-chip size="small" :color="item.needsReview ? 'warning' : 'success'">{{ item.phase }} · {{ item.needsReview ? '待确认' : '可调度' }}</v-chip></td>
-                <td><v-btn size="small" :disabled="item.needsReview || !item.eventDayConfirmed" @click.stop="invoke('StartMacro', item.id)">启动准点</v-btn><v-btn class="ml-1" size="small" variant="text" :icon="expandedMacros.includes(item.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" @click.stop="toggleMacro(item.id)" /></td>
+                <td><v-btn size="small" :loading="startingMacroId === item.id" :disabled="item.needsReview || !item.eventDayConfirmed" @click.stop="startMacro(item.id)">启动准点</v-btn><v-btn class="ml-1" size="small" variant="text" :icon="expandedMacros.includes(item.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" @click.stop="toggleMacro(item.id)" /></td>
               </tr>
               <tr v-if="expandedMacros.includes(item.id)"><td colspan="7" class="bg-grey-lighten-4 pa-4">
                 <div v-if="item.purchaseGroups.length === 0" class="text-medium-emphasis">尚未配置购票组。</div>
