@@ -5,26 +5,30 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"time"
 
-	biliclock "bilibili-ticket-golang/lib/biliutils/clock"
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/executor"
 	"bilibili-ticket-golang/cluster/worker"
+	biliclock "bilibili-ticket-golang/lib/biliutils/clock"
 	"bilibili-ticket-golang/lib/plugins"
 	"bilibili-ticket-golang/lib/plugins/captcha"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal("usage: ticket-worker <run|serve>")
+		fatal("usage: ticket-worker <run|serve|import>")
 	}
 	switch os.Args[1] {
 	case "run":
 		run(os.Args[2:])
 	case "serve":
 		serve(os.Args[2:])
+	case "import":
+		importConfig(os.Args[2:])
 	default:
 		fatal("unknown command %q", os.Args[1])
 	}
@@ -161,6 +165,69 @@ func run(args []string) {
 	if !result.Success {
 		os.Exit(1)
 	}
+}
+
+func importConfig(args []string) {
+	fs := flag.NewFlagSet("import", flag.ExitOnError)
+	stdin := fs.Bool("stdin", false, "read Base4096 config from stdin")
+	configPath := fs.String("o", "", "output directory for config files (default: data/worker)")
+	_ = fs.Parse(args)
+
+	var encoded string
+	if *stdin {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fatal("read stdin: %v", err)
+		}
+		encoded = string(data)
+	} else {
+		if fs.NArg() == 0 {
+			fatal("usage: ticket-worker import [--stdin] [--o <dir>] <base4096_string>")
+		}
+		encoded = fs.Arg(0)
+	}
+
+	rc, err := worker.DecodeRemoteWorkerConfig(encoded)
+	if err != nil {
+		fatal("decode config: %v", err)
+	}
+
+	dataDir := *configPath
+	if dataDir == "" {
+		if rc.DataDir != "" {
+			dataDir = rc.DataDir
+		} else {
+			dataDir = "data/worker"
+		}
+	}
+
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		fatal("create data dir: %v", err)
+	}
+
+	// Write a self-contained worker.json (PEM material embedded directly).
+	wc := rc.ToWorkerConfig()
+	wc.DataDir = dataDir
+	configJSON, err := json.MarshalIndent(wc, "", "  ")
+	if err != nil {
+		fatal("marshal worker config: %v", err)
+	}
+	writeFile(filepath.Join(dataDir, "worker.json"), configJSON, 0600)
+
+	fmt.Printf("Worker config imported successfully.\n")
+	fmt.Printf("  Data directory: %s\n", dataDir)
+	fmt.Printf("  Worker ID:      %s\n", rc.WorkerID)
+	fmt.Printf("  Listen address: %s\n", wc.Listen)
+	fmt.Printf("\nThe worker.json is self-contained (includes TLS material).\n")
+	fmt.Printf("Start the worker with:\n")
+	fmt.Printf("  ticket-worker serve --config %s\n", filepath.Join(dataDir, "worker.json"))
+}
+
+func writeFile(path string, data []byte, perm os.FileMode) {
+	if err := os.WriteFile(path, data, perm); err != nil {
+		fatal("write %s: %v", path, err)
+	}
+	fmt.Printf("  wrote %s\n", path)
 }
 
 func fatal(format string, args ...any) {

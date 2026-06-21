@@ -120,6 +120,8 @@ onMounted(async () => {
         </v-list-subheader>
         <v-list-item :title="t('nav.notify')" value="notify" @click="router.push('/notify')"
           prepend-icon="mdi-bell-ring" />
+        <v-list-item :title="t('nav.workerConfig')" value="worker-config" @click="router.push('/worker-config')"
+          prepend-icon="mdi-server-network" />
         <v-list-item :title="t('nav.settings')" value="settings" @click="router.push('/settings')"
           prepend-icon="mdi-cog" />
         <v-list-item :title="t('nav.update')" value="update" @click="router.push('/update')"

@@ -33,7 +33,26 @@
         "update": "Update",
         "notLoggedIn": "Not logged in",
         "bwsTooltip": "BWS Event Ticketing",
-        "bwsUnavailableTooltip": "BWS is only available from July 8 to July 11"
+        "bwsUnavailableTooltip": "BWS is only available from July 8 to July 11",
+        "workerConfig": "Remote Worker Config"
+    },
+    "workerConfig": {
+        "title": "Generate Remote Worker Config",
+        "workerIdRequired": "Worker ID is required",
+        "workerId": "Worker ID",
+        "workerIdHint": "Unique identifier, e.g. home-server",
+        "listen": "Listen Address",
+        "listenHint": "gRPC listen address for the worker, e.g. 0.0.0.0:18080",
+        "hosts": "TLS Hostnames",
+        "hostsHint": "Comma-separated DNS names or IPs, e.g. myworker.example.com,192.168.1.100",
+        "generate": "Generate Config",
+        "generating": "Generating...",
+        "result": "Generated successfully!",
+        "copy": "Copy",
+        "copied": "Copied",
+        "usage": "Send the string below to the Worker operator, and run on the Worker machine:",
+        "usageCommand": "ticket-worker import \"<paste string>\"",
+        "notice": "Note: Employer-side credentials have been automatically saved. After import, the Worker will connect via mTLS."
     },
     "verified": {
         "title": "Verification Statement",

@@ -19,6 +19,7 @@ const routes = [
   { path: '/bws-reservation', component: () => import('@/pages/bws-reservation.vue'), id: 'bws-reservation' },
   { path: '/plugin-download', component: () => import('@/pages/plugins-download.vue'), id: 'plugins' },
   { path: '/plugin-management', component: () => import('@/pages/plugin-management.vue'), id: 'plugin-management' },
+  { path: '/worker-config', component: () => import('@/pages/worker-config.vue'), id: 'worker-config' },
 ]
 
 const router = createRouter({

@@ -33,7 +33,26 @@
         "update": "更新",
         "notLoggedIn": "未登录",
         "bwsTooltip": "BWS 活动抢票",
-        "bwsUnavailableTooltip": "BWS 仅在 7月8日 至 7月11日 期间开放"
+        "bwsUnavailableTooltip": "BWS 仅在 7月8日 至 7月11日 期间开放",
+        "workerConfig": "远程 Worker 配置"
+    },
+    "workerConfig": {
+        "title": "生成远程 Worker 配置",
+        "workerIdRequired": "Worker ID 不能为空",
+        "workerId": "Worker ID",
+        "workerIdHint": "唯一标识符，如 home-server",
+        "listen": "监听地址",
+        "listenHint": "Worker 的 gRPC 监听地址，如 0.0.0.0:18080",
+        "hosts": "TLS 主机名",
+        "hostsHint": "逗号分隔的 DNS 名或 IP，如 myworker.example.com,192.168.1.100",
+        "generate": "生成配置",
+        "generating": "生成中...",
+        "result": "生成成功！",
+        "copy": "复制",
+        "copied": "已复制",
+        "usage": "将以下字符串发送给 Worker 操作者，在 Worker 机器上运行：",
+        "usageCommand": "ticket-worker import \"<粘贴字符串>\"",
+        "notice": "注意：雇主端已自动保存连接凭证。Worker 导入后即可通过 mTLS 安全通信。"
     },
     "verified": {
         "title": "验证声明",

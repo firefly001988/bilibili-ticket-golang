@@ -735,6 +735,95 @@ func (s *ClusterService) DeleteWorker(workerID string) error {
 	return s.refreshResources(context.Background())
 }
 
+// GenerateRemoteWorkerConfigResponse is returned by GenerateRemoteWorkerConfig.
+type GenerateRemoteWorkerConfigResponse struct {
+	EncodedConfig string `json:"encodedConfig"` // Base4096 string for the worker
+	WorkerID      string `json:"workerId"`
+	Listen        string `json:"listen"`
+}
+
+// GenerateRemoteWorkerConfig creates TLS material and a complete configuration
+// for a remote worker, then encodes it as a Base4096 string for copy-paste
+// distribution.  The employer-side credentials are automatically stored in
+// the repository and registered with the WorkerClient so that the employer
+// can establish mTLS connections to the worker once it comes online.
+//
+// Parameters:
+//   - workerID: unique identifier for the worker (e.g. "home-server")
+//   - listen: address the worker will listen on (e.g. "0.0.0.0:18080")
+//   - hosts: comma-separated list of DNS names / IPs for the server TLS cert
+//     (e.g. "myworker.example.com,192.168.1.100")
+func (s *ClusterService) GenerateRemoteWorkerConfig(workerID, listen, hosts string) (GenerateRemoteWorkerConfigResponse, error) {
+	if workerID == "" {
+		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("workerId is required")
+	}
+	if listen == "" {
+		listen = "0.0.0.0:18080"
+	}
+	hostList := strings.Split(hosts, ",")
+	// Trim whitespace and filter empty entries.
+	filtered := hostList[:0]
+	for _, h := range hostList {
+		h = strings.TrimSpace(h)
+		if h != "" {
+			filtered = append(filtered, h)
+		}
+	}
+	hostList = filtered
+	if len(hostList) == 0 {
+		hostList = []string{"localhost", "127.0.0.1"}
+	}
+
+	rc, bundle, err := clusterworker.GenerateRemoteWorkerConfig(hostList, workerID, clusterworker.RemoteWorkerOptions{
+		Listen:          listen,
+		WorkerID:        workerID,
+		DataDir:         "data/worker",
+		PollIntervalSec: 15,
+		CalibrateClock:  true,
+	})
+	if err != nil {
+		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("generate remote worker config: %w", err)
+	}
+
+	encoded, err := rc.Encode()
+	if err != nil {
+		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("encode config: %w", err)
+	}
+
+	// Register the worker node and its employer-side TLS material.
+	node := domain.WorkerNode{
+		ID:            workerID,
+		Name:          workerID,
+		Address:       listen,
+		Role:          domain.RolePrimary,
+		Enabled:       true,
+		TLSServerName: bundle.ServerName,
+	}
+	tlsConfig := domain.WorkerTLSConfig{
+		CACertPEM:     bundle.CAPEM,
+		ClientCertPEM: bundle.CertPEM,
+		ClientKeyPEM:  bundle.KeyPEM,
+		ServerName:    bundle.ServerName,
+	}
+	if err := s.client.SetTLSFromConfig(workerID, tlsConfig); err != nil {
+		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("set worker TLS: %w", err)
+	}
+	ctx := context.Background()
+	if err := s.repository.PutWorker(ctx, node); err != nil {
+		return GenerateRemoteWorkerConfigResponse{}, err
+	}
+	if err := s.repository.PutWorkerTLS(ctx, workerID, tlsConfig); err != nil {
+		return GenerateRemoteWorkerConfigResponse{}, err
+	}
+	_ = s.refreshResources(ctx)
+
+	return GenerateRemoteWorkerConfigResponse{
+		EncodedConfig: encoded,
+		WorkerID:      workerID,
+		Listen:        listen,
+	}, nil
+}
+
 func (s *ClusterService) SaveMacro(document string) error {
 	var value domain.MacroTask
 	if err := json.Unmarshal([]byte(document), &value); err != nil {

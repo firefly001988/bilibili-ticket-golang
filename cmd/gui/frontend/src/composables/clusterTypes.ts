@@ -102,6 +102,12 @@ export interface ProjectCatalog {
   tickets: CatalogSKU[]
 }
 
+export interface GenerateRemoteWorkerConfigResponse {
+  encodedConfig: string
+  workerId: string
+  listen: string
+}
+
 export interface ClusterSnapshot {
   taskGroups: Array<{ id: string; name: string; createdAt: string }>
   accounts: AccountSummary[]

@@ -114,6 +114,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/worker-config': RouteRecordInfo<
+      '/worker-config',
+      '/worker-config',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
   }
 
   /**
@@ -196,6 +203,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/update.vue': {
       routes:
         | '/update'
+      views:
+        | never
+    }
+    'src/pages/worker-config.vue': {
+      routes:
+        | '/worker-config'
       views:
         | never
     }

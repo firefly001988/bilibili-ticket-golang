@@ -37,10 +37,12 @@ type Config struct {
 	PluginDir        string        `json:"pluginDir,omitempty"`
 	CaptchaPlugin    string        `json:"captchaPlugin,omitempty"`
 	CalibrateClock   bool          `json:"calibrateClock,omitempty"`
-	// TLS fields – if empty, auto‑generate a local CA + server cert.
-	CACertPEM     []byte `json:"-"`
-	ServerCertPEM []byte `json:"-"`
-	ServerKeyPEM  []byte `json:"-"`
+	// TLS fields – if empty, Normalize() auto‑generates a local CA + server cert
+	// and loads them from disk.  When non‑empty they are serialised directly so
+	// a single worker.json can carry all the material a remote worker needs.
+	CACertPEM     []byte `json:"caCertPEM,omitempty"`
+	ServerCertPEM []byte `json:"serverCertPEM,omitempty"`
+	ServerKeyPEM  []byte `json:"serverKeyPEM,omitempty"`
 }
 
 func (c *Config) Normalize() error {
