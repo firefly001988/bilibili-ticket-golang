@@ -108,7 +108,7 @@ func (m *Manager) SyncBuyers(ctx context.Context, accountID string) ([]domain.Bu
 }
 
 func logicalBuyerID(buyer domain.Buyer) string {
-	identity := strings.ToLower(strings.TrimSpace(buyer.Name)) + "\x00" + strings.TrimSpace(buyer.Tel) + "\x00" + strings.ToUpper(strings.TrimSpace(buyer.IDCard)) + fmt.Sprintf("\x00%d", buyer.Type)
+	identity := strings.ToLower(strings.TrimSpace(buyer.Name)) + "\x00" + strings.ToUpper(strings.TrimSpace(buyer.IDCard)) + fmt.Sprintf("\x00%d", buyer.Type)
 	sum := sha256.Sum256([]byte(identity))
 	return "buyer-" + hex.EncodeToString(sum[:12])
 }
