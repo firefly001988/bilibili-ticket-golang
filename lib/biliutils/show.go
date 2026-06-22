@@ -267,8 +267,8 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 		"newRisk":        true,
 		"orderCreateUrl": "https://show.bilibili.com/api/ticket/order/createV2",
 		"clickPostion": map[string]any{
-			"now":    time.Now().UnixMilli(),
-			"origin": time.Now().UnixMilli() - 10000,
+			"now":    c.now().UnixMilli(),
+			"origin": c.now().UnixMilli() - 10000,
 			"x":      rand.Int64N(400) + 100,
 			"y":      rand.Int64N(400) + 100,
 		},
@@ -452,6 +452,7 @@ func (c *BiliClient) GetRealnameBuyerList() (error, []api.BuyerNoSensitiveStruct
 		"device":      "phone",
 		"c_locale":    "zh-Hans_CN",
 		"s_locale":    "zh-Hans_CN",
+		"src":         "owner",
 	})
 	res, err := c.client.R().SetQueryString(query.Encode()).Get("https://show.bilibili.com/api/ticket/buyerinfo/list")
 	if err != nil {
@@ -480,46 +481,80 @@ func (c *BiliClient) GetRealnameBuyerList() (error, []api.BuyerNoSensitiveStruct
 //
 // Returns: error and list of buyers with non-sensitive info
 func (c *BiliClient) GetRealnameBuyerListNew() (error, []api.BuyerNoSensitiveStruct) {
-	res, err := c.client.R().Get("https://show.bilibili.com/api/ticket/buyer/list")
-	if err != nil {
-		return err, nil
-	}
-	var data api.ShowApiDataRoot[api.BuyerNoSensitiveInfoNewApiStruct]
-	err = res.Unmarshal(&data)
-	if err != nil {
-		return err, nil
-	}
-	if err = data.CheckValid(); err != nil {
-		return err, nil
-	}
-	// Map new API response back to the original BuyerNoSensitiveStruct
-	list := make([]api.BuyerNoSensitiveStruct, 0, len(data.Data.List))
-	for _, b := range data.Data.List {
-		var IdName string
-		switch b.IdType {
-		case 0:
-			IdName = "身份证"
-		case 1:
-			IdName = "护照"
-		case 2:
-			IdName = "港澳通行证"
-		case 3:
-			IdName = "台湾通行证"
-		default:
-			IdName = "未知证件类型"
+	return c.GetRealnameBuyerList()
+	/*
+		res, err := c.client.R().Get("https://show.bilibili.com/api/ticket/buyer/list")
+		if err != nil {
+			return err, nil
 		}
-		list = append(list, api.BuyerNoSensitiveStruct{
-			Id:           b.Id,
-			Uid:          b.Uid,
-			Name:         b.Name,
-			IdType:       b.IdType,
-			IdName:       IdName,
-			IdCard:       b.PersonalId,
-			Tel:          b.Tel,
-			ViewType:     b.ViewType,
-			VerifyStatus: b.VerifyStatus,
-			Status:       b.VerifyStatus,
-		})
+		var data api.ShowApiDataRoot[api.BuyerNoSensitiveInfoNewApiStruct]
+		err = res.Unmarshal(&data)
+		if err != nil {
+			return err, nil
+		}
+		if err = data.CheckValid(); err != nil {
+			return err, nil
+		}
+		// Map new API response back to the original BuyerNoSensitiveStruct
+		list := make([]api.BuyerNoSensitiveStruct, 0, len(data.Data.List))
+		for _, b := range data.Data.List {
+			var IdName string
+			switch b.IdType {
+			case 0:
+				IdName = "身份证"
+			case 1:
+				IdName = "护照"
+			case 2:
+				IdName = "港澳通行证"
+			case 3:
+				IdName = "台湾通行证"
+			default:
+				IdName = "未知证件类型"
+			}
+			list = append(list, api.BuyerNoSensitiveStruct{
+				Id:           b.Id,
+				Uid:          b.Uid,
+				Name:         b.Name,
+				IdType:       b.IdType,
+				IdName:       IdName,
+				IdCard:       b.PersonalId,
+				Tel:          b.Tel,
+				ViewType:     b.ViewType,
+				VerifyStatus: b.VerifyStatus,
+				Status:       b.VerifyStatus,
+			})
+		}
+		return nil, list
+	*/
+}
+
+// GetTargetBuyerSensitiveData fetches the sensitive data of a buyer for a real-name project.
+// Parameters: int buyerID
+//
+// Returns: error and buyer struct with sensitive data (ID number, phone number, etc.)
+func (c *BiliClient) GetTargetBuyerSensitiveData(buyerID int64) (error, api.BuyerStruct) {
+	resp, err := c.client.R().SetBodyJsonMarshal(map[string]any{
+		"buyerImageIsShow": 1,
+		"id":               buyerID,
+		"idCardIsShow":     1,
+		"src":              "owner",
+		"telIsShow":        1,
+	}).Get("https://show.bilibili.com/api/ticket/buyerinfo/query")
+	if err != nil {
+		return err, api.BuyerStruct{}
 	}
-	return nil, list
+	var apiResp api.ShowApiDataRoot[api.BuyerNoSensitiveStruct]
+	err = resp.Unmarshal(&apiResp)
+	if err != nil {
+		return err, api.BuyerStruct{}
+	}
+	return nil, api.BuyerStruct{
+		Id:           apiResp.Data.Id,
+		Uid:          apiResp.Data.Uid,
+		Name:         apiResp.Data.Name,
+		Tel:          apiResp.Data.Tel,
+		PersonalId:   apiResp.Data.IdCard,
+		IdType:       apiResp.Data.IdType,
+		VerifyStatus: apiResp.Data.VerifyStatus,
+	}
 }

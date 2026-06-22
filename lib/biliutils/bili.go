@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/bertold/req/v3"
 )
@@ -51,7 +52,27 @@ type BiliClient struct {
 	refreshToken atomic.Pointer[string]
 	solver       atomic.Pointer[CaptchaSolverFn]
 
+	// clockOffset is the calibrated time offset (server − local).
+	// Positive means local clock is behind the server. Set via SetClockOffset.
+	clockOffset atomic.Int64 // stored as nanoseconds (int64)
+
 	mu sync.RWMutex
+}
+
+// SetClockOffset stores a calibrated clock offset for use in request timestamps.
+// offset = server_time − local_time. Positive means local is behind.
+func (c *BiliClient) SetClockOffset(offset time.Duration) {
+	c.clockOffset.Store(int64(offset))
+}
+
+// GetClockOffset returns the current calibrated clock offset.
+func (c *BiliClient) GetClockOffset() time.Duration {
+	return time.Duration(c.clockOffset.Load())
+}
+
+// now returns the calibrated current time (local time + clock offset).
+func (c *BiliClient) now() time.Time {
+	return time.Now().Add(time.Duration(c.clockOffset.Load()))
 }
 
 // NewBiliClient creates a new BiliClient with random device fingerprint.

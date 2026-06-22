@@ -1,13 +1,13 @@
 package scheduler
 
 import (
+	"bilibili-ticket-golang/cmd/gui/i18n"
+	"bilibili-ticket-golang/cmd/gui/store/configuration"
 	"bilibili-ticket-golang/lib/biliutils"
 	"bilibili-ticket-golang/lib/biliutils/clock"
 	"bilibili-ticket-golang/lib/biliutils/notify"
 	"bilibili-ticket-golang/lib/global"
-	"bilibili-ticket-golang/cmd/gui/i18n"
 	r "bilibili-ticket-golang/lib/models/bili/response"
-	"bilibili-ticket-golang/cmd/gui/store/configuration"
 	"context"
 	"errors"
 	"fmt"
@@ -733,10 +733,6 @@ func (svc *SchedulerService) calibrateOnce() {
 	}
 
 	// 3. Update scheduler offset (Bilibili preferred, NTP fallback)
-	if svc.scheduler.GetTaskCount() == 0 {
-		return
-	}
-
 	var offset time.Duration
 	if biliErr == nil {
 		offset = biliOff
@@ -744,6 +740,13 @@ func (svc *SchedulerService) calibrateOnce() {
 		offset = ntpOff
 	} else {
 		println("[clock] both sources failed, skipping calibration")
+		return
+	}
+
+	// Always update the BiliClient request timestamps.
+	svc.client.SetClockOffset(offset)
+
+	if svc.scheduler.GetTaskCount() == 0 {
 		return
 	}
 

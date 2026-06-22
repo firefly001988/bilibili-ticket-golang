@@ -55,7 +55,7 @@ func (c *BiliClient) CheckAndUpdateCookie() (bool, error) {
 	log.Printf("[cookie] old csrf=%s refresh_token=%s", maskToken(oldCSRF), maskToken(oldRefreshToken))
 
 	// Generate RSA-encrypted correspond path for CSRF exchange
-	encryptedPath, err := getCorrespondPath(time.Now().UnixMilli() - 100)
+	encryptedPath, err := getCorrespondPath(c.now().UnixMilli() - 100)
 	if err != nil {
 		log.Printf("[cookie] getCorrespondPath failed: %v", err)
 		return false, err
@@ -214,7 +214,7 @@ func (c *BiliClient) TryToRefreshNewBiliTicket() (bool, error) {
 		}
 	}
 
-	currentTS := time.Now().Unix()
+	currentTS := c.now().Unix()
 	hexSign := hashs.HmacSha256ToHex("XgwSnGZ1p", fmt.Sprintf("ts%d", currentTS))
 	resp, err := c.client.R().SetQueryParams(map[string]string{
 		"key_id":      "ec02",

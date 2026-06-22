@@ -42,7 +42,7 @@ func (ds *DynamicScheduler) SetGlobalOffset(offset time.Duration) {
 
 	for _, task := range ds.tasks {
 		if task.GetStat() == StatWaiting && time.Until(task.GetTargetTime().Add(oldOffset)) > 10*time.Second {
-			task.rescheduleWithNewOffset(offset - oldOffset)
+			task.rescheduleWithNewOffset(offset)
 		}
 	}
 }
