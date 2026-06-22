@@ -311,7 +311,10 @@ func GenerateRemoteWorkerConfig(caCertPEM, caKeyPEM, clientCertPEM, clientKeyPEM
 		return nil, nil, fmt.Errorf("generate server cert: %w", err)
 	}
 
-	serverName := "worker"
+	serverName := opts.WorkerID
+	if serverName == "" {
+		serverName = "worker"
+	}
 	if len(hosts) > 0 {
 		serverName = hosts[0]
 	}

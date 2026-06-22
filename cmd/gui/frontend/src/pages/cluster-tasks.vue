@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
 import { useCluster } from '@/composables/useCluster'
+import { useConfirm } from '@/composables/useConfirm'
 import { clusterCall, type CatalogSKU, type ProjectCatalog } from '@/composables/clusterTypes'
 import { useMessagesStore } from '@/stores/snackbar'
 
@@ -15,6 +16,8 @@ const selectedSKU = ref<CatalogSKU | null>(null)
 const eventDayConfirmed = ref(false)
 const expandedMacros = ref<string[]>([])
 const taskEditorPanel = ref<number | null>(null)
+
+const { show: showConfirm } = useConfirm()
 
 const taskGroup = ref({ name: '' })
 const macro = ref({ id: '', taskGroupId: '', projectId: 0, projectName: '', screenId: 0, screenName: '', skuId: 0, skuName: '', eventDay: '', orderCapacity: 4, capacitySource: 'default', smartMerge: false, priority: 0, desiredReplicas: 1, hardConcurrency: 1, startAt: '', deadline: '' })
@@ -39,8 +42,9 @@ async function startMacro(id: string) {
 }
 
 async function stopMacro(id: string) {
-  if (!window.confirm('确定停止该宏任务及其全部执行中的 Worker 任务吗？')) return
-  await invoke('StopMacro', id).catch(() => {})
+  const ok = await showConfirm('停止宏任务', '确定停止该宏任务及其全部执行中的 Worker 任务吗？')
+  if (!ok) return
+  await invoke('StopMacro', id).catch(() => { })
 }
 
 async function loadProject() {
@@ -95,7 +99,8 @@ function editMacro(item: typeof snapshot.value.macros[number]) {
 
 async function deleteMacro(item: typeof snapshot.value.macros[number]) {
   const name = `${item.projectName || `项目 ${item.projectId}`} · ${item.skuName || item.skuId}`
-  if (!window.confirm(`确定删除宏任务"${name}"吗？`)) return
+  const ok = await showConfirm('删除宏任务', `确定删除宏任务「${name}」吗？`)
+  if (!ok) return
   if (await invoke('DeleteMacro', item.id)) expandedMacros.value = expandedMacros.value.filter(id => id !== item.id)
 }
 
@@ -106,7 +111,8 @@ function editPurchase(group: typeof snapshot.value.macros[number]['purchaseGroup
 }
 
 async function deletePurchase(group: typeof snapshot.value.macros[number]['purchaseGroups'][number]) {
-  if (!window.confirm(`确定删除购票组吗？`)) return
+  const ok = await showConfirm('删除购票组', '确定删除该购票组吗？')
+  if (!ok) return
   if (await invoke('DeletePurchaseGroup', group.macroTaskId, group.id) && purchase.value.id === group.id) resetPurchaseEditor()
 }
 
@@ -114,7 +120,8 @@ const selectedMacro = computed(() => snapshot.value.macros.find(m => m.id === pu
 const selectedBuyerCount = computed(() => purchase.value.buyerIds.length)
 
 async function switchToReflow() {
-  if (!window.confirm('确定停止所有准点任务并切换到回流阶段吗？')) return
+  const ok = await showConfirm('切换到回流', '确定停止所有准点任务并切换到回流阶段吗？')
+  if (!ok) return
   await invoke('SwitchToReflow')
 }
 </script>
@@ -133,21 +140,39 @@ async function switchToReflow() {
     <v-table density="compact">
       <thead>
         <tr>
-          <th>项目 / SKU</th><th>活动日</th><th>容量</th><th>副本</th><th>优先级</th><th>阶段 / 审核</th><th>操作</th>
+          <th>项目 / SKU</th>
+          <th>活动日</th>
+          <th>容量</th>
+          <th>副本</th>
+          <th>优先级</th>
+          <th>阶段 / 审核</th>
+          <th>操作</th>
         </tr>
       </thead>
       <tbody>
         <template v-for="item in snapshot.macros" :key="item.id">
           <tr class="cursor-pointer" @click="toggleMacro(item.id)">
-            <td><div>{{ item.projectName || `项目 ${item.projectId}` }}</div><div class="text-caption text-medium-emphasis">{{ item.screenName || item.screenId }} — {{ item.skuName || item.skuId }}</div></td>
-            <td>{{ item.eventDay || '未设置' }}</td><td>{{ item.orderCapacity }}</td><td>{{ item.desiredReplicas }} / {{ item.hardConcurrency }}</td><td>{{ item.priority }}</td>
-            <td><v-chip size="small" :color="item.needsReview ? 'warning' : 'success'">{{ item.phase }} · {{ item.needsReview ? '待确认' : '可调度' }}</v-chip></td>
+            <td>
+              <div>{{ item.projectName || `项目 ${item.projectId}` }}</div>
+              <div class="text-caption text-medium-emphasis">{{ item.screenName || item.screenId }} — {{ item.skuName ||
+                item.skuId }}</div>
+            </td>
+            <td>{{ item.eventDay || '未设置' }}</td>
+            <td>{{ item.orderCapacity }}</td>
+            <td>{{ item.desiredReplicas }} / {{ item.hardConcurrency }}</td>
+            <td>{{ item.priority }}</td>
+            <td><v-chip size="small" :color="item.needsReview ? 'warning' : 'success'">{{ item.phase }} · {{
+              item.needsReview ? '待确认' : '可调度' }}</v-chip></td>
             <td class="text-no-wrap">
-              <v-btn size="small" :loading="startingMacroId === item.id" :disabled="item.needsReview || !item.eventDayConfirmed" @click.stop="startMacro(item.id)">启动准点</v-btn>
-              <v-btn class="ml-1" size="small" variant="text" color="warning" icon="mdi-stop" @click.stop="stopMacro(item.id)" />
+              <v-btn size="small" :loading="startingMacroId === item.id"
+                :disabled="item.needsReview || !item.eventDayConfirmed" @click.stop="startMacro(item.id)">启动准点</v-btn>
+              <v-btn class="ml-1" size="small" variant="text" color="warning" icon="mdi-stop"
+                @click.stop="stopMacro(item.id)" />
               <v-btn class="ml-1" size="small" variant="text" icon="mdi-pencil" @click.stop="editMacro(item)" />
               <v-btn size="small" variant="text" color="error" icon="mdi-delete" @click.stop="deleteMacro(item)" />
-              <v-btn size="small" variant="text" :icon="expandedMacros.includes(item.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" @click.stop="toggleMacro(item.id)" />
+              <v-btn size="small" variant="text"
+                :icon="expandedMacros.includes(item.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                @click.stop="toggleMacro(item.id)" />
             </td>
           </tr>
           <tr v-if="expandedMacros.includes(item.id)">
@@ -158,13 +183,17 @@ async function switchToReflow() {
                   <v-card variant="outlined">
                     <v-card-title class="d-flex align-center text-subtitle-1">
                       购票组 {{ index + 1 }}
-                      <v-chip class="ml-2" size="x-small" :color="group.allowSplit ? 'warning' : 'default'">{{ group.allowSplit ? '回流可拆单' : '保持整单' }}</v-chip>
+                      <v-chip class="ml-2" size="x-small" :color="group.allowSplit ? 'warning' : 'default'">{{
+                        group.allowSplit ? '回流可拆单' : '保持整单' }}</v-chip>
                       <v-spacer />
                       <v-btn size="x-small" variant="text" icon="mdi-pencil" @click="editPurchase(group)" />
-                      <v-btn size="x-small" variant="text" color="error" icon="mdi-delete" @click="deletePurchase(group)" />
+                      <v-btn size="x-small" variant="text" color="error" icon="mdi-delete"
+                        @click="deletePurchase(group)" />
                     </v-card-title>
                     <v-card-text>
-                      <v-chip v-for="buyer in group.buyers" :key="buyer.logicalId" class="mr-2 mb-1" prepend-icon="mdi-account">{{ buyer.name }}<v-tooltip activator="parent">{{ buyer.tel || '无手机号' }}</v-tooltip></v-chip>
+                      <v-chip v-for="buyer in group.buyers" :key="buyer.logicalId" class="mr-2 mb-1"
+                        prepend-icon="mdi-account">{{ buyer.name }}<v-tooltip activator="parent">{{ buyer.tel || '无手机号'
+                        }}{{ buyer.idCard ? ` · ${buyer.idCard}` : '' }}</v-tooltip></v-chip>
                     </v-card-text>
                   </v-card>
                 </v-col>
@@ -178,7 +207,7 @@ async function switchToReflow() {
     <v-expansion-panels v-model="taskEditorPanel" class="mt-5">
       <v-expansion-panel title="创建任务组">
         <v-expansion-panel-text>
-          <div class="mb-2">现有：{{ snapshot.taskGroups.map(g => g.name).join('、') || '暂无' }}</div>
+          <div class="mb-2">现有：{{snapshot.taskGroups.map(g => g.name).join('、') || '暂无'}}</div>
           <v-text-field v-model="taskGroup.name" label="任务组名称" />
           <v-btn color="primary" @click="saveTaskGroup">保存任务组</v-btn>
         </v-expansion-panel-text>
@@ -190,20 +219,35 @@ async function switchToReflow() {
             <v-text-field v-model="projectId" label="Bilibili 项目 ID" hide-details @keyup.enter="loadProject" />
             <v-btn color="primary" :loading="projectLoading" @click="loadProject">读取项目</v-btn>
           </div>
-          <v-alert v-if="project" type="info" variant="tonal" class="mb-3"><strong>{{ project.name }}</strong><span class="ml-2">{{ project.forceRealName ? '实名制项目' : '非强制实名项目' }}</span></v-alert>
+          <v-alert v-if="project" type="info" variant="tonal" class="mb-3"><strong>{{ project.name }}</strong><span
+              class="ml-2">{{ project.forceRealName ? '实名制项目' : '非强制实名项目' }}</span></v-alert>
           <v-list v-if="project?.tickets.length" border rounded class="mb-4" max-height="300">
-            <v-list-item v-for="ticket in project.tickets" :key="`${ticket.screenId}-${ticket.skuId}`" :active="selectedSKU?.skuId === ticket.skuId && selectedSKU?.screenId === ticket.screenId" @click="chooseSKU(ticket)">
+            <v-list-item v-for="ticket in project.tickets" :key="`${ticket.screenId}-${ticket.skuId}`"
+              :active="selectedSKU?.skuId === ticket.skuId && selectedSKU?.screenId === ticket.screenId"
+              @click="chooseSKU(ticket)">
               <template #title>{{ ticket.screenName }} — {{ ticket.skuName }}</template>
-              <template #subtitle>¥{{ (ticket.price / 100).toFixed(2) }} · {{ ticket.status || '状态未知' }} · 单订单最多 {{ ticket.orderCapacity }} 人</template>
-              <template #append><v-icon>{{ selectedSKU?.skuId === ticket.skuId ? 'mdi-check-circle' : 'mdi-chevron-right' }}</v-icon></template>
+              <template #subtitle>¥{{ (ticket.price / 100).toFixed(2) }} · {{ ticket.status || '状态未知' }} · 单订单最多 {{
+                ticket.orderCapacity }} 人</template>
+              <template #append><v-icon>{{ selectedSKU?.skuId === ticket.skuId ? 'mdi-check-circle' :
+                'mdi-chevron-right' }}</v-icon></template>
             </v-list-item>
           </v-list>
           <template v-if="selectedSKU">
-            <v-row><v-col cols="6"><v-select v-model="macro.taskGroupId" :items="snapshot.taskGroups" item-title="name" item-value="id" label="所属任务组" /></v-col><v-col cols="6"><v-text-field v-model="macro.eventDay" type="date" label="活动日期" /></v-col></v-row>
+            <v-row><v-col cols="6"><v-select v-model="macro.taskGroupId" :items="snapshot.taskGroups" item-title="name"
+                  item-value="id" label="所属任务组" /></v-col><v-col cols="6"><v-text-field v-model="macro.eventDay"
+                  type="date" label="活动日期" /></v-col></v-row>
             <v-checkbox v-model="eventDayConfirmed" label="我已确认活动日期正确" />
-            <v-row><v-col><v-text-field v-model="macro.startAt" type="datetime-local" label="开始执行时间" /></v-col><v-col><v-text-field v-model="macro.deadline" type="datetime-local" label="绝对截止时间" /></v-col></v-row>
-            <v-row><v-col><v-text-field v-model.number="macro.priority" type="number" label="优先级" /></v-col><v-col><v-text-field v-model.number="macro.desiredReplicas" type="number" min="1" label="期望并发副本" /></v-col><v-col><v-text-field v-model.number="macro.hardConcurrency" type="number" min="1" label="硬并发上限" /></v-col></v-row>
-            <v-expansion-panels variant="accordion" class="mb-3"><v-expansion-panel title="高级选项"><v-expansion-panel-text><v-text-field v-model.number="macro.orderCapacity" type="number" min="1" label="单订单人数上限（API 已预填）" /><v-switch v-model="macro.smartMerge" label="准点阶段智能合并购票组" color="primary" /></v-expansion-panel-text></v-expansion-panel></v-expansion-panels>
+            <v-row><v-col><v-text-field v-model="macro.startAt" type="datetime-local"
+                  label="开始执行时间" /></v-col><v-col><v-text-field v-model="macro.deadline" type="datetime-local"
+                  label="绝对截止时间" /></v-col></v-row>
+            <v-row><v-col><v-text-field v-model.number="macro.priority" type="number"
+                  label="优先级" /></v-col><v-col><v-text-field v-model.number="macro.desiredReplicas" type="number"
+                  min="1" label="期望并发副本" /></v-col><v-col><v-text-field v-model.number="macro.hardConcurrency"
+                  type="number" min="1" label="硬并发上限" /></v-col></v-row>
+            <v-expansion-panels variant="accordion" class="mb-3"><v-expansion-panel
+                title="高级选项"><v-expansion-panel-text><v-text-field v-model.number="macro.orderCapacity" type="number"
+                    min="1" label="单订单人数上限（API 已预填）" /><v-switch v-model="macro.smartMerge" label="准点阶段智能合并购票组"
+                    color="primary" /></v-expansion-panel-text></v-expansion-panel></v-expansion-panels>
             <v-btn color="primary" @click="saveMacro">保存宏任务</v-btn>
           </template>
         </v-expansion-panel-text>
@@ -211,12 +255,21 @@ async function switchToReflow() {
 
       <v-expansion-panel :title="purchase.id ? '编辑购票组' : '添加购票组'" data-purchase-editor>
         <v-expansion-panel-text>
-          <v-select v-model="purchase.macroTaskId" :items="snapshot.macros" :item-title="m => `${m.projectName || `项目 ${m.projectId}`} · ${m.screenName || m.screenId} · ${m.skuName || m.skuId}`" item-value="id" label="宏任务" />
+          <v-select v-model="purchase.macroTaskId" :items="snapshot.macros"
+            :item-title="m => `${m.projectName || `项目 ${m.projectId}`} · ${m.screenName || m.screenId} · ${m.skuName || m.skuId}`"
+            item-value="id" label="宏任务" />
           <v-switch v-model="purchase.allowSplit" label="回流阶段允许拆成单人订单" color="warning" />
-          <v-alert v-if="snapshot.buyers.length === 0" type="warning" variant="tonal" class="mb-3">尚未同步购票人。请先到"账号池"对至少一个账号执行"同步购票人"。</v-alert>
-          <v-select v-model="purchase.buyerIds" :items="snapshot.buyers" item-title="name" item-value="logicalId" label="选择购票人" multiple chips closable-chips><template #item="{ props, item }"><v-list-item v-bind="props" :subtitle="`${item.tel || '无手机号'} · ${item.idCard || '无证件信息'}`" /></template></v-select>
-          <v-alert v-if="selectedMacro && selectedBuyerCount > selectedMacro.orderCapacity" type="error" density="compact" class="mb-3">已选 {{ selectedBuyerCount }} 人，超过单订单 {{ selectedMacro.orderCapacity }} 人上限。</v-alert>
-          <v-btn color="primary" :disabled="!selectedMacro || selectedBuyerCount === 0" @click="savePurchase">{{ purchase.id ? '更新购票组' : '保存购票组' }}</v-btn>
+          <v-alert v-if="snapshot.buyers.length === 0" type="warning" variant="tonal"
+            class="mb-3">尚未同步购票人。请先到"账号池"对至少一个账号执行"同步购票人"。</v-alert>
+          <v-select v-model="purchase.buyerIds" :items="snapshot.buyers" item-title="name" item-value="logicalId"
+            label="选择购票人" multiple chips closable-chips><template #item="{ props, item }"><v-list-item v-bind="props"
+                :subtitle="`${item.tel || '无手机号'} · ${item.idCard || '无证件信息'}`" /></template></v-select>
+          <v-alert v-if="selectedMacro && selectedBuyerCount > selectedMacro.orderCapacity" type="error"
+            density="compact" class="mb-3">已选 {{ selectedBuyerCount }} 人，超过单订单 {{ selectedMacro.orderCapacity }}
+            人上限。</v-alert>
+          <v-btn color="primary" :disabled="!selectedMacro || selectedBuyerCount === 0" @click="savePurchase">{{
+            purchase.id
+              ? '更新购票组' : '保存购票组' }}</v-btn>
           <v-btn v-if="purchase.id" class="ml-2" variant="text" @click="resetPurchaseEditor">取消编辑</v-btn>
         </v-expansion-panel-text>
       </v-expansion-panel>

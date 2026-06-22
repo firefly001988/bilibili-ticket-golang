@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { ref } from 'vue'
 import { useCluster } from '@/composables/useCluster'
+import { useConfirm } from '@/composables/useConfirm'
 import { clusterCall, type WorkerConfigResponse } from '@/composables/clusterTypes'
 import { useMessagesStore } from '@/stores/snackbar'
 import type { ResourceRole } from '@/composables/clusterTypes'
@@ -13,6 +14,9 @@ const worker = ref({ ...EMPTY })
 const editing = ref(false)
 const encodedImport = ref('')
 const importing = ref(false)
+const showImport = ref(false)
+
+const { show: showConfirm } = useConfirm()
 
 const addWorker = () => invoke('AddWorker', JSON.stringify(worker.value)).catch(() => { })
 const updateWorker = () => invoke('UpdateWorker', JSON.stringify(worker.value)).catch(() => { })
@@ -56,15 +60,17 @@ async function editWorker(id: string) {
 }
 
 async function deleteWorker(id: string, name: string) {
-  if (!window.confirm(`确定删除 Worker"${name}"吗？`)) return
+  const ok = await showConfirm('删除 Worker', `确定删除 Worker「${name}」吗？`)
+  if (!ok) return
   await invoke('DeleteWorker', id).catch(() => { })
 }
 
 async function disconnectWorker(id: string, name: string) {
-  if (!window.confirm(`确定断开 Worker"${name}"的连接吗？`)) return
+  const ok = await showConfirm('断开连接', `确定断开 Worker「${name}」的连接吗？`)
+  if (!ok) return
   try {
     await invoke('DisconnectWorker', id)
-    messages.add({ text: `已断开 Worker"${name}"`, color: 'info', timeout: 2000 })
+    messages.add({ text: `已断开 Worker「${name}」`, color: 'info', timeout: 2000 })
   } catch (e: any) {
     messages.add({ text: String(e), color: 'error', timeout: 3000 })
   }
@@ -147,14 +153,21 @@ async function reconnectWorker(id: string, name: string) {
 
       <v-divider class="my-4" />
 
-      <details class="mb-2">
-        <summary class="text-caption cursor-pointer">从编码字符串导入</summary>
-        <v-textarea v-model="encodedImport" label="编码后的 Worker 配置 (Base4096)" rows="2" density="compact" class="mt-2" />
-        <v-btn color="secondary" variant="tonal" size="small" block :disabled="!encodedImport.trim()"
-          :loading="importing" @click="importFromEncoded">
-          导入 Worker
-        </v-btn>
-      </details>
+      <div class="mb-2">
+        <div class="text-caption cursor-pointer d-flex align-center" @click="showImport = !showImport">
+          <v-icon :icon="showImport ? 'mdi-chevron-down' : 'mdi-chevron-right'" size="x-small" class="mr-1" />
+          从编码字符串导入
+        </div>
+        <v-expand-transition>
+          <div v-show="showImport">
+            <v-textarea v-model="encodedImport" label="编码后的 Worker 配置 (Base4096)" class="mt-2" />
+            <v-btn color="secondary" variant="tonal" size="small" block :disabled="!encodedImport.trim()"
+              :loading="importing" @click="importFromEncoded">
+              导入 Worker
+            </v-btn>
+          </div>
+        </v-expand-transition>
+      </div>
     </v-col>
   </v-row>
 </template>

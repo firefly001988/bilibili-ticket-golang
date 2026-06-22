@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AnnouncementFloatingCard: typeof import('./components/AnnouncementFloatingCard.vue')['default']
+    ConfirmDialog: typeof import('./components/ConfirmDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     TaskLogViewer: typeof import('./components/TaskLogViewer.vue')['default']

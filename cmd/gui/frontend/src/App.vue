@@ -6,6 +6,7 @@ import router from './router';
 import { useMessagesStore } from './stores/snackbar';
 import { useAuthStore } from './stores/auth';
 import VerifiedOverlay from './components/VerifiedOverlay.vue';
+import ConfirmDialog from './components/ConfirmDialog.vue';
 
 const { t, locale } = useI18n()
 const auth = useAuthStore();
@@ -83,12 +84,6 @@ onMounted(async () => {
 
   <v-app v-if="verified && !showLangPicker" class="rounded rounded-md">
     <v-navigation-drawer expand-on-hover permanent rail>
-      <v-list :activated="calculatedPath">
-        <v-list-item v-if="!auth.isLogin" :prepend-avatar="noface" subtitle="UID: -" :title="t('nav.notLoggedIn')" />
-        <v-list-item v-else :prepend-avatar="auth.avatarDataUri || noface" :subtitle="`UID: ${auth.uid}`"
-          :title="auth.username" />
-      </v-list>
-      <v-divider />
       <v-list density="compact" nav activatable :activated="calculatedPath">
         <v-list-subheader>
           {{ t('nav.uncategorized') }}
@@ -139,6 +134,8 @@ onMounted(async () => {
         <v-icon-btn aria-label="Close" icon="mdi-close" size="small" variant="text" v-bind="props"></v-icon-btn>
       </template>
     </v-snackbar-queue>
+
+    <ConfirmDialog />
   </v-app>
 </template>
 
