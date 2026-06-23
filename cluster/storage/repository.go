@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"bilibili-ticket-golang/cluster/domain"
 
@@ -351,6 +352,16 @@ func (r *Repository) LogicalBuyer(ctx context.Context, id string) (domain.Buyer,
 	if err := json.Unmarshal(payload, &value); err != nil {
 		return domain.Buyer{}, err
 	}
+	// Never return a buyer whose ID card or phone number is still masked.
+	// Masked data indicates that the real-name information was not yet fully
+	// available when the record was written — it must never be used to place
+	// orders or provision the buyer on remote accounts.
+	if value.IDCard != "" && strings.Contains(value.IDCard, "*") {
+		return domain.Buyer{}, fmt.Errorf("logical buyer %s has masked ID card and cannot be used", id)
+	}
+	if value.Tel != "" && strings.Contains(value.Tel, "*") {
+		return domain.Buyer{}, fmt.Errorf("logical buyer %s has masked phone number and cannot be used", id)
+	}
 	return value, nil
 }
 
@@ -369,6 +380,11 @@ func (r *Repository) ListLogicalBuyers(ctx context.Context) ([]domain.Buyer, err
 		var buyer domain.Buyer
 		if err := json.Unmarshal(payload, &buyer); err != nil {
 			return nil, err
+		}
+		// Never expose a buyer whose real-name data is still masked.
+		if (buyer.IDCard != "" && strings.Contains(buyer.IDCard, "*")) ||
+			(buyer.Tel != "" && strings.Contains(buyer.Tel, "*")) {
+			continue
 		}
 		result = append(result, buyer)
 	}

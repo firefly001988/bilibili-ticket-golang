@@ -238,7 +238,15 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 	client := employer.NewWorkerClient()
 	service := &ClusterService{repository: repository, client: client, phases: make(map[string]domain.Phase), loginSessions: make(map[string]*accountLoginSession)}
 	service.accounts = accounts.NewManager(repository, biliProvisioner{})
-	service.dispatcher = dispatcher.New(client, repository, buyerResolver{repository: repository})
+	service.dispatcher = dispatcher.New(client, repository, buyerResolver{
+		repository: repository,
+		ensureFn: func(ctx context.Context, accountID string, buyer domain.Buyer) error {
+			// confirmed=true: the real-name data was already persisted by
+			// SyncBuyers / SyncAllBuyers; we are just replicating it now.
+			_, err := service.accounts.EnsureBuyer(ctx, accountID, buyer, true)
+			return err
+		},
+	})
 	service.dispatcher.SetSuccessHandler(func(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
 		if service.notify != nil {
 			service.notify(fmt.Sprintf("购票成功：Intent %s，订单 %s", intent.ID, result.OrderID))
@@ -1426,19 +1434,98 @@ func (s *ClusterService) ProvisionBuyer(document string, confirmed bool) error {
 	return err
 }
 
-type buyerResolver struct{ repository *clusterstorage.Repository }
+// SyncBuyerToAccount provisions a logical buyer onto a target Bilibili
+// account. If the buyer already exists on that account's real-name list the
+// call is a no-op; otherwise a new buyer is created on the remote account.
+func (s *ClusterService) SyncBuyerToAccount(logicalBuyerID, targetAccountID string) error {
+	buyer, err := s.repository.LogicalBuyer(context.Background(), logicalBuyerID)
+	if err != nil {
+		return fmt.Errorf("logical buyer %s: %w", logicalBuyerID, err)
+	}
+	_, err = s.accounts.EnsureBuyer(context.Background(), targetAccountID, buyer, true)
+	if err != nil {
+		return err
+	}
+	return s.refreshResources(context.Background())
+}
+
+// SyncBuyerToAllAccounts provisions a logical buyer onto every enabled
+// Bilibili account that does not already have it. Accounts that already
+// contain the buyer are skipped without any remote calls.
+func (s *ClusterService) SyncBuyerToAllAccounts(logicalBuyerID string) error {
+	buyer, err := s.repository.LogicalBuyer(context.Background(), logicalBuyerID)
+	if err != nil {
+		return fmt.Errorf("logical buyer %s: %w", logicalBuyerID, err)
+	}
+	accounts, err := s.repository.ListAccounts(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, account := range accounts {
+		if !account.Enabled {
+			continue
+		}
+		if _, err := s.repository.BuyerMapping(context.Background(), account.ID, logicalBuyerID); err == nil {
+			// Already provisioned on this account — skip.
+			continue
+		}
+		if _, err := s.accounts.EnsureBuyer(context.Background(), account.ID, buyer, true); err != nil {
+			return err
+		}
+	}
+	return s.refreshResources(context.Background())
+}
+
+type buyerResolver struct {
+	repository *clusterstorage.Repository
+	ensureFn   func(ctx context.Context, accountID string, buyer domain.Buyer) error
+}
 
 func (r buyerResolver) Resolve(ctx context.Context, accountID string, buyers []domain.Buyer) ([]domain.Buyer, error) {
 	result := append([]domain.Buyer(nil), buyers...)
 	for i := range result {
 		mapping, err := r.repository.BuyerMapping(ctx, accountID, result[i].LogicalID)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil, fmt.Errorf("%w: buyer %s on account %s", dispatcher.ErrBuyerUnavailable, result[i].LogicalID, accountID)
+		if err == nil {
+			// Buyer already mapped — merge in the BuyerID. Use the
+			// stored unmasked record as the authoritative source so
+			// workers always receive complete real-name data.
+			full, fullErr := r.repository.LogicalBuyer(ctx, result[i].LogicalID)
+			if fullErr != nil {
+				// Fall back to the incoming buyer when the DB record
+				// is unavailable (e.g. masked and therefore filtered).
+				// This preserves forward progress for already-mapped
+				// buyers whose DB entry is temporarily masked.
+				result[i].BuyerID = mapping.BuyerID
+				continue
 			}
+			full.BuyerID = mapping.BuyerID
+			result[i] = full
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("buyer %s is not provisioned on account %s: %w", result[i].LogicalID, accountID, err)
 		}
-		result[i].BuyerID = mapping.BuyerID
+		// Buyer not yet provisioned on this account — auto-sync using the
+		// stored unmasked real-name information, then retry the mapping
+		// lookup once.
+		if r.ensureFn == nil {
+			return nil, fmt.Errorf("%w: buyer %s on account %s", dispatcher.ErrBuyerUnavailable, result[i].LogicalID, accountID)
+		}
+		full, fullErr := r.repository.LogicalBuyer(ctx, result[i].LogicalID)
+		if fullErr != nil {
+			// LogicalBuyer itself guards against masked data — if it
+			// failed (e.g. masked ID card), we cannot proceed.
+			return nil, fmt.Errorf("%w: buyer %s on account %s (logical lookup: %w)", dispatcher.ErrBuyerUnavailable, result[i].LogicalID, accountID, fullErr)
+		}
+		if ensureErr := r.ensureFn(ctx, accountID, full); ensureErr != nil {
+			return nil, fmt.Errorf("%w: buyer %s on account %s (ensure: %w)", dispatcher.ErrBuyerUnavailable, result[i].LogicalID, accountID, ensureErr)
+		}
+		mapping2, retryErr := r.repository.BuyerMapping(ctx, accountID, result[i].LogicalID)
+		if retryErr != nil {
+			return nil, fmt.Errorf("%w: buyer %s on account %s after ensure: %w", dispatcher.ErrBuyerUnavailable, result[i].LogicalID, accountID, retryErr)
+		}
+		full.BuyerID = mapping2.BuyerID
+		result[i] = full
 	}
 	return result, nil
 }

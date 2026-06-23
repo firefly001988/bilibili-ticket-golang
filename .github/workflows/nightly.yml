@@ -32,6 +32,8 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: cmd/gui/frontend/package-lock.json
+      - name: make frontend path
+        run: mkdir -p cmd/gui/frontend
       - name: Test Go packages with race detector
         run: |
           go -C cluster test -race ./...
@@ -287,11 +289,12 @@ jobs:
 
           MSG_HEAD="🚀 *New Nightly Build*"
           REPO_LINE="📦 *Repo:* \`${REPO}\`"
+          BRANCH_LINE="🌿 *Branch:* \`${{ github.event.inputs.branch || github.ref }}\`"
           TAG_LINE="🔖 *Tag:* \`${COMMIT}\`"
           MSG_LINE="📝 ${COMMIT_MSG}"
           LINK_LINE="🔗 [View Release](${RELEASE_URL})"
 
-          TEXT="${MSG_HEAD}%0A%0A${REPO_LINE}%0A${TAG_LINE}%0A${MSG_LINE}%0A${LINK_LINE}"
+          TEXT="${MSG_HEAD}%0A%0A${REPO_LINE}%0A${BRANCH_LINE}%0A${TAG_LINE}%0A${MSG_LINE}%0A${LINK_LINE}"
 
           curl -s -X POST "${BOT}/sendMessage" \
             -d "chat_id=${CHAT_ID}" \
@@ -299,28 +302,9 @@ jobs:
             -d "parse_mode=Markdown" \
             -d "disable_web_page_preview=true"
 
-          # Send files as a media group (single message with all artifacts)
-          MEDIA="["
-          FIRST=true
-          IDX=0
+          # Upload each file to Telegram
           for FILE in release-assets/*.tar.gz; do
-            if [ "$FIRST" = false ]; then
-              MEDIA="${MEDIA},"
-            fi
-            FIRST=false
-            MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"attach://f${IDX}\"}"
-            IDX=$((IDX + 1))
+            curl -s -X POST "${BOT}/sendDocument" \
+              -F "chat_id=${CHAT_ID}" \
+              -F "document=@${FILE}"
           done
-          MEDIA="${MEDIA}]"
-          echo "Media group (${IDX} files)"
-
-          # Build arguments without eval — use an array to safely handle spaces/special chars
-          set -- -s -X POST "${BOT}/sendMediaGroup"
-          set -- "$@" -F "chat_id=${CHAT_ID}"
-          set -- "$@" -F "media=${MEDIA}"
-          IDX=0
-          for FILE in release-assets/*.tar.gz; do
-            set -- "$@" -F "f${IDX}=@${FILE}"
-            IDX=$((IDX + 1))
-          done
-          curl "$@"

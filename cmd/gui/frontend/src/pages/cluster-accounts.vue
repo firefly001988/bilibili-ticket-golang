@@ -1,10 +1,10 @@
 <script lang="ts" setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useCluster } from '@/composables/useCluster'
 import { useConfirm } from '@/composables/useConfirm'
 import { clusterCall } from '@/composables/clusterTypes'
 import { useMessagesStore } from '@/stores/snackbar'
-import type { ResourceRole } from '@/composables/clusterTypes'
+import type { ResourceRole, LogicalBuyer, AccountSummary } from '@/composables/clusterTypes'
 import VueQr from 'vue-qr'
 
 const messages = useMessagesStore()
@@ -80,6 +80,63 @@ async function syncAllBuyers() {
   try { await clusterCall('SyncAllAccountBuyers'); await refresh() }
   catch (e: any) { messages.add({ text: String(e), color: 'error', timeout: 5000 }) }
   finally { syncingAll.value = false }
+}
+
+// ── Sync buyer to other accounts ──
+
+const syncDialogOpen = ref(false)
+const syncTargetBuyer = ref<LogicalBuyer | null>(null)
+const syncTargetAccountId = ref('')
+const syncingBuyer = ref(false)
+
+/** Accounts that do NOT already have this buyer. */
+const availableSyncAccounts = computed<AccountSummary[]>(() => {
+  if (!syncTargetBuyer.value) return []
+  const existingIds = new Set((syncTargetBuyer.value.accounts || []).map(a => a.accountId))
+  return snapshot.value.accounts.filter(a => a.enabled && !existingIds.has(a.id))
+})
+
+function openSyncDialog(buyer: LogicalBuyer) {
+  syncTargetBuyer.value = buyer
+  syncTargetAccountId.value = ''
+  syncDialogOpen.value = true
+}
+
+async function doSyncBuyerToAccount() {
+  if (!syncTargetBuyer.value || !syncTargetAccountId.value) return
+  syncingBuyer.value = true
+  try {
+    await clusterCall('SyncBuyerToAccount', syncTargetBuyer.value.logicalId, syncTargetAccountId.value)
+    await refresh()
+    syncDialogOpen.value = false
+    messages.add({ text: `已将「${syncTargetBuyer.value.name}」同步到目标账号`, color: 'success', timeout: 3000 })
+  } catch (e: any) {
+    messages.add({ text: String(e), color: 'error', timeout: 5000 })
+  } finally {
+    syncingBuyer.value = false
+  }
+}
+
+const syncingBuyerAll = ref(false)
+
+async function doSyncBuyerToAllAccounts() {
+  if (!syncTargetBuyer.value) return
+  const count = availableSyncAccounts.value.length
+  if (count === 0) {
+    messages.add({ text: '所有已启用的账号均已关联该购票人，无需同步', color: 'info', timeout: 3000 })
+    return
+  }
+  syncingBuyerAll.value = true
+  try {
+    await clusterCall('SyncBuyerToAllAccounts', syncTargetBuyer.value.logicalId)
+    await refresh()
+    syncDialogOpen.value = false
+    messages.add({ text: `已将「${syncTargetBuyer.value.name}」同步到 ${count} 个账号`, color: 'success', timeout: 3000 })
+  } catch (e: any) {
+    messages.add({ text: String(e), color: 'error', timeout: 5000 })
+  } finally {
+    syncingBuyerAll.value = false
+  }
 }
 </script>
 
@@ -174,11 +231,42 @@ async function syncAllBuyers() {
                 </v-chip>
                 <span v-if="!buyer.accounts || buyer.accounts.length === 0"
                   class="text-body-2 text-medium-emphasis">无关联账号</span>
+                <v-spacer />
+                <v-btn size="x-small" variant="tonal" color="primary" icon="mdi-account-multiple-plus"
+                  @click.stop="openSyncDialog(buyer)" />
               </div>
             </v-expansion-panel-text>
           </v-expansion-panel>
         </v-col>
       </v-row>
     </v-expansion-panels>
+
+    <!-- Sync buyer to other account dialog -->
+    <v-dialog v-model="syncDialogOpen" max-width="420">
+      <v-card>
+        <v-card-title class="text-h6">
+          同步购票人到其他账号
+        </v-card-title>
+        <v-card-text>
+          <div class="mb-3">
+            将 <strong>{{ syncTargetBuyer?.name }}</strong>
+            <span v-if="syncTargetBuyer?.idCard">（{{ syncTargetBuyer?.idCard }}）</span>
+            添加到所选 B 站账号的实名列表中。
+          </div>
+          <v-select v-model="syncTargetAccountId" :items="availableSyncAccounts" item-title="name" item-value="id"
+            label="选择目标账号" :subtitle="(item: AccountSummary) => item.id" :disabled="availableSyncAccounts.length === 0"
+            :no-data-text="availableSyncAccounts.length === 0 ? '所有已启用的账号均已关联该购票人' : '无可用账号'" />
+        </v-card-text>
+        <v-card-actions>
+          <v-btn variant="text" color="primary" :loading="syncingBuyerAll"
+            :disabled="availableSyncAccounts.length === 0" @click="doSyncBuyerToAllAccounts">同步到全部（{{
+              availableSyncAccounts.length }}）</v-btn>
+          <v-spacer />
+          <v-btn variant="text" @click="syncDialogOpen = false">取消</v-btn>
+          <v-btn color="primary" variant="tonal" :loading="syncingBuyer" :disabled="!syncTargetAccountId"
+            @click="doSyncBuyerToAccount">同步</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>

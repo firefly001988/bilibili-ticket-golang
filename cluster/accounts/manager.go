@@ -87,10 +87,11 @@ func (m *Manager) SyncBuyers(ctx context.Context, accountID string) ([]domain.Bu
 		if buyer.BuyerID <= 0 {
 			continue
 		}
-		// Skip buyers whose ID card is still masked — we must never persist
-		// desensitised data. The buyer will be picked up on a future sync
-		// once the full real-name information is available.
-		if buyer.IDCard != "" && isMasked(buyer.IDCard) {
+		// Skip buyers whose ID card or phone is still masked — we must
+		// never persist desensitised data. The buyer will be picked up on
+		// a future sync once the full real-name information is available.
+		if (buyer.IDCard != "" && isMasked(buyer.IDCard)) ||
+			(buyer.Tel != "" && isMasked(buyer.Tel)) {
 			continue
 		}
 		buyer.LogicalID = logicalBuyerID(buyer)
@@ -101,7 +102,7 @@ func (m *Manager) SyncBuyers(ctx context.Context, accountID string) ([]domain.Bu
 			logical = mergeBuyer(existing, logical)
 		}
 		// Final guard: never write masked data into the database.
-		if isMasked(logical.IDCard) {
+		if isMasked(logical.IDCard) || (logical.Tel != "" && isMasked(logical.Tel)) {
 			continue
 		}
 		if err := m.repository.PutLogicalBuyer(ctx, logical); err != nil {
@@ -158,6 +159,10 @@ func mergeBuyer(existing, incoming domain.Buyer) domain.Buyer {
 	// Prefer existing unmasked ID card over incoming masked one.
 	if isMasked(incoming.IDCard) && !isMasked(existing.IDCard) && existing.IDCard != "" {
 		merged.IDCard = existing.IDCard
+	}
+	// Prefer existing unmasked phone over incoming masked one.
+	if isMasked(incoming.Tel) && !isMasked(existing.Tel) && existing.Tel != "" {
+		merged.Tel = existing.Tel
 	}
 	// Prefer existing non-empty name if incoming is empty.
 	if incoming.Name == "" && existing.Name != "" {
@@ -233,15 +238,17 @@ func (m *Manager) saveMapping(ctx context.Context, account domain.Account, buyer
 	logical := buyer
 	logical.BuyerID = 0
 	// Never persist desensitised (masked) data into the database.
-	if logical.IDCard != "" && isMasked(logical.IDCard) {
-		return domain.AccountBuyerMapping{}, fmt.Errorf("cannot save buyer with masked ID card: %s", logical.IDCard)
+	if (logical.IDCard != "" && isMasked(logical.IDCard)) ||
+		(logical.Tel != "" && isMasked(logical.Tel)) {
+		return domain.AccountBuyerMapping{}, fmt.Errorf("cannot save buyer with masked data: IDCard=%s Tel=%s", logical.IDCard, logical.Tel)
 	}
 	// Merge with existing data: keep the most complete (unmasked) info.
 	if existing, getErr := m.repository.LogicalBuyer(ctx, logical.LogicalID); getErr == nil {
 		logical = mergeBuyer(existing, logical)
 	}
-	if isMasked(logical.IDCard) {
-		return domain.AccountBuyerMapping{}, fmt.Errorf("cannot save buyer with masked ID card after merge: %s", logical.IDCard)
+	if (logical.IDCard != "" && isMasked(logical.IDCard)) ||
+		(logical.Tel != "" && isMasked(logical.Tel)) {
+		return domain.AccountBuyerMapping{}, fmt.Errorf("cannot save buyer with masked data after merge: IDCard=%s Tel=%s", logical.IDCard, logical.Tel)
 	}
 	if err := m.repository.PutLogicalBuyer(ctx, logical); err != nil {
 		return domain.AccountBuyerMapping{}, err
