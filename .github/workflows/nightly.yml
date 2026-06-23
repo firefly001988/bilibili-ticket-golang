@@ -38,11 +38,6 @@ jobs:
           go -C cmd/gui test -race ./...
           go -C cmd/ticket-worker test -race ./...
           go -C lib test -race ./...
-      - name: Build frontend
-        working-directory: cmd/gui/frontend
-        run: |
-          npm ci
-          npm run build
 
   build:
     needs: verify
