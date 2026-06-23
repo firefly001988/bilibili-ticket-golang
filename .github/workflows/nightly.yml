@@ -31,11 +31,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: cmd/gui/frontend/package-lock.json
       - name: Test Go packages with race detector
-        run: go test -race ./...
+        run: |
+          go -C cluster test -race ./...
+          go -C cmd/gui test -race ./...
+          go -C cmd/ticket-worker test -race ./...
+          go -C lib test -race ./...
       - name: Build frontend
-        working-directory: frontend
+        working-directory: cmd/gui/frontend
         run: |
           npm ci
           npm run build
@@ -105,7 +109,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: cmd/gui/frontend/package-lock.json
 
       - name: Cache apt packages
         if: matrix.platform == 'linux'
@@ -137,6 +141,7 @@ jobs:
 
       - name: Build app with Wails
         shell: bash
+        working-directory: cmd/gui
         env:
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
@@ -166,7 +171,8 @@ jobs:
           WORKER_SOURCE="build/bin/${WORKER_NAME}${{ matrix.ext }}"
 
           # Package employer (GUI) separately
-          cp "$SOURCE_FILE" "release/${BIN_NAME}${{ matrix.ext }}"
+          GUI_SOURCE="cmd/gui/${SOURCE_FILE}"
+          cp "$GUI_SOURCE" "release/${BIN_NAME}${{ matrix.ext }}"
           EMPLOYER_TGZ="release/${BIN_NAME}_${{ matrix.platform }}_${{ matrix.arch }}_${COMMIT}.tar.gz"
           tar -C release -czf "$EMPLOYER_TGZ" "${BIN_NAME}${{ matrix.ext }}"
           rm -f "release/${BIN_NAME}${{ matrix.ext }}"
