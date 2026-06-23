@@ -39,6 +39,48 @@ async function deleteAccount(id: string, name: string) {
   if (!ok) return
   await invoke('DeleteAccount', id).catch(() => { })
 }
+
+const syncingAll = ref(false)
+
+/** Identity type → single char abbreviation. */
+function idTypeChar(type: number): string {
+  switch (type) {
+    case 0: return '身'
+    case 1: return '护'
+    case 2: return '港'
+    case 3: return '台'
+    default: return '?'
+  }
+}
+
+/** Identity type → full Chinese name. */
+function idTypeName(type: number): string {
+  switch (type) {
+    case 0: return '身份证'
+    case 1: return '护照'
+    case 2: return '港澳通行证'
+    case 3: return '台湾通行证'
+    default: return '未知'
+  }
+}
+
+/** Identity type → chip color. */
+function idTypeColor(type: number): string {
+  switch (type) {
+    case 0: return 'primary'
+    case 1: return 'success'
+    case 2: return 'warning'
+    case 3: return 'error'
+    default: return 'grey'
+  }
+}
+
+async function syncAllBuyers() {
+  syncingAll.value = true
+  try { await clusterCall('SyncAllAccountBuyers'); await refresh() }
+  catch (e: any) { messages.add({ text: String(e), color: 'error', timeout: 5000 }) }
+  finally { syncingAll.value = false }
+}
 </script>
 
 <template>
@@ -92,9 +134,51 @@ async function deleteAccount(id: string, name: string) {
 
     <v-divider class="my-5" />
 
-    <div class="text-h6 mb-2">已识别购票人</div>
-    <v-alert type="info" variant="tonal" class="mb-3">系统根据账号中的实名购票人自动建立跨账号映射；内部逻辑 ID 无需用户管理。</v-alert>
-    <v-chip v-for="buyer in snapshot.buyers" :key="buyer.logicalId" class="mr-2 mb-2" prepend-icon="mdi-account">{{
-      buyer.name }} · {{ buyer.tel || '无手机号' }}{{ buyer.idCard ? ` · ${buyer.idCard}` : '' }}</v-chip>
+    <div class="d-flex align-center mb-2">
+      <div class="text-h6 mr-3">已识别购票人</div>
+      <v-btn size="small" variant="tonal" color="primary" prepend-icon="mdi-refresh" :loading="syncingAll"
+        @click="syncAllBuyers">刷新全部</v-btn>
+    </div>
+    <v-expansion-panels multiple>
+      <v-row>
+        <v-col v-for="buyer in snapshot.buyers" :key="buyer.logicalId" cols="12" md="6" lg="4">
+          <v-expansion-panel>
+            <v-expansion-panel-title>
+              <template #default>
+                <v-tooltip location="top">
+                  <template #activator="{ props }">
+                    <v-chip size="x-small" class="mr-2 flex-shrink-0 pa-0" v-bind="props"
+                      :color="idTypeColor(buyer.type)" variant="flat"
+                      style="width:20px;height:20px;justify-content:center">
+                      {{ idTypeChar(buyer.type) }}
+                    </v-chip>
+                  </template>
+                  <span>{{ idTypeName(buyer.type) }} · {{ buyer.name }}{{ buyer.tel ? ` · ${buyer.tel}` : '' }}{{
+                    buyer.idCard ? ` ·
+                    ${buyer.idCard}` : '' }}</span>
+                </v-tooltip>
+                <span class="font-weight-bold flex-shrink-0">{{ buyer.name }}</span>
+                <span class="text-medium-emphasis text-truncate ml-2 d-none d-sm-inline"
+                  style="min-width:0;flex-shrink:1" v-if="buyer.tel">{{ buyer.tel }}</span>
+                <span class="text-medium-emphasis text-truncate ml-2 d-none d-sm-inline"
+                  style="min-width:0;flex-shrink:1" v-if="buyer.idCard">{{ buyer.idCard }}</span>
+                <v-spacer />
+                <v-chip size="x-small" class="flex-shrink-0" color="info" variant="flat">{{ buyer.accounts?.length || 0
+                }} 个账号</v-chip>
+              </template>
+            </v-expansion-panel-title>
+            <v-expansion-panel-text>
+              <div class="d-flex flex-wrap align-center ga-1 bt-2">
+                <v-chip v-for="acc in buyer.accounts" :key="acc.accountId" size="small">
+                  {{ acc.accountName || acc.accountId }}({{ acc.uid }})
+                </v-chip>
+                <span v-if="!buyer.accounts || buyer.accounts.length === 0"
+                  class="text-body-2 text-medium-emphasis">无关联账号</span>
+              </div>
+            </v-expansion-panel-text>
+          </v-expansion-panel>
+        </v-col>
+      </v-row>
+    </v-expansion-panels>
   </div>
 </template>

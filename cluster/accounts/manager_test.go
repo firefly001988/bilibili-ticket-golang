@@ -26,8 +26,8 @@ func TestSyncBuyersCreatesOpaqueCrossAccountIdentity(t *testing.T) {
 	}
 	defer r.Close()
 	p := &provisioner{buyers: map[string][]domain.Buyer{
-		"a": {{BuyerID: 11, Name: "张三", Tel: "138****0000", IDCard: "110***********1234", Type: 0}},
-		"b": {{BuyerID: 99, Name: "张三", Tel: "138****0000", IDCard: "110***********1234", Type: 0}},
+		"a": {{BuyerID: 11, Name: "张三", Tel: "13800000000", IDCard: "110101199001011234", Type: 0}},
+		"b": {{BuyerID: 99, Name: "张三", Tel: "13800000000", IDCard: "110101199001011234", Type: 0}},
 	}}
 	manager := NewManager(r, p)
 	ctx := context.Background()

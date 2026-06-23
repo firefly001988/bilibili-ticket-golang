@@ -342,6 +342,18 @@ func (r *Repository) PutLogicalBuyer(ctx context.Context, value domain.Buyer) er
 	return err
 }
 
+func (r *Repository) LogicalBuyer(ctx context.Context, id string) (domain.Buyer, error) {
+	var payload []byte
+	if err := r.db.QueryRowContext(ctx, `SELECT payload FROM logical_buyers WHERE id=?`, id).Scan(&payload); err != nil {
+		return domain.Buyer{}, err
+	}
+	var value domain.Buyer
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return domain.Buyer{}, err
+	}
+	return value, nil
+}
+
 func (r *Repository) ListLogicalBuyers(ctx context.Context) ([]domain.Buyer, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM logical_buyers ORDER BY id`)
 	if err != nil {
@@ -380,6 +392,27 @@ func (r *Repository) BuyerMapping(ctx context.Context, accountID, logicalBuyerID
 	var value domain.AccountBuyerMapping
 	err := json.Unmarshal(b, &value)
 	return value, err
+}
+
+func (r *Repository) ListBuyerMappings(ctx context.Context) ([]domain.AccountBuyerMapping, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM account_buyer_mappings ORDER BY logical_buyer_id, account_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.AccountBuyerMapping
+	for rows.Next() {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return nil, err
+		}
+		var value domain.AccountBuyerMapping
+		if err := json.Unmarshal(payload, &value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
 }
 
 func (r *Repository) MarkIntentSucceeded(ctx context.Context, intent domain.LogicalOrderIntent, result domain.ExecutionResult) error {

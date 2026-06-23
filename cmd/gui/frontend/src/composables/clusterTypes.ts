@@ -72,12 +72,19 @@ export interface WorkerLogEntry {
   retryable?: boolean
 }
 
+export interface BuyerAccountBadge {
+  accountId: string
+  accountName: string
+  uid: string
+}
+
 export interface LogicalBuyer {
   logicalId: string
   name: string
   tel?: string
   idCard?: string
   type: number
+  accounts?: BuyerAccountBadge[]
 }
 
 export interface CatalogSKU {

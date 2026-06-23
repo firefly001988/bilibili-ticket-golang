@@ -19,8 +19,11 @@ type Repository interface {
 	PutAccount(context.Context, domain.Account, *int64) error
 	Account(context.Context, string) (domain.Account, error)
 	PutLogicalBuyer(context.Context, domain.Buyer) error
+	LogicalBuyer(context.Context, string) (domain.Buyer, error)
+	ListLogicalBuyers(context.Context) ([]domain.Buyer, error)
 	PutBuyerMapping(context.Context, domain.AccountBuyerMapping) error
 	BuyerMapping(context.Context, string, string) (domain.AccountBuyerMapping, error)
+	ListAccounts(context.Context) ([]domain.Account, error)
 }
 
 type Provisioner interface {
@@ -84,9 +87,23 @@ func (m *Manager) SyncBuyers(ctx context.Context, accountID string) ([]domain.Bu
 		if buyer.BuyerID <= 0 {
 			continue
 		}
+		// Skip buyers whose ID card is still masked — we must never persist
+		// desensitised data. The buyer will be picked up on a future sync
+		// once the full real-name information is available.
+		if buyer.IDCard != "" && isMasked(buyer.IDCard) {
+			continue
+		}
 		buyer.LogicalID = logicalBuyerID(buyer)
 		logical := buyer
 		logical.BuyerID = 0
+		// Merge with existing data: keep the most complete (unmasked) info.
+		if existing, getErr := m.repository.LogicalBuyer(ctx, logical.LogicalID); getErr == nil {
+			logical = mergeBuyer(existing, logical)
+		}
+		// Final guard: never write masked data into the database.
+		if isMasked(logical.IDCard) {
+			continue
+		}
 		if err := m.repository.PutLogicalBuyer(ctx, logical); err != nil {
 			return nil, err
 		}
@@ -107,8 +124,69 @@ func (m *Manager) SyncBuyers(ctx context.Context, accountID string) ([]domain.Bu
 	return result, nil
 }
 
+// SyncAllBuyers syncs buyers for every account and ensures the logical_buyers
+// table always retains the most complete (unmasked) real-name information
+// across all accounts. The same real person appearing as a buyer on multiple
+// accounts is matched via logicalBuyerID and deduplicated into a single entry.
+func (m *Manager) SyncAllBuyers(ctx context.Context) ([]domain.Buyer, error) {
+	accounts, err := m.repository.ListAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, account := range accounts {
+		if !account.Enabled {
+			continue
+		}
+		if _, err := m.SyncBuyers(ctx, account.ID); err != nil {
+			// Continue syncing other accounts even if one fails.
+			continue
+		}
+	}
+	return m.repository.ListLogicalBuyers(ctx)
+}
+
+// isMasked reports whether the ID card string contains mask characters.
+func isMasked(s string) bool {
+	return strings.Contains(s, "*")
+}
+
+// mergeBuyer combines existing and incoming buyer data, preferring the more
+// complete (unmasked) field values. This ensures that a later sync with masked
+// data does not overwrite previously stored full real-name information.
+func mergeBuyer(existing, incoming domain.Buyer) domain.Buyer {
+	merged := incoming
+	// Prefer existing unmasked ID card over incoming masked one.
+	if isMasked(incoming.IDCard) && !isMasked(existing.IDCard) && existing.IDCard != "" {
+		merged.IDCard = existing.IDCard
+	}
+	// Prefer existing non-empty name if incoming is empty.
+	if incoming.Name == "" && existing.Name != "" {
+		merged.Name = existing.Name
+	}
+	// Prefer existing non-empty tel if incoming is empty.
+	if incoming.Tel == "" && existing.Tel != "" {
+		merged.Tel = existing.Tel
+	}
+	return merged
+}
+
+// normalizeIDCard strips mask characters (e.g. '*' in "3201**********1234")
+// and normalises case/whitespace so that the same person produces the same
+// logical ID regardless of whether the API returned masked or unmasked data.
+// When the full unmasked ID card is available this is a no-op; when only the
+// masked version is available the mask characters are removed so the hash is
+// based on the visible portions only.
+func normalizeIDCard(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '*' {
+			return -1
+		}
+		return r
+	}, strings.ToUpper(strings.TrimSpace(s)))
+}
+
 func logicalBuyerID(buyer domain.Buyer) string {
-	identity := strings.ToLower(strings.TrimSpace(buyer.Name)) + "\x00" + strings.ToUpper(strings.TrimSpace(buyer.IDCard)) + fmt.Sprintf("\x00%d", buyer.Type)
+	identity := strings.ToLower(strings.TrimSpace(buyer.Name)) + "\x00" + normalizeIDCard(buyer.IDCard) + fmt.Sprintf("\x00%d", buyer.Type)
 	sum := sha256.Sum256([]byte(identity))
 	return "buyer-" + hex.EncodeToString(sum[:12])
 }
@@ -154,6 +232,17 @@ func (m *Manager) saveMapping(ctx context.Context, account domain.Account, buyer
 	}
 	logical := buyer
 	logical.BuyerID = 0
+	// Never persist desensitised (masked) data into the database.
+	if logical.IDCard != "" && isMasked(logical.IDCard) {
+		return domain.AccountBuyerMapping{}, fmt.Errorf("cannot save buyer with masked ID card: %s", logical.IDCard)
+	}
+	// Merge with existing data: keep the most complete (unmasked) info.
+	if existing, getErr := m.repository.LogicalBuyer(ctx, logical.LogicalID); getErr == nil {
+		logical = mergeBuyer(existing, logical)
+	}
+	if isMasked(logical.IDCard) {
+		return domain.AccountBuyerMapping{}, fmt.Errorf("cannot save buyer with masked ID card after merge: %s", logical.IDCard)
+	}
 	if err := m.repository.PutLogicalBuyer(ctx, logical); err != nil {
 		return domain.AccountBuyerMapping{}, err
 	}
@@ -176,7 +265,9 @@ func sameBuyer(a, b domain.Buyer) bool {
 	if a.BuyerID > 0 && b.BuyerID > 0 {
 		return a.BuyerID == b.BuyerID
 	}
-	return a.Name == b.Name && a.Tel == b.Tel && a.IDCard == b.IDCard
+	return strings.EqualFold(strings.TrimSpace(a.Name), strings.TrimSpace(b.Name)) &&
+		a.Tel == b.Tel &&
+		normalizeIDCard(a.IDCard) == normalizeIDCard(b.IDCard)
 }
 
 func randomID(prefix string) string {

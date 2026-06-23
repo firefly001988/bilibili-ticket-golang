@@ -30,12 +30,26 @@ import (
 )
 
 type ClusterSnapshot struct {
-	TaskGroups []domain.TaskGroup `json:"taskGroups"`
-	Accounts   []AccountSummary   `json:"accounts"`
-	Buyers     []domain.Buyer     `json:"buyers"`
-	Workers    []WorkerSummary    `json:"workers"`
-	Macros     []MacroSummary     `json:"macros"`
-	Attempts   []AttemptSummary   `json:"attempts"`
+	TaskGroups []domain.TaskGroup  `json:"taskGroups"`
+	Accounts   []AccountSummary    `json:"accounts"`
+	Buyers     []BuyerWithAccounts `json:"buyers"`
+	Workers    []WorkerSummary     `json:"workers"`
+	Macros     []MacroSummary      `json:"macros"`
+	Attempts   []AttemptSummary    `json:"attempts"`
+}
+
+// BuyerAccountBadge represents an account that owns a particular buyer.
+type BuyerAccountBadge struct {
+	AccountID   string `json:"accountId"`
+	AccountName string `json:"accountName"`
+	UID         string `json:"uid"`
+}
+
+// BuyerWithAccounts extends domain.Buyer with the list of accounts that
+// have this buyer in their real-name list.
+type BuyerWithAccounts struct {
+	domain.Buyer
+	Accounts []BuyerAccountBadge `json:"accounts"`
 }
 type AccountSummary struct {
 	ID                string              `json:"id"`
@@ -509,7 +523,34 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	if buyers == nil {
 		buyers = make([]domain.Buyer, 0)
 	}
-	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyers}
+	// Build buyer→accounts mapping from account_buyer_mappings.
+	mappings, err := s.repository.ListBuyerMappings(ctx)
+	if err != nil {
+		return ClusterSnapshot{}, err
+	}
+	accountByID := make(map[string]domain.Account, len(accountList))
+	for _, a := range accountList {
+		accountByID[a.ID] = a
+	}
+	buyerAccounts := make(map[string][]BuyerAccountBadge)
+	for _, m := range mappings {
+		acc := accountByID[m.AccountID]
+		uid := strings.TrimPrefix(m.AccountID, "bili-")
+		buyerAccounts[m.LogicalBuyerID] = append(buyerAccounts[m.LogicalBuyerID], BuyerAccountBadge{
+			AccountID:   m.AccountID,
+			AccountName: acc.Name,
+			UID:         uid,
+		})
+	}
+	buyersWithAccounts := make([]BuyerWithAccounts, len(buyers))
+	for i, b := range buyers {
+		accs := buyerAccounts[b.LogicalID]
+		if accs == nil {
+			accs = make([]BuyerAccountBadge, 0)
+		}
+		buyersWithAccounts[i] = BuyerWithAccounts{Buyer: b, Accounts: accs}
+	}
+	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyersWithAccounts}
 	for _, account := range accountList {
 		summary := AccountSummary{ID: account.ID, Name: account.Name, Role: account.Role, Enabled: account.Enabled, CredentialVersion: account.Credentials.Version}
 		if !account.CooldownUntil.IsZero() {
@@ -679,6 +720,21 @@ func (s *ClusterService) ImportAccount(document string) error {
 
 func (s *ClusterService) SyncAccountBuyers(accountID string) ([]domain.Buyer, error) {
 	buyers, err := s.accounts.SyncBuyers(context.Background(), accountID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.refreshResources(context.Background()); err != nil {
+		return nil, err
+	}
+	return buyers, nil
+}
+
+// SyncAllAccountBuyers syncs buyers from every enabled account and ensures
+// the logical_buyers table retains the most complete (unmasked) real-name
+// information. The same real person on multiple accounts is matched and
+// deduplicated into a single logical buyer entry.
+func (s *ClusterService) SyncAllAccountBuyers() ([]domain.Buyer, error) {
+	buyers, err := s.accounts.SyncAllBuyers(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -1400,7 +1456,24 @@ func (biliProvisioner) ListBuyers(_ context.Context, account domain.Account) ([]
 	}
 	result := make([]domain.Buyer, len(list))
 	for i, value := range list {
-		result[i] = domain.Buyer{BuyerID: value.Id, Name: value.Name, Tel: value.Tel, IDCard: value.IdCard, Type: value.IdType}
+		buyer := domain.Buyer{BuyerID: value.Id, Name: value.Name, Tel: value.Tel, IDCard: value.IdCard, Type: value.IdType}
+		// Fetch full sensitive data (unmasked ID card, phone, etc.) for each buyer.
+		if value.Id > 0 {
+			sensitiveErr, sensitive := client.GetTargetBuyerSensitiveData(value.Id)
+			if sensitiveErr == nil && sensitive.PersonalId != "" {
+				buyer.IDCard = sensitive.PersonalId
+				if sensitive.Tel != "" {
+					buyer.Tel = sensitive.Tel
+				}
+				if sensitive.Name != "" {
+					buyer.Name = sensitive.Name
+				}
+				if sensitive.IdType != 0 {
+					buyer.Type = sensitive.IdType
+				}
+			}
+		}
+		result[i] = buyer
 	}
 	return result, credentialsFrom(client, jar, account.Credentials), nil
 }

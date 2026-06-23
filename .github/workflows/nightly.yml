@@ -155,7 +155,7 @@ jobs:
           CGO_ENABLED: 0
         run: go build -trimpath -o "build/bin/ticket-worker${{ matrix.ext }}" ./cmd/ticket-worker
 
-      - name: Package artifact
+      - name: Package artifacts
         shell: bash
         run: |
           COMMIT="${{ steps.set_commit.outputs.short }}"
@@ -164,11 +164,18 @@ jobs:
           SOURCE_FILE="build/bin/${BIN_NAME}${{ matrix.ext }}"
           WORKER_NAME="ticket-worker"
           WORKER_SOURCE="build/bin/${WORKER_NAME}${{ matrix.ext }}"
-          TARGET_BASE="${BIN_NAME}_${{ matrix.platform }}_${{ matrix.arch }}_${COMMIT}"
+
+          # Package employer (GUI) separately
           cp "$SOURCE_FILE" "release/${BIN_NAME}${{ matrix.ext }}"
+          EMPLOYER_TGZ="release/${BIN_NAME}_${{ matrix.platform }}_${{ matrix.arch }}_${COMMIT}.tar.gz"
+          tar -C release -czf "$EMPLOYER_TGZ" "${BIN_NAME}${{ matrix.ext }}"
+          rm -f "release/${BIN_NAME}${{ matrix.ext }}"
+
+          # Package worker (ticket-worker) separately
           cp "$WORKER_SOURCE" "release/${WORKER_NAME}${{ matrix.ext }}"
-          tar -C release -czf "release/${TARGET_BASE}.tar.gz" "${BIN_NAME}${{ matrix.ext }}" "${WORKER_NAME}${{ matrix.ext }}"
-          rm -f "release/${BIN_NAME}${{ matrix.ext }}" "release/${WORKER_NAME}${{ matrix.ext }}"
+          WORKER_TGZ="release/${WORKER_NAME}_${{ matrix.platform }}_${{ matrix.arch }}_${COMMIT}.tar.gz"
+          tar -C release -czf "$WORKER_TGZ" "${WORKER_NAME}${{ matrix.ext }}"
+          rm -f "release/${WORKER_NAME}${{ matrix.ext }}"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -258,3 +265,61 @@ jobs:
           done
         env:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Notify Telegram
+        shell: bash
+        run: |
+          COMMIT="${{ steps.set_commit.outputs.short }}"
+          REPO="${{ github.repository }}"
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${COMMIT}"
+          BOT="https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          CHAT_ID="${{ secrets.TELEGRAM_CHAT_ID }}"
+
+          # Get commit message: use push event message, fallback to latest git log
+          if [ -n "${{ github.event.head_commit.message }}" ]; then
+            COMMIT_MSG="${{ github.event.head_commit.message }}"
+          else
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+          fi
+          # Escape Markdown special characters in commit message
+          COMMIT_MSG=$(echo "$COMMIT_MSG" | head -1 | sed 's/[_*[\]()~`>#+\-=|{}.!]/\\&/g')
+
+          MSG_HEAD="🚀 *New Nightly Build*"
+          REPO_LINE="📦 *Repo:* \`${REPO}\`"
+          TAG_LINE="🔖 *Tag:* \`${COMMIT}\`"
+          MSG_LINE="📝 ${COMMIT_MSG}"
+          LINK_LINE="🔗 [View Release](${RELEASE_URL})"
+
+          TEXT="${MSG_HEAD}%0A%0A${REPO_LINE}%0A${TAG_LINE}%0A${MSG_LINE}%0A${LINK_LINE}"
+
+          curl -s -X POST "${BOT}/sendMessage" \
+            -d "chat_id=${CHAT_ID}" \
+            -d "text=${TEXT}" \
+            -d "parse_mode=Markdown" \
+            -d "disable_web_page_preview=true"
+
+          # Send files as a media group (single message with all artifacts)
+          MEDIA="["
+          FIRST=true
+          IDX=0
+          for FILE in release-assets/*.tar.gz; do
+            if [ "$FIRST" = false ]; then
+              MEDIA="${MEDIA},"
+            fi
+            FIRST=false
+            MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"attach://f${IDX}\"}"
+            IDX=$((IDX + 1))
+          done
+          MEDIA="${MEDIA}]"
+          echo "Media group (${IDX} files)"
+
+          # Build arguments without eval — use an array to safely handle spaces/special chars
+          set -- -s -X POST "${BOT}/sendMediaGroup"
+          set -- "$@" -F "chat_id=${CHAT_ID}"
+          set -- "$@" -F "media=${MEDIA}"
+          IDX=0
+          for FILE in release-assets/*.tar.gz; do
+            set -- "$@" -F "f${IDX}=@${FILE}"
+            IDX=$((IDX + 1))
+          done
+          curl "$@"

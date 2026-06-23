@@ -539,7 +539,7 @@ func (c *BiliClient) GetTargetBuyerSensitiveData(buyerID int64) (error, api.Buye
 		"idCardIsShow":     1,
 		"src":              "owner",
 		"telIsShow":        1,
-	}).Get("https://show.bilibili.com/api/ticket/buyerinfo/query")
+	}).Post("https://show.bilibili.com/api/ticket/buyerinfo/query")
 	if err != nil {
 		return err, api.BuyerStruct{}
 	}
