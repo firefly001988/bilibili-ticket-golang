@@ -101,10 +101,22 @@
 ### 步骤 2：在远程机器上启动 Worker
 
 1. 把 `ticket-worker` 程序复制到远程机器。
-2. 在那台机器上新建一个文本文件 `worker.json`，把刚才复制的长字符串**解码**后写入。或者直接在远程机器的终端里运行程序，让它自己解码。
-3. 运行：
+2. 在远程机器的终端里运行：
    ```
-   ticket-worker serve --config worker.json
+   ticket-worker import 粘贴那串长字符串
+   ```
+   程序会自动解码并生成 `worker.json`（默认存到 `data/worker/` 目录下）。  
+   也可以用管道方式：
+   ```
+   echo "那串长字符串" | ticket-worker import --stdin
+   ```
+   如果要指定输出目录，加 `-o` 参数：
+   ```
+   ticket-worker import -o ./my-worker 那串长字符串
+   ```
+3. 启动 Worker：
+   ```
+   ticket-worker serve --config data/worker/worker.json
    ```
 4. 看到日志输出 `listening on ...` 就说明启动成功了。
 
