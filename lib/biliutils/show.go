@@ -49,6 +49,7 @@ func (c *BiliClient) GetProjectInformationNew(projectID string) (*r.ProjectInfor
 		IsHotProject:    apiResp.Data.HotProject,
 		IsNeedContact:   apiResp.Data.IdBind == 0,
 		IsForceRealName: apiResp.Data.IdBind != 0,
+		IDBind:          apiResp.Data.IdBind,
 		ProjectName:     apiResp.Data.ProjectName,
 	}, nil
 }
@@ -121,6 +122,7 @@ func (c *BiliClient) GetProjectInformation(projectID string) (*r.ProjectInformat
 		IsHotProject:    apiResp.Data.HotProject,
 		IsNeedContact:   apiResp.Data.NeedContact,
 		IsForceRealName: idBind,
+		IDBind:          apiResp.Data.IdBind,
 		ProjectName:     apiResp.Data.Name,
 	}, nil
 }
@@ -260,22 +262,24 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 		"pay_money":      payMoney,
 		"order_type":     1,
 		"timestamp":      whenGenPToken.UnixMilli(),
-		"deviceId":       c.fingerprint.Buvidfp,
+		"deviceId":       c.fingerprint.Buvidfp[0:32],
 		"sku_id":         ticket.SkuID,
 		"requestSource":  "neul-next",
 		"token":          tokens.RequestToken,
 		"newRisk":        true,
 		"orderCreateUrl": "https://show.bilibili.com/api/ticket/order/createV2",
-		"clickPostion": map[string]any{
+		"clickPosition": map[string]any{
 			"now":    c.now().UnixMilli(),
 			"origin": c.now().UnixMilli() - 10000,
 			"x":      rand.Int64N(400) + 100,
 			"y":      rand.Int64N(400) + 100,
 		},
-		"id_bind":      confirmInfo.IDBind,
-		"is_package":   confirmInfo.IsPackage,
-		"need_contact": confirmInfo.NeedContact,
-		"coupon_code":  "",
+		"id_bind":           confirmInfo.IDBind,
+		"is_package":        confirmInfo.IsPackage,
+		"need_contact":      confirmInfo.NeedContact,
+		"coupon_code":       "",
+		"package_num":       1,
+		"contactNoticeText": "",
 	}
 
 	firstBuyer := buyers[0]
@@ -289,29 +293,25 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 		}
 	}
 	if bt == r.ForceRealName {
-		// Build buyer_info as an array of real-name buyer entries
+		// Build buyer_info as an array of real-name buyer entries, deduplicated by buyer ID.
 		buyerInfoList := make([]map[string]any, 0, count)
-		for _, bt := range confirmInfo.BuyerList.List {
+		seen := make(map[int64]bool, count)
+		for _, ci := range confirmInfo.BuyerList.List {
 			for _, b := range buyers {
-				if bt.Id == b.ID {
+				if ci.Id == b.ID && !seen[ci.Id] {
+					seen[ci.Id] = true
 					buyerInfoList = append(buyerInfoList, map[string]any{
-						"id":                  bt.Id,
-						"uid":                 bt.Uid,
-						"accountId":           bt.AccountId,
-						"name":                bt.Name,
-						"tel":                 bt.Tel,
-						"account_channel":     bt.AccountChannel,
-						"personal_id":         bt.PersonalId,
-						"id_card_front":       bt.IdCardFront,
-						"id_card_back":        bt.IdCardBack,
-						"is_default":          bt.IsDefault,
-						"id_type":             bt.IdType,
-						"verify_status":       bt.VerifyStatus,
-						"isBuyerInfoVerified": bt.IsBuyerInfoVerified,
-						"isBuyerValid":        bt.IsBuyerValid,
+						"id":          ci.Id,
+						"name":        ci.Name,
+						"tel":         ci.Tel,
+						"personal_id": ci.PersonalId,
+						"id_type":     ci.IdType,
 					})
 					break
 				}
+			}
+			if len(buyerInfoList) >= count {
+				break
 			}
 		}
 		if len(buyerInfoList) != count {

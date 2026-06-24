@@ -90,7 +90,7 @@ function toggleMacro(id: string) {
 
 function editMacro(item: typeof snapshot.value.macros[number]) {
   selectedSKU.value = { screenId: item.screenId, skuId: item.skuId, screenName: item.screenName || '', skuName: item.skuName || '', price: 0, orderCapacity: item.orderCapacity }
-  project.value = { id: String(item.projectId), name: item.projectName || `项目 ${item.projectId}`, forceRealName: true, tickets: [selectedSKU.value] }
+  project.value = { id: String(item.projectId), name: item.projectName || `项目 ${item.projectId}`, forceRealName: true, idBind: 2, tickets: [selectedSKU.value] }
   projectId.value = String(item.projectId); eventDayConfirmed.value = item.eventDayConfirmed
   Object.assign(macro.value, { id: item.id, taskGroupId: item.taskGroupId, projectId: item.projectId, projectName: item.projectName || '', screenId: item.screenId, screenName: item.screenName || '', skuId: item.skuId, skuName: item.skuName || '', eventDay: item.eventDay, orderCapacity: item.orderCapacity, capacitySource: item.capacitySource || 'default', smartMerge: item.smartMerge, priority: item.priority, desiredReplicas: item.desiredReplicas, hardConcurrency: item.hardConcurrency, startAt: localDateTime(item.startAt), deadline: localDateTime(item.deadline) })
   taskEditorPanel.value = 1
@@ -220,7 +220,13 @@ async function switchToReflow() {
             <v-btn color="primary" :loading="projectLoading" @click="loadProject">读取项目</v-btn>
           </div>
           <v-alert v-if="project" type="info" variant="tonal" class="mb-3"><strong>{{ project.name }}</strong><span
-              class="ml-2">{{ project.forceRealName ? '实名制项目' : '非强制实名项目' }}</span></v-alert>
+              class="ml-2">{{ project.forceRealName ? '实名制项目' : '非强制实名项目' }}</span>
+            <div v-if="project.forceRealName" class="text-caption mt-1">
+              <v-icon size="small" class="mr-1">mdi-information</v-icon>
+              <span v-if="project.idBind === 1">此项目单人实名可购买多张票，系统会自动拆分为每张票单独下单。</span>
+              <span v-else>此项目一票一实名，每张票需要对应的实名购票人。</span>
+            </div>
+          </v-alert>
           <v-list v-if="project?.tickets.length" border rounded class="mb-4" max-height="300">
             <v-list-item v-for="ticket in project.tickets" :key="`${ticket.screenId}-${ticket.skuId}`"
               :active="selectedSKU?.skuId === ticket.skuId && selectedSKU?.screenId === ticket.screenId"

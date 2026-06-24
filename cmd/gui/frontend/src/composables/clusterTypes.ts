@@ -104,6 +104,7 @@ export interface ProjectCatalog {
   id: string
   name: string
   forceRealName: boolean
+  idBind: number
   start?: string
   end?: string
   tickets: CatalogSKU[]

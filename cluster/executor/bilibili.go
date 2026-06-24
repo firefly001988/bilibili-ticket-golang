@@ -122,6 +122,10 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 			return out
 		}
 	}
+	// idBind=1: split into separate single-ticket orders, each using the same buyer.
+	if b.confirm.IDBind == 1 && len(b.buyers) > 1 {
+		return b.submitSplitOrders(ctx, spec)
+	}
 	err, code, message, order := b.client.SubmitOrder(ctx, b.tokenGen, b.generatedAt, b.tokens, strconv.FormatInt(spec.ProjectID, 10), b.sku, b.buyers, b.confirm)
 	b.submitCount++
 	if err != nil {
@@ -140,6 +144,55 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 		return Outcome{Code: code, Message: message, OrderID: strconv.FormatInt(order.OrderId, 10)}
 	}
 	return Outcome{Code: code, Message: message}
+}
+
+// submitSplitOrders places each ticket as a separate single-ticket order.
+// Used when idBind=1: one real-name buyer can purchase multiple tickets,
+// but each ticket must be its own order.
+func (b *BilibiliBackend) submitSplitOrders(ctx context.Context, spec domain.ExecutionSpec) Outcome {
+	pid := strconv.FormatInt(spec.ProjectID, 10)
+	var orderIDs []string
+	for _, buyer := range b.buyers {
+		single := []response.TicketBuyer{buyer}
+		err, code, message, order := b.client.SubmitOrder(ctx, b.tokenGen, b.generatedAt, b.tokens, pid, b.sku, single, b.confirm)
+		b.submitCount++
+		if err != nil {
+			// Network/transport error — return partial results if any, otherwise the error
+			if len(orderIDs) > 0 {
+				return Outcome{Code: 0, Message: fmt.Sprintf("split into %d orders: %s (stopped: %s)", len(orderIDs), strings.Join(orderIDs, ","), message), OrderID: strings.Join(orderIDs, ","), Err: err}
+			}
+			return Outcome{Code: code, Message: message, Err: err}
+		}
+		if code == 100034 {
+			b.sku.Price = order.PayMoney
+		}
+		if code == 100041 || code == 100050 || code == 900002 {
+			b.prepared = false
+			// Token expired — return partial results if any, let Engine re-prepare and retry
+			if len(orderIDs) > 0 {
+				return Outcome{Code: 0, Message: fmt.Sprintf("split into %d orders: %s (token expired, retry needed)", len(orderIDs), strings.Join(orderIDs, ",")), OrderID: strings.Join(orderIDs, ",")}
+			}
+			return Outcome{Code: code, Message: message}
+		}
+		// 100003: buyer already purchased, skip to next buyer
+		if code == 100003 {
+			continue
+		}
+		if code == 0 || code == 100048 || code == 100079 {
+			// Record order ID immediately, then verify status but don't block continuation
+			if order.OrderId > 0 {
+				orderIDs = append(orderIDs, strconv.FormatInt(order.OrderId, 10))
+			}
+			b.client.GetOrderStatus(ctx, pid, order.Token, order.OrderId)
+			continue
+		}
+		// Other non-success codes: skip to next buyer
+		continue
+	}
+	if len(orderIDs) > 0 {
+		return Outcome{Code: 0, Message: fmt.Sprintf("split into %d orders: %s", len(orderIDs), strings.Join(orderIDs, ",")), OrderID: strings.Join(orderIDs, ",")}
+	}
+	return Outcome{Code: -1, Message: "all buyers failed in split mode"}
 }
 
 func (b *BilibiliBackend) prepare(spec domain.ExecutionSpec) Outcome {

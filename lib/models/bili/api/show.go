@@ -85,7 +85,7 @@ type ConfirmStruct struct {
 	ItemTotalMoney int              `json:"item_total_money"`
 	PayMoney       int              `json:"pay_money"`
 	TicketInfo     TicketInfoDetail `json:"ticket_info"`
-	IDBind         int              `json:"id_bind"`
+	IDBind         int              `json:"id_bind"` // 0 = 无实名, 1 = 单人实名可买多张票, 2 = 一票一实名
 	IsPackage      int              `json:"is_package"`
 	NeedContact    int              `json:"need_contact"`
 }

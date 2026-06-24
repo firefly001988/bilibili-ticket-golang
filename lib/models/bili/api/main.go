@@ -76,7 +76,7 @@ type TicketProjectInformationStruct struct {
 	End         int64  `json:"end_time"`
 	HotProject  bool   `json:"hotProject"`
 	NeedContact bool   `json:"need_contact"`
-	IdBind      int    `json:"id_bind"` // I think it's similar to the `NeedContact`. 1 is force Real Name Authentication. 0 is not.
+	IdBind      int    `json:"id_bind"` // 0 = 无实名, 1 = 单人实名可买多张票, 2 = 一票一实名
 	ScreenList  []struct {
 		SaleFlag struct {
 			Number      int    `json:"number"`
@@ -114,7 +114,7 @@ type TicketProjectInformationNewStruct struct {
 	EndTime       int64  `json:"endTime"`
 	CurrentTime   int64  `json:"currentTime"`
 	HotProject    bool   `json:"hotProject"`
-	IdBind        int    `json:"idBind"`
+	IdBind        int    `json:"idBind"` // 0 = 无实名, 1 = 单人实名可买多张票, 2 = 一票一实名
 	ContactNotice int    `json:"contactNotice"`
 	BuyerInfo     string `json:"buyerInfo"` // "idBind,needContact" e.g. "2,1"
 	ScreenList    []struct {

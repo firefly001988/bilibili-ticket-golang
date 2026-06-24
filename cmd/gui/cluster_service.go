@@ -165,6 +165,7 @@ type ProjectCatalog struct {
 	ID            string       `json:"id"`
 	Name          string       `json:"name"`
 	ForceRealName bool         `json:"forceRealName"`
+	IDBind        int          `json:"idBind"`
 	Start         time.Time    `json:"start"`
 	End           time.Time    `json:"end"`
 	Tickets       []CatalogSKU `json:"tickets"`
@@ -199,7 +200,7 @@ func (s *ClusterService) LoadProject(projectID string) (ProjectCatalog, error) {
 	if err != nil {
 		return ProjectCatalog{}, err
 	}
-	result := ProjectCatalog{ID: info.ProjectID, Name: info.ProjectName, ForceRealName: info.IsForceRealName, Start: info.StartTime, End: info.EndTime}
+	result := ProjectCatalog{ID: info.ProjectID, Name: info.ProjectName, ForceRealName: info.IsForceRealName, IDBind: info.IDBind, Start: info.StartTime, End: info.EndTime}
 	for _, ticket := range tickets {
 		capacity := ticket.BuyLimit
 		if capacity <= 0 {

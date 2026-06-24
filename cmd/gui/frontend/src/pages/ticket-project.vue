@@ -302,6 +302,11 @@ function formatPrice(price: number): string {
                 {{ t('ticketProject.sale') }}: {{ projectInfo.StartTime }} ~ {{ projectInfo.EndTime }}
             </p>
             <p v-if="projectInfo.IsForceRealName">{{ t('ticketProject.realNameRequired') }}</p>
+            <div v-if="projectInfo.IsForceRealName" class="text-caption mt-1">
+                <v-icon size="small" class="mr-1">mdi-information</v-icon>
+                <span v-if="projectInfo.IDBind === 1">此项目单人实名可购买多张票，系统会自动拆分为每张票单独下单。</span>
+                <span v-else>此项目一票一实名，每张票需要对应的实名购票人。</span>
+            </div>
             <p v-if="projectInfo.IsNeedContact">{{ t('ticketProject.contactRequired') }}</p>
         </v-card-text>
     </v-card>
@@ -385,8 +390,19 @@ function formatPrice(price: number): string {
                         </v-select>
 
                         <div v-if="selectedBuyerIds.length > 0" class="mt-2 text-caption text-grey">
-                            {{ t('ticketProject.selected') }}: {{ selectedBuyerIds.length }}{{ t('ticketProject.persons') }}
+                            {{ t('ticketProject.selected') }}: {{ selectedBuyerIds.length }}{{
+                                t('ticketProject.persons') }}
                         </div>
+                        <v-alert v-if="projectInfo?.IDBind === 1" density="compact" variant="tonal" color="info"
+                            class="mt-2 text-caption">
+                            <v-icon size="small" class="mr-1">mdi-information</v-icon>
+                            此项目单人实名可购买多张票，系统会自动拆分为每张票单独下单。
+                        </v-alert>
+                        <v-alert v-else-if="projectInfo?.IDBind === 2" density="compact" variant="tonal" color="info"
+                            class="mt-2 text-caption">
+                            <v-icon size="small" class="mr-1">mdi-information</v-icon>
+                            此项目一票一实名，请选择与购票数量相同的实名购票人。
+                        </v-alert>
                     </v-col>
 
                     <!-- Ordinary buyer fields (shown for non-real-name projects) -->
@@ -438,20 +454,17 @@ function formatPrice(price: number): string {
                             variant="outlined" density="compact" hide-details="auto" required />
                     </v-col>
                     <v-col cols="12">
-                        <v-select v-model="addBuyerForm.idType" :items="idTypes"
-                            item-title="title" item-value="value"
-                            :label="t('ticketProject.addBuyerIdType')"
-                            variant="outlined" density="compact" hide-details="auto" />
+                        <v-select v-model="addBuyerForm.idType" :items="idTypes" item-title="title" item-value="value"
+                            :label="t('ticketProject.addBuyerIdType')" variant="outlined" density="compact"
+                            hide-details="auto" />
                     </v-col>
                     <v-col cols="12">
-                        <v-text-field v-model="addBuyerForm.personalId"
-                            :label="t('ticketProject.addBuyerPersonalId')"
-                            :hint="getPersonalIdHint(addBuyerForm.idType)"
-                            variant="outlined" density="compact" persistent-hint required />
+                        <v-text-field v-model="addBuyerForm.personalId" :label="t('ticketProject.addBuyerPersonalId')"
+                            :hint="getPersonalIdHint(addBuyerForm.idType)" variant="outlined" density="compact"
+                            persistent-hint required />
                     </v-col>
                     <v-col cols="12">
-                        <v-checkbox v-model="addBuyerForm.isDefault"
-                            :label="t('ticketProject.addBuyerIsDefault')"
+                        <v-checkbox v-model="addBuyerForm.isDefault" :label="t('ticketProject.addBuyerIsDefault')"
                             density="compact" hide-details />
                     </v-col>
                 </v-row>

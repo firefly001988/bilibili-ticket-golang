@@ -8,7 +8,7 @@
       "mode": "exec",
       "program": "${workspaceFolder}/build/bin/myproject.exe",
       "preLaunchTask": "build",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}/cmd/gui"
     },
     {
       "name": "Wails: Debug myproject",
@@ -17,7 +17,7 @@
       "mode": "exec",
       "program": "${workspaceFolder}/build/bin/myproject.exe",
       "preLaunchTask": "build debug",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}/cmd/gui"
     },
     {
       "name": "Wails: Dev myproject",
@@ -26,7 +26,7 @@
       "mode": "exec",
       "program": "${workspaceFolder}/build/bin/myproject.exe",
       "preLaunchTask": "build dev",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}/cmd/gui"
     },
     {
       "name": "Worker: serve (gRPC)",
@@ -37,10 +37,10 @@
       "args": [
         "serve",
         "--config",
-        "${workspaceFolder}/data/local-worker/worker.json"
+        "${workspaceFolder}/cmd/ticket-worker/data/worker/worker.json"
       ],
       "preLaunchTask": "build ticket-worker",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}/cmd/ticket-worker"
     },
     {
       "name": "Worker: run (single task)",
@@ -51,10 +51,10 @@
       "args": [
         "run",
         "--task",
-        "${workspaceFolder}/data/local-worker/task.json"
+        "${workspaceFolder}/cmd/ticket-worker/data/worker/task.json"
       ],
       "preLaunchTask": "build ticket-worker",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}/cmd/ticket-worker"
     }
   ]
 }

@@ -42,6 +42,7 @@ type ProjectInformation struct {
 	IsHotProject    bool
 	IsForceRealName bool
 	IsNeedContact   bool
+	IDBind          int // 0 = 无实名, 1 = 单人实名可买多张票（拆分下单）, 2 = 一票一实名
 	ProjectName     string
 }
 
