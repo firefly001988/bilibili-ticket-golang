@@ -79,7 +79,7 @@
         "workerIdHint": "Unique identifier, e.g. home-server",
         "listen": "Listen Address",
         "listenHint": "gRPC listen address for the worker, e.g. 0.0.0.0:18080",
-        "hosts": "TLS Hostnames",
+        "hosts": "SNI",
         "hostsHint": "Comma-separated DNS names or IPs, e.g. myworker.example.com,192.168.1.100",
         "generate": "Generate Config",
         "generating": "Generating...",

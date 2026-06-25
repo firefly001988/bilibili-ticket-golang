@@ -1100,7 +1100,13 @@ func (s *ClusterService) GenerateRemoteWorkerConfig(workerID, listen, hosts stri
 // and adds the worker to the repository.  The encoded string carries both
 // the worker-side and employer-side TLS material, so no prior TLS setup
 // is required — it is extracted directly from the config.
-func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string) error {
+//
+// overrideAddress, when non-empty, overrides the dial address (rc.Listen)
+// embedded in the encoded config.  This allows the employer to specify the
+// real reachable IP:port of the worker, which may differ from the listen
+// address the worker was configured with (e.g. 0.0.0.0:18080 vs the actual
+// public IP).
+func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string, overrideAddress string) error {
 	rc, err := clusterworker.DecodeRemoteWorkerConfig(encodedConfig)
 	if err != nil {
 		return fmt.Errorf("decode worker config: %w", err)
@@ -1112,6 +1118,14 @@ func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string) error 
 		return fmt.Errorf("cannot import the local worker")
 	}
 	ctx := context.Background()
+
+	// Determine the dial address.  Prefer the override supplied by the
+	// employer (the real IP:port of the employee's machine); fall back to
+	// the listen address embedded in the config.
+	address := rc.Listen
+	if overrideAddress != "" {
+		address = overrideAddress
+	}
 
 	// Build TLS config.  Prefer the employer fields embedded in the encoded
 	// string (populated by GenerateRemoteWorkerConfig).  Fall back to the
@@ -1143,7 +1157,7 @@ func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string) error 
 
 	node := domain.WorkerNode{
 		ID:            rc.WorkerID,
-		Address:       rc.Listen,
+		Address:       address,
 		Role:          domain.RolePrimary,
 		Enabled:       true,
 		TLSServerName: tlsConfig.ServerName,

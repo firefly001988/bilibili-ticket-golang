@@ -42,7 +42,7 @@ async function importWorker() {
   if (!result.value?.encodedConfig) return
   importing.value = true
   try {
-    await clusterCall('AddWorkerFromEncodedConfig', result.value.encodedConfig)
+    await clusterCall('AddWorkerFromEncodedConfig', result.value.encodedConfig, '')
     messages.add({ text: t('workerConfig.imported'), color: 'success', timeout: 3000 })
   } catch (e: any) {
     messages.add({ text: String(e), color: 'error', timeout: 5000 })

@@ -79,7 +79,7 @@
         "workerIdHint": "唯一标识符，如 home-server",
         "listen": "监听地址",
         "listenHint": "Worker 的 gRPC 监听地址，如 0.0.0.0:18080",
-        "hosts": "TLS 主机名",
+        "hosts": "SNI",
         "hostsHint": "逗号分隔的 DNS 名或 IP，如 myworker.example.com,192.168.1.100",
         "generate": "生成配置",
         "generating": "生成中...",

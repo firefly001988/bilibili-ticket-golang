@@ -13,6 +13,7 @@ const EMPTY = { id: '', name: '', address: '127.0.0.1:18080', caCert: '', client
 const worker = ref({ ...EMPTY })
 const editing = ref(false)
 const encodedImport = ref('')
+const importAddress = ref('')
 const importing = ref(false)
 const showImport = ref(false)
 
@@ -25,8 +26,9 @@ async function importFromEncoded() {
   if (!encodedImport.value.trim()) return
   importing.value = true
   try {
-    await invoke('AddWorkerFromEncodedConfig', encodedImport.value.trim())
+    await invoke('AddWorkerFromEncodedConfig', encodedImport.value.trim(), importAddress.value.trim())
     encodedImport.value = ''
+    importAddress.value = ''
     messages.add({ text: 'Worker 导入成功', color: 'success', timeout: 3000 })
   } catch (e: any) {
     messages.add({ text: String(e), color: 'error', timeout: 5000 })
@@ -161,6 +163,13 @@ async function reconnectWorker(id: string, name: string) {
         <v-expand-transition>
           <div v-show="showImport">
             <v-textarea v-model="encodedImport" label="编码后的 Worker 配置 (Base4096)" class="mt-2" />
+            <v-text-field
+              v-model="importAddress"
+              label="Worker 地址 (IP:port)"
+              hint="雇员机器的真实 IP:端口，如 192.168.1.100:18080"
+              persistent-hint
+              class="mt-2"
+            />
             <v-btn color="secondary" variant="tonal" size="small" block :disabled="!encodedImport.trim()"
               :loading="importing" @click="importFromEncoded">
               导入 Worker
