@@ -261,20 +261,10 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 		}
 		return ordered[i].Macro.Priority > ordered[j].Macro.Priority
 	})
+
+	// Calculate max rounds needed for replica distribution.
+	maxRound := 1
 	for _, plan := range ordered {
-		if d.stoppedPhases[plan.Intent.Phase] {
-			continue
-		}
-		if d.now().After(plan.Macro.Deadline) {
-			plan.Intent.Terminal, plan.Intent.FailureReason = true, domain.FailureDeadline
-			if d.repository != nil {
-				_ = d.repository.PutIntent(ctx, plan.Intent)
-			}
-			continue
-		}
-		if d.conflicted(plan) {
-			continue
-		}
 		desired := plan.Macro.DesiredReplicas
 		if desired <= 0 {
 			desired = 1
@@ -286,13 +276,50 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 		if desired > hard {
 			desired = hard
 		}
-		for d.activeCount(plan.Intent.ID) < desired {
+		if desired > maxRound {
+			maxRound = desired
+		}
+	}
+
+	// Distribute replicas in round-robin fashion: each round, every intent
+	// gets at most 1 additional replica. This ensures fair resource allocation
+	// across concurrent intents when workers are limited.
+	for round := 1; round <= maxRound; round++ {
+		for _, plan := range ordered {
+			if d.stoppedPhases[plan.Intent.Phase] {
+				continue
+			}
+			if d.now().After(plan.Macro.Deadline) {
+				plan.Intent.Terminal, plan.Intent.FailureReason = true, domain.FailureDeadline
+				if d.repository != nil {
+					_ = d.repository.PutIntent(ctx, plan.Intent)
+				}
+				continue
+			}
+			if d.conflicted(plan) {
+				continue
+			}
+			desired := plan.Macro.DesiredReplicas
+			if desired <= 0 {
+				desired = 1
+			}
+			hard := plan.Macro.HardConcurrency
+			if hard <= 0 {
+				hard = desired
+			}
+			if desired > hard {
+				desired = hard
+			}
+			currentActive := d.activeCount(plan.Intent.ID)
+			if currentActive >= desired || currentActive >= round {
+				continue
+			}
 			account, worker, ok, err := d.pickResources(ctx, plan)
 			if err != nil {
 				return err
 			}
 			if !ok {
-				break
+				continue
 			}
 			if err := d.dispatch(ctx, plan, account, worker); err != nil {
 				return err
