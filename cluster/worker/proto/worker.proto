@@ -96,6 +96,9 @@ message ExecutionResult {
   Credentials credentials = 10;
   google.protobuf.Timestamp started_at = 11;
   google.protobuf.Timestamp finished_at = 12;
+  string payment_url = 13;
+  int64 payment_expire = 14;
+  int64 order_time = 15;
 }
 
 message LogEntry {

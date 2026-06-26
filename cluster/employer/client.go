@@ -3,12 +3,9 @@ package employer
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -463,17 +460,19 @@ func executionResultFromProto(r *pb.ExecutionResult) domain.ExecutionResult {
 		return domain.ExecutionResult{}
 	}
 	er := domain.ExecutionResult{
-		AttemptID: r.AttemptId,
-		IntentID:  r.IntentId,
-		SpecHash:  r.SpecHash,
-		State:     attemptStateFromProto(r.State),
-		Success:   r.Success,
-		OrderID:   r.OrderId,
-		Reason:    failureReasonFromProto(r.Reason),
-		Message:   r.Message,
-		Retryable: r.Retryable,
+		AttemptID:     r.AttemptId,
+		IntentID:      r.IntentId,
+		SpecHash:      r.SpecHash,
+		State:         attemptStateFromProto(r.State),
+		Success:       r.Success,
+		OrderID:       r.OrderId,
+		Reason:        failureReasonFromProto(r.Reason),
+		Message:       r.Message,
+		Retryable:     r.Retryable,
+		PaymentURL:    r.PaymentUrl,
+		PaymentExpire: r.PaymentExpire,
+		OrderTime:     r.OrderTime,
 	}
-	unpackPaymentMetadata(&er)
 	if r.Credentials != nil {
 		er.Credentials = credentialsFromProto(r.Credentials)
 	}
@@ -484,36 +483,6 @@ func executionResultFromProto(r *pb.ExecutionResult) domain.ExecutionResult {
 		er.FinishedAt = r.FinishedAt.AsTime()
 	}
 	return er
-}
-
-type paymentMetadata struct {
-	PaymentURL    string `json:"paymentUrl,omitempty"`
-	PaymentExpire int64  `json:"paymentExpire,omitempty"`
-	OrderTime     int64  `json:"orderTime,omitempty"`
-}
-
-const paymentMetadataMarker = "\n__biliticket_payment_v1="
-
-func unpackPaymentMetadata(result *domain.ExecutionResult) {
-	if result == nil || !strings.Contains(result.Message, paymentMetadataMarker) {
-		return
-	}
-	parts := strings.SplitN(result.Message, paymentMetadataMarker, 2)
-	result.Message = parts[0]
-	if len(parts) != 2 {
-		return
-	}
-	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return
-	}
-	var payload paymentMetadata
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return
-	}
-	result.PaymentURL = payload.PaymentURL
-	result.PaymentExpire = payload.PaymentExpire
-	result.OrderTime = payload.OrderTime
 }
 
 func credentialsFromProto(p *pb.Credentials) domain.Credentials {
