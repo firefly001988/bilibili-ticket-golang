@@ -137,6 +137,33 @@ func TestClusterServiceEditsAndDeletesPurchaseGroups(t *testing.T) {
 	}
 }
 
+func TestClusterServiceStartsTaskGroup(t *testing.T) {
+	service := testClusterService(t)
+	ctx := context.Background()
+	if err := service.SaveTaskGroup(`{"id":"group","name":"test"}`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	macro := domain.MacroTask{ID: "macro", TaskGroupID: "group", ProjectID: 1, ScreenID: 2, SKUID: 3, EventDay: "2026-07-01", EventDayConfirmed: true, OrderCapacity: 4, DesiredReplicas: 1, HardConcurrency: 1, StartAt: now.Add(time.Minute), Deadline: now.Add(time.Hour)}
+	if err := service.SaveMacro(document(t, macro)); err != nil {
+		t.Fatal(err)
+	}
+	group := domain.PurchaseGroup{ID: "purchase", MacroTaskID: macro.ID, Buyers: []domain.Buyer{{LogicalID: "a", Name: "A"}}, CreatedAt: now}
+	if err := service.SavePurchaseGroup(document(t, group)); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.StartTaskGroup("group"); err != nil {
+		t.Fatal(err)
+	}
+	intents, err := service.repository.ListIntents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(intents) != 1 || intents[0].MacroTaskID != macro.ID || !intents[0].Armed {
+		t.Fatalf("task group start did not create an armed intent: %#v", intents)
+	}
+}
+
 func TestClusterServiceDeletesIdleResources(t *testing.T) {
 	service := testClusterService(t)
 	ctx := context.Background()

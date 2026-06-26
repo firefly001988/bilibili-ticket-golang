@@ -289,6 +289,14 @@ export function StartMacro(macroID) {
 }
 
 /**
+ * @param {string} taskGroupID
+ * @returns {$CancellablePromise<void>}
+ */
+export function StartTaskGroup(taskGroupID) {
+    return $Call.ByID(1725619915, taskGroupID);
+}
+
+/**
  * StopAttempt stops a running attempt by telling its worker to cancel it.
  * @param {string} attemptID
  * @returns {$CancellablePromise<void>}

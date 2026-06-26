@@ -9,6 +9,7 @@ const messages = useMessagesStore()
 const { snapshot, loading, invoke } = useCluster()
 
 const startingMacroId = ref('')
+const startingTaskGroupId = ref('')
 const projectId = ref('')
 const project = ref<ProjectCatalog | null>(null)
 const projectLoading = ref(false)
@@ -39,6 +40,16 @@ async function startMacro(id: string) {
     await invoke('', '')
   } catch (e: any) { messages.add({ text: String(e), color: 'error', timeout: 5000 }) }
   finally { startingMacroId.value = '' }
+}
+
+async function startTaskGroup(id: string) {
+  startingTaskGroupId.value = id
+  try {
+    await clusterCall('StartTaskGroup', id)
+    messages.add({ text: '任务组内准点任务已统一启动。', color: 'success', timeout: 3000 })
+    await invoke('', '')
+  } catch (e: any) { messages.add({ text: String(e), color: 'error', timeout: 5000 }) }
+  finally { startingTaskGroupId.value = '' }
 }
 
 async function stopMacro(id: string) {
@@ -207,7 +218,14 @@ async function switchToReflow() {
     <v-expansion-panels v-model="taskEditorPanel" class="mt-5">
       <v-expansion-panel title="创建任务组">
         <v-expansion-panel-text>
-          <div class="mb-2">现有：{{snapshot.taskGroups.map(g => g.name).join('、') || '暂无'}}</div>
+          <div class="mb-3">
+            <div v-if="snapshot.taskGroups.length === 0" class="text-medium-emphasis">暂无任务组</div>
+            <v-chip v-for="group in snapshot.taskGroups" :key="group.id" class="mr-2 mb-2" variant="outlined">
+              {{ group.name }}
+              <v-btn class="ml-2" size="x-small" variant="text" :loading="startingTaskGroupId === group.id"
+                @click.stop="startTaskGroup(group.id)">启动本组准点</v-btn>
+            </v-chip>
+          </div>
           <v-text-field v-model="taskGroup.name" label="任务组名称" />
           <v-btn color="primary" @click="saveTaskGroup">保存任务组</v-btn>
         </v-expansion-panel-text>

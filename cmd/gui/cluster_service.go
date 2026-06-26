@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -523,37 +524,47 @@ func (s *ClusterService) refreshResources(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.dispatcher.SetResources(accountList, workers)
-	for _, node := range workers {
+	dispatchWorkers := make([]domain.WorkerNode, len(workers))
+	copy(dispatchWorkers, workers)
+	var wg sync.WaitGroup
+	for i := range dispatchWorkers {
+		i := i
+		node := dispatchWorkers[i]
+		if !node.Enabled {
+			continue
+		}
 		if s.client.IsHealthy(node.ID) {
 			s.dispatcher.MarkWorkerHealthy(node.ID)
+			continue
 		}
-	}
-
-	// Eagerly dial workers that are not yet connected so that connection
-	// problems surface immediately instead of silently waiting until the
-	// first dispatch. Skip workers that the user manually disconnected.
-	go func() {
-		for _, node := range workers {
-			if s.client.IsHealthy(node.ID) {
-				continue // already connected
-			}
-			if s.client.IsDisconnected(node.ID) {
-				continue // user manually disconnected — don't auto-reconnect
-			}
-			healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if s.client.IsDisconnected(node.ID) {
+			dispatchWorkers[i].Enabled = false
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			healthCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			info, err := s.client.Health(healthCtx, node)
 			cancel()
 			if err != nil {
 				log.Printf("[cluster] health check failed for worker %s (%s): %v", node.ID, node.Address, err)
-				continue
+				dispatchWorkers[i].Enabled = false
+				return
 			}
 			log.Printf("[cluster] worker %s connected (version=%s, plugin=%s)", node.ID, info["version"], info["pluginVersion"])
 			if s.client.IsHealthy(node.ID) {
 				s.dispatcher.MarkWorkerHealthy(node.ID)
 			}
+		}()
+	}
+	wg.Wait()
+	for i := range dispatchWorkers {
+		if dispatchWorkers[i].Enabled && !s.client.IsHealthy(dispatchWorkers[i].ID) {
+			dispatchWorkers[i].Enabled = false
 		}
-	}()
+	}
+	s.dispatcher.SetResources(accountList, dispatchWorkers)
 
 	return nil
 }
@@ -1370,7 +1381,55 @@ func (s *ClusterService) invalidateMacroConfiguration(macroID string) error {
 }
 
 func (s *ClusterService) StartMacro(macroID string) error {
+	if err := s.refreshResources(context.Background()); err != nil {
+		return err
+	}
 	return s.planAndStart(context.Background(), macroID, domain.PhasePunctual, true)
+}
+
+func (s *ClusterService) StartTaskGroup(taskGroupID string) error {
+	ctx := context.Background()
+	if err := s.refreshResources(ctx); err != nil {
+		return err
+	}
+	macros, err := s.repository.ListMacroTasks(ctx)
+	if err != nil {
+		return err
+	}
+	selected := make([]domain.MacroTask, 0)
+	for _, macro := range macros {
+		if macro.TaskGroupID == taskGroupID {
+			selected = append(selected, macro)
+		}
+	}
+	if len(selected) == 0 {
+		return fmt.Errorf("task group has no macro tasks")
+	}
+	sort.SliceStable(selected, func(i, j int) bool {
+		if selected[i].Priority == selected[j].Priority {
+			return selected[i].ID < selected[j].ID
+		}
+		return selected[i].Priority > selected[j].Priority
+	})
+	var failures []string
+	started := 0
+	for _, macro := range selected {
+		if err := s.planAndStart(ctx, macro.ID, domain.PhasePunctual, false); err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", macro.ID, err))
+			continue
+		}
+		started++
+	}
+	if started == 0 {
+		if len(failures) > 0 {
+			return fmt.Errorf("no macro task started: %s", strings.Join(failures, "; "))
+		}
+		return fmt.Errorf("no macro task started")
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("started %d macro task(s), but some failed: %s", started, strings.Join(failures, "; "))
+	}
+	return nil
 }
 
 func (s *ClusterService) AttemptLogs(attemptID string) ([]clusterworker.LogEntry, error) {

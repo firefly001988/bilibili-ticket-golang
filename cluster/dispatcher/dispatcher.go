@@ -11,6 +11,8 @@ import (
 	"bilibili-ticket-golang/cluster/domain"
 )
 
+const rpcTimeout = 5 * time.Second
+
 type WorkerStatus struct {
 	State  domain.AttemptState
 	Result domain.ExecutionResult
@@ -306,7 +308,9 @@ func (d *Dispatcher) poll(ctx context.Context) error {
 			continue
 		}
 		worker := d.workers[current.value.WorkerID]
-		status, err := d.client.Status(ctx, worker, current.value.ID)
+		rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+		status, err := d.client.Status(rpcCtx, worker, current.value.ID)
+		cancel()
 		if err != nil {
 			now := d.now()
 			d.failedWorkers[worker.ID] = now
@@ -372,13 +376,29 @@ func (d *Dispatcher) win(ctx context.Context, winner *attempt, result domain.Exe
 	if d.onSuccess != nil {
 		go d.onSuccess(plan.Intent, result)
 	}
+	for _, other := range d.plans {
+		if other.Intent.ID == plan.Intent.ID || other.Intent.Succeeded || other.Intent.Terminal {
+			continue
+		}
+		if domain.Conflicts(plan.Intent, other.Intent) {
+			other.Intent.Terminal = true
+			other.Intent.FailureReason = domain.FailureUnrecoverable
+			if d.repository != nil {
+				if err := d.repository.PutIntent(ctx, other.Intent); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	for _, sibling := range d.attempts {
 		if sibling.value.ID == winner.value.ID || sibling.value.State.Terminal() {
 			continue
 		}
 		other := d.plans[sibling.planID]
 		if sibling.planID == winner.planID || domain.Conflicts(plan.Intent, other.Intent) {
-			_ = d.client.Stop(ctx, d.workers[sibling.value.WorkerID], sibling.value.ID)
+			rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+			_ = d.client.Stop(rpcCtx, d.workers[sibling.value.WorkerID], sibling.value.ID)
+			cancel()
 			sibling.value.State = domain.AttemptStopping
 		}
 	}
@@ -523,7 +543,10 @@ func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account dom
 	spec := domain.ExecutionSpec{AttemptID: id, IntentID: plan.Intent.ID, ProjectID: plan.Macro.ProjectID, ScreenID: plan.Macro.ScreenID, SKUID: plan.Macro.SKUID, Buyers: buyers, StartMode: mode, StartAt: plan.Macro.StartAt, Deadline: plan.Macro.Deadline, IntervalMS: 500, Credentials: account.Credentials}
 	now := d.now()
 	value := domain.ExecutionAttempt{ID: id, IntentID: plan.Intent.ID, SpecHash: spec.Hash(), AccountID: account.ID, WorkerID: worker.ID, State: domain.AttemptWaiting, CreatedAt: now, UpdatedAt: now}
-	if err := d.client.Submit(ctx, worker, spec); err != nil {
+	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	err = d.client.Submit(rpcCtx, worker, spec)
+	cancel()
+	if err != nil {
 		// A transport error does not prove that the worker rejected the task.
 		// Retain the attempt for audit and isolate its account until the old
 		// worker lease plus safety margin has expired.
@@ -566,7 +589,10 @@ func (d *Dispatcher) SwitchToReflow(ctx context.Context) error {
 		if plan.Intent.Phase != domain.PhasePunctual || current.value.State.Terminal() {
 			continue
 		}
-		if err := d.client.Stop(ctx, d.workers[current.value.WorkerID], current.value.ID); err != nil && !errors.Is(err, context.Canceled) {
+		rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
+		err := d.client.Stop(rpcCtx, d.workers[current.value.WorkerID], current.value.ID)
+		cancel()
+		if err != nil && !errors.Is(err, context.Canceled) {
 			return err
 		}
 		current.value.State = domain.AttemptStopping

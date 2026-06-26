@@ -9,10 +9,14 @@ import (
 )
 
 type client struct {
-	submitted  []domain.ExecutionSpec
-	states     map[string]WorkerStatus
-	stopped    []string
-	failWorker string
+	submitted         []domain.ExecutionSpec
+	submitWorkers     []string
+	states            map[string]WorkerStatus
+	stopped           []string
+	failWorker        string
+	statusHadDeadline bool
+	submitHadDeadline bool
+	stopHadDeadline   bool
 }
 
 type selectiveResolver struct{ unavailable map[string]bool }
@@ -24,21 +28,45 @@ func (r selectiveResolver) Resolve(_ context.Context, accountID string, buyers [
 	return buyers, nil
 }
 
-func (c *client) Submit(_ context.Context, worker domain.WorkerNode, spec domain.ExecutionSpec) error {
+func (c *client) Submit(ctx context.Context, worker domain.WorkerNode, spec domain.ExecutionSpec) error {
 	c.submitted = append(c.submitted, spec)
+	c.submitWorkers = append(c.submitWorkers, worker.ID)
+	if _, ok := ctx.Deadline(); ok {
+		c.submitHadDeadline = true
+	}
 	if worker.ID == c.failWorker {
 		return context.DeadlineExceeded
 	}
 	return nil
 }
-func (c *client) Status(_ context.Context, _ domain.WorkerNode, id string) (WorkerStatus, error) {
+func (c *client) Status(ctx context.Context, _ domain.WorkerNode, id string) (WorkerStatus, error) {
+	if _, ok := ctx.Deadline(); ok {
+		c.statusHadDeadline = true
+	}
 	if status, ok := c.states[id]; ok {
 		return status, nil
 	}
 	return WorkerStatus{State: domain.AttemptRunning}, nil
 }
-func (c *client) Stop(_ context.Context, _ domain.WorkerNode, id string) error {
+func (c *client) Stop(ctx context.Context, _ domain.WorkerNode, id string) error {
 	c.stopped = append(c.stopped, id)
+	if _, ok := ctx.Deadline(); ok {
+		c.stopHadDeadline = true
+	}
+	return nil
+}
+
+type repo struct {
+	intents []domain.LogicalOrderIntent
+}
+
+func (r *repo) PutAttempt(context.Context, domain.ExecutionAttempt) error { return nil }
+func (r *repo) PutIntent(_ context.Context, intent domain.LogicalOrderIntent) error {
+	r.intents = append(r.intents, intent)
+	return nil
+}
+func (r *repo) PutAccount(context.Context, domain.Account, *int64) error { return nil }
+func (r *repo) MarkIntentSucceeded(context.Context, domain.LogicalOrderIntent, domain.ExecutionResult) error {
 	return nil
 }
 
@@ -229,5 +257,74 @@ func TestUnarmedRestoredIntentIsNotDispatched(t *testing.T) {
 	}
 	if len(c.submitted) != 0 {
 		t.Fatalf("unarmed intent was dispatched: %#v", c.submitted)
+	}
+}
+
+func TestWorkerRPCsUseShortDeadline(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, nil)
+	accounts, workers := resources()
+	d.SetResources(accounts, workers)
+	plan := IntentPlan{Macro: dispatchMacro("m", 1, 1), Intent: dispatchIntent("i", "m", "buyer")}
+	d.Add(plan)
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !c.submitHadDeadline {
+		t.Fatal("submit RPC did not receive a deadline")
+	}
+	id := c.submitted[0].AttemptID
+	c.states[id] = WorkerStatus{State: domain.AttemptSucceeded, Result: domain.ExecutionResult{AttemptID: id, Success: true, State: domain.AttemptSucceeded}}
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !c.statusHadDeadline {
+		t.Fatal("status RPC did not receive a deadline")
+	}
+}
+
+func TestFailedWorkerIsNotPickedForNewAttempt(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, nil)
+	accounts, workers := resources()
+	d.SetResources(accounts, workers)
+	d.failedWorkers["w1"] = time.Now()
+	d.Add(IntentPlan{Macro: dispatchMacro("m", 1, 1), Intent: dispatchIntent("i", "m", "buyer")})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.submitWorkers) != 1 || c.submitWorkers[0] == "w1" {
+		t.Fatalf("failed worker was selected: %#v", c.submitWorkers)
+	}
+}
+
+func TestWinnerTerminalsAllConflictingIntents(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	r := &repo{}
+	d := New(c, r, nil)
+	accounts, workers := resources()
+	d.SetResources(accounts, workers)
+	high := dispatchMacro("high", 10, 1)
+	low := dispatchMacro("low", 1, 1)
+	highIntent := dispatchIntent("high-i", "high", "buyer")
+	lowIntent := dispatchIntent("low-i", "low", "buyer")
+	d.Add(IntentPlan{Macro: low, Intent: lowIntent})
+	d.Add(IntentPlan{Macro: high, Intent: highIntent})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.submitted) != 1 || c.submitted[0].IntentID != "high-i" {
+		t.Fatalf("expected only high priority attempt, got %#v", c.submitted)
+	}
+	c.states[c.submitted[0].AttemptID] = WorkerStatus{State: domain.AttemptSucceeded, Result: domain.ExecutionResult{AttemptID: c.submitted[0].AttemptID, Success: true, State: domain.AttemptSucceeded}}
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := d.plans["low-i"].Intent
+	if !got.Terminal || got.FailureReason != domain.FailureUnrecoverable {
+		t.Fatalf("conflicting intent was not terminal: %#v", got)
+	}
+	if len(r.intents) != 1 || r.intents[0].ID != "low-i" || !r.intents[0].Terminal {
+		t.Fatalf("terminal conflict intent was not persisted: %#v", r.intents)
 	}
 }
