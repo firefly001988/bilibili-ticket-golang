@@ -6,7 +6,7 @@ import {
     GetRetryInterval, SetRetryInterval,
     GetStartDelay, SetStartDelay,
     GetBilibiliOffset, GetNTPOffset,
-} from '../../wailsjs/go/scheduler/SchedulerService'
+} from '../../bindings/bilibili-ticket-golang/lib/biliutils/scheduler/schedulerservice'
 
 const { t, locale } = useI18n()
 const messages = useMessagesStore()

@@ -381,32 +381,33 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 	return nil, apiResp.GetCode(), apiResp.GetMessage(), apiResp.Data
 }
 
-func (c *BiliClient) GetOrderStatus(ctx context.Context, projectID, token string, orderID int64) (error, bool) {
+func (c *BiliClient) GetOrderStatus(ctx context.Context, projectID, token string, orderID int64) (error, *api.OrderStatusStruct) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err(), false
+		return ctx.Err(), nil
 	default:
 	}
 	if orderID <= 0 {
-		return nil, false
+		return fmt.Errorf("invalid order id"), nil
 	}
 	resp, err := c.client.R().SetContext(ctx).SetQueryParams(map[string]string{
 		"token":      token,
 		"project_id": projectID,
 		"orderId":    strconv.FormatInt(orderID, 10),
+		"timestamp":  strconv.FormatInt(c.now().UnixMilli(), 10),
 	}).Get("https://show.bilibili.com/api/ticket/order/createstatus")
 	if err != nil {
-		return err, false
+		return err, nil
 	}
 	var apiResp api.ShowApiDataRoot[api.OrderStatusStruct]
 	err = resp.Unmarshal(&apiResp)
 	if err != nil {
-		return err, false
+		return err, nil
 	}
 	if err = apiResp.CheckValid(); err != nil {
-		return err, false
+		return err, nil
 	}
-	return nil, orderID == utils.ParseInt64OrDefault(apiResp.Data.OrderId, 0)
+	return nil, &apiResp.Data
 }
 
 // CreateBuyer adds a new buyer for the current logged-in account.

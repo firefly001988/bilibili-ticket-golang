@@ -5,7 +5,7 @@
  */
 
 // Composables
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
   { path: '/', component: () => import('@/pages/index.vue'), id: 'index' },
@@ -27,10 +27,11 @@ const routes = [
   { path: '/plugin-download', component: () => import('@/pages/plugins-download.vue'), id: 'plugins' },
   { path: '/plugin-management', component: () => import('@/pages/plugin-management.vue'), id: 'plugin-management' },
   { path: '/worker-config', component: () => import('@/pages/worker-config.vue'), id: 'worker-config' },
+  { path: '/pay-qr', component: () => import('@/pages/pay-qr.vue'), id: 'pay-qr' },
 ]
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHashHistory(),
   routes,
 })
 

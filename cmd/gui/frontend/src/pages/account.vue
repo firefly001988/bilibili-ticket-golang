@@ -2,8 +2,8 @@
 import VueQr from 'vue-qr'
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { GetQRCodeUrlAndKey, GetQRLoginState, GetAccountStatus } from '../../wailsjs/go/biliutils/BiliClient';
-import { api } from '../../wailsjs/go/models';
+import { GetQRCodeUrlAndKey, GetQRLoginState, GetAccountStatus } from '../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient';
+import type * as api from '../../bindings/bilibili-ticket-golang/lib/models/bili/api/models';
 import { useMessagesStore } from '@/stores/snackbar';
 import { useAuthStore } from '@/stores/auth';
 

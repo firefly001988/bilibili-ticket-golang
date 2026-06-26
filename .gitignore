@@ -5,6 +5,11 @@ data
 old
 logs
 build
+.task
+bin
+plugins/captcha-plugin*
+plugins/captcha.log
+plugins/models
 cmd/ticket-worker/ticket-worker.exe
 cmd/gui/ticket-worker.exe
 cmd/gui/plugins

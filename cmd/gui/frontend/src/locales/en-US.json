@@ -365,7 +365,23 @@
         "startDelayHint": "Positive=delay, Negative=early",
         "loopDelayLabel": "Request Interval (ms)",
         "loopDelayHint": "0=fastest, recommended ≥50ms",
-        "addBtn": "Add"
+        "addBtn": "Add",
+        "bindRequired": "⚠️ Ticket Bind Required",
+        "bindRequiredDesc": "Your electronic ticket has not been bound with real-name info (error code 75638). Please bind the ticket first.",
+        "bindTicket": "Bind Ticket",
+        "bindBid": "Activity BID",
+        "bindIdType": "ID Type",
+        "bindPersonalId": "ID Number",
+        "bindTicketNo": "Ticket Number",
+        "bindUserName": "Real Name",
+        "bindSubmit": "Submit Bind",
+        "bindIncomplete": "Please fill ticket number, ID number, and real name",
+        "bindSuccess": "Ticket bound! Please re-query to load activity info.",
+        "bindFailed": "Bind failed: {message}",
+        "idTypeIdcard": "ID Card",
+        "idTypePassport": "Passport",
+        "idTypeHkMacau": "HK/Macau Permit",
+        "idTypeTaiwan": "Taiwan Permit"
     },
     "pluginManagement": {
         "title": "Plugin Management",
@@ -391,6 +407,20 @@
     "taskLog": {
         "title": "Task Log",
         "empty": "No logs — waiting for task to start..."
+    },
+    "payQR": {
+        "defaultTitle": "Payment QR Code",
+        "noLink": "No payment link available",
+        "hint": "Scan with WeChat / Alipay / QQ to pay",
+        "copyLink": "Copy payment link",
+        "copied": "Copied ✓",
+        "project": "Project",
+        "screen": "Screen",
+        "sku": "SKU",
+        "buyer": "Buyer",
+        "orderTime": "Order time",
+        "expireIn": "Payment expires in",
+        "expired": "Expired"
     },
     "announcement": {
         "priority.critical": "Critical",

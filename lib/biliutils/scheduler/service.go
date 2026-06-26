@@ -11,8 +11,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // FrontendTaskStatus mirrors TaskStatus but serializes error to string.
@@ -84,6 +87,7 @@ type FrontendNotifyChannel struct {
 // SchedulerService bridges the scheduler, BiliClient and LogBroker to the
 // Wails frontend. It is bound as a Wails service.
 type SchedulerService struct {
+	app          *application.App
 	scheduler    *DynamicScheduler
 	client       *biliutils.BiliClient
 	logBroker    *LogBroker
@@ -105,6 +109,11 @@ type SchedulerService struct {
 	offsetMu   sync.RWMutex
 }
 
+// SetApp stores the Wails v3 application reference for window management.
+func (svc *SchedulerService) SetApp(app *application.App) {
+	svc.app = app
+}
+
 // NewSchedulerService creates a new SchedulerService.
 func NewSchedulerService(client *biliutils.BiliClient, logBroker *LogBroker, tickets *configuration.TicketData, bwsData *configuration.BWSScheduler, notifier *notify.MultiNotifier, notifyChData *configuration.NotifyChannelData, store *configuration.DataStorage) *SchedulerService {
 	return &SchedulerService{
@@ -117,6 +126,33 @@ func NewSchedulerService(client *biliutils.BiliClient, logBroker *LogBroker, tic
 		notifyChData: notifyChData,
 		store:        store,
 	}
+}
+
+func (svc *SchedulerService) openPayQRWindow(payLink, project, screen, sku, buyer string, expire, orderTime int64) {
+	if svc.app == nil || payLink == "" {
+		return
+	}
+	values := url.Values{}
+	values.Set("link", payLink)
+	values.Set("title", i18n.T("payQR.defaultTitle", nil))
+	values.Set("project", project)
+	values.Set("screen", screen)
+	values.Set("sku", sku)
+	values.Set("buyer", buyer)
+	if expire > 0 {
+		values.Set("expire", fmt.Sprint(expire))
+	}
+	if orderTime > 0 {
+		values.Set("orderTime", fmt.Sprint(orderTime))
+	}
+	window := svc.app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:            i18n.T("payQR.defaultTitle", nil),
+		BackgroundColour: application.RGBA{Red: 27, Green: 38, Blue: 54, Alpha: 255},
+		URL:              "/#/pay-qr?" + values.Encode(),
+	})
+	window.Show()
+	window.Center()
+	window.Focus()
 }
 
 // AddTicketTask is retained only for old generated frontend bindings.

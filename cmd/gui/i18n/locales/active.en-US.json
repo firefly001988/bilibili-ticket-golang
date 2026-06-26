@@ -259,5 +259,8 @@
     },
     "plugin.test.success": {
         "other": "Test succeeded (elapsed {{.Elapsed}})"
+    },
+    "payQR.defaultTitle": {
+        "other": "Payment QR Code"
     }
 }

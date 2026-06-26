@@ -1,8 +1,8 @@
 <script lang="ts" setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { GetAllVersions } from '../../wailsjs/go/plugins/PluginManager'
-import type { plugins } from '../../wailsjs/go/models'
+import { GetAllVersions } from '../../bindings/bilibili-ticket-golang/lib/plugins/pluginmanager'
+import type * as plugins from '../../bindings/bilibili-ticket-golang/lib/plugins/models'
 
 const { t } = useI18n()
 

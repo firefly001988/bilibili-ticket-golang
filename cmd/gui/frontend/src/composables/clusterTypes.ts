@@ -60,6 +60,7 @@ export interface AttemptSummary {
   workerId: string
   state: string
   orderId?: string
+  paymentUrl?: string
   reason?: string
 }
 
@@ -137,7 +138,7 @@ export interface ClusterSnapshot {
 }
 
 function service(): any {
-  return (window as any)?.go?.main?.ClusterService
+  return clusterService
 }
 
 export async function clusterCall<T>(method: string, ...args: any[]): Promise<T> {
@@ -145,3 +146,4 @@ export async function clusterCall<T>(method: string, ...args: any[]): Promise<T>
   if (!target?.[method]) throw new Error(`ClusterService.${method} is unavailable`)
   return target[method](...args) as Promise<T>
 }
+import * as clusterService from '../../bindings/bilibili-ticket-golang/cmd/gui/clusterservice'

@@ -9,7 +9,7 @@
  */
 
 import { ref } from 'vue';
-import { IsDebug } from '../../wailsjs/go/biliutils/BiliClient';
+import { IsDebug } from '../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient';
 
 const isDebug = ref(false);
 let loaded = false;

@@ -16,10 +16,13 @@ type Backend interface {
 }
 
 type Outcome struct {
-	OrderID string
-	Code    int
-	Message string
-	Err     error
+	OrderID       string
+	PaymentURL    string
+	PaymentExpire int64
+	OrderTime     int64
+	Code          int
+	Message       string
+	Err           error
 }
 
 type Classification struct {
@@ -158,6 +161,9 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 		emit("response", message, outcome.Code, classification.Retryable)
 		if outcome.OrderID != "" && classification.Reason == domain.FailureNone && !classification.Retryable {
 			result.Success, result.OrderID = true, outcome.OrderID
+			result.PaymentURL = outcome.PaymentURL
+			result.PaymentExpire = outcome.PaymentExpire
+			result.OrderTime = outcome.OrderTime
 			return finish(domain.AttemptSucceeded, domain.FailureNone, outcome.Message, false)
 		}
 		if !classification.Retryable {

@@ -1,9 +1,9 @@
 <script lang="ts" setup>
 import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew, CreateBuyer } from '../../wailsjs/go/biliutils/BiliClient';
-import { AddTicket, AddTicketTask, FetchRealNameBuyers } from '../../wailsjs/go/scheduler/SchedulerService';
-import type { _return } from '../../wailsjs/go/models';
+import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew, CreateBuyer } from '../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient';
+import { AddTicket, AddTicketTask, FetchRealNameBuyers } from '../../bindings/bilibili-ticket-golang/lib/biliutils/scheduler/schedulerservice';
+import type * as response from '../../bindings/bilibili-ticket-golang/lib/models/bili/response/models';
 import { useMessagesStore } from '@/stores/snackbar';
 import { useRouter } from 'vue-router';
 import { DEFAULT_EXPIRE_DAYS, SECONDS_PER_DAY } from '@/composables/defaults';
@@ -16,8 +16,8 @@ const messages = useMessagesStore();
 
 const projectId = ref('');
 const loading = ref(false);
-const projectInfo = ref<_return.ProjectInformation | null>(null);
-const tickets = ref<_return.TicketSkuScreenID[]>([]);
+const projectInfo = ref<response.ProjectInformation | null>(null);
+const tickets = ref<response.TicketSkuScreenID[]>([]);
 
 // ── Filter ────────────────────────────────────────────
 const filterStatus = ref('all');
@@ -40,7 +40,7 @@ const filteredTickets = computed(() => {
 
 // ── Quick-create dialog ───────────────────────────────
 const showCreateDialog = ref(false);
-const selectedTicket = ref<_return.TicketSkuScreenID | null>(null);
+const selectedTicket = ref<response.TicketSkuScreenID | null>(null);
 const creating = ref(false);
 const goScheduler = ref(true);
 
@@ -150,7 +150,7 @@ async function lookupProject() {
     }
 }
 
-function openCreateDialog(ticket: _return.TicketSkuScreenID) {
+function openCreateDialog(ticket: response.TicketSkuScreenID) {
     selectedTicket.value = ticket;
 
     const fmt = (d: Date) => d.toLocaleString('zh-CN', { hour12: false });

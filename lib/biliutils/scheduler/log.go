@@ -2,11 +2,10 @@ package scheduler
 
 import (
 	"bilibili-ticket-golang/lib/global"
-	"context"
 	"sync"
 	"time"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // LogLevel represents the severity level of a log entry.
@@ -83,7 +82,7 @@ func (rb *ringBuffer) clear() {
 // frontend can call GetHistory / ClearHistory directly.
 // Logs are persisted to disk via LogStorage so they survive application restarts.
 type LogBroker struct {
-	ctx     context.Context
+	app     *application.App
 	mu      sync.RWMutex
 	rings   map[string]*ringBuffer
 	streams map[string]chan LogEntry
@@ -102,12 +101,11 @@ func NewLogBroker(storage *LogStorage) *LogBroker {
 	}
 }
 
-// SetContext must be called once during application startup (OnStartup).
-// It stores the Wails context required for runtime.EventsEmit.
-func (lb *LogBroker) SetContext(ctx context.Context) {
+// SetApp stores the Wails v3 application reference for event emitting.
+func (lb *LogBroker) SetApp(app *application.App) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
-	lb.ctx = ctx
+	lb.app = app
 }
 
 // CreateStream returns a send-only channel that the task uses to emit logs.
@@ -170,12 +168,12 @@ func (lb *LogBroker) ingest(taskID string, entry LogEntry) {
 	// 2. Persist to disk (debounced)
 	lb.storage.Append(taskID, entry)
 
-	// 3. Emit to frontend (non-blocking via EventsEmit, which is inherently async)
+	// 3. Emit to frontend via Wails v3 event system.
 	lb.mu.RLock()
-	ctx := lb.ctx
+	app := lb.app
 	lb.mu.RUnlock()
-	if ctx != nil {
-		runtime.EventsEmit(ctx, "ticket:log", entry)
+	if app != nil {
+		app.Event.Emit("ticket:log", entry)
 	}
 }
 

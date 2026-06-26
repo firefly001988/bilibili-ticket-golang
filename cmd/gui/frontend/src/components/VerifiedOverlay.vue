@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { IsVerified, Verify } from '../../wailsjs/go/main/App'
+import { IsVerified, Verify } from '../../bindings/bilibili-ticket-golang/cmd/gui/app'
 
 const { t } = useI18n()
 

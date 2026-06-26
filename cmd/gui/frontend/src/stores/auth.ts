@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { GetAccountStatus, CheckAndUpdateCookie, PersistCookies, SetRefreshToken, FetchAvatar } from '../../wailsjs/go/biliutils/BiliClient'
-import type { api } from '../../wailsjs/go/models'
+import { GetAccountStatus, CheckAndUpdateCookie, PersistCookies, SetRefreshToken, FetchAvatar } from '../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
+import type * as api from '../../bindings/bilibili-ticket-golang/lib/models/bili/api/models'
 
 export const useAuthStore = defineStore('auth', () => {
     const isLogin = ref(false)

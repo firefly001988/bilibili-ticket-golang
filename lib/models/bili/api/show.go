@@ -160,5 +160,10 @@ type BuyerNoSensitiveNewStruct struct {
 }
 
 type OrderStatusStruct struct {
-	OrderId string `json:"order_id"`
+	OrderId  string `json:"order_id"`
+	PayParam struct {
+		CodeUrl         string `json:"code_url"`
+		OrderCreateTime string `json:"orderCreateTime"`
+		OrderExpire     string `json:"orderExpire"`
+	} `json:"payParam"`
 }

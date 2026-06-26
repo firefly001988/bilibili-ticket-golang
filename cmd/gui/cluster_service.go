@@ -27,6 +27,8 @@ import (
 	"bilibili-ticket-golang/cmd/gui/store/cookiejar"
 	"bilibili-ticket-golang/lib/biliutils"
 	"bilibili-ticket-golang/lib/global"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type ClusterSnapshot struct {
@@ -75,13 +77,14 @@ type MacroSummary struct {
 	PurchaseGroups []domain.PurchaseGroup `json:"purchaseGroups"`
 }
 type AttemptSummary struct {
-	ID        string               `json:"id"`
-	IntentID  string               `json:"intentId"`
-	AccountID string               `json:"accountId"`
-	WorkerID  string               `json:"workerId"`
-	State     domain.AttemptState  `json:"state"`
-	OrderID   string               `json:"orderId,omitempty"`
-	Reason    domain.FailureReason `json:"reason,omitempty"`
+	ID         string               `json:"id"`
+	IntentID   string               `json:"intentId"`
+	AccountID  string               `json:"accountId"`
+	WorkerID   string               `json:"workerId"`
+	State      domain.AttemptState  `json:"state"`
+	OrderID    string               `json:"orderId,omitempty"`
+	PaymentURL string               `json:"paymentUrl,omitempty"`
+	Reason     domain.FailureReason `json:"reason,omitempty"`
 }
 
 type ClusterService struct {
@@ -97,6 +100,7 @@ type ClusterService struct {
 	catalog       *biliutils.BiliClient
 	cancel        context.CancelFunc
 	notify        func(string)
+	wailsApp      *application.App
 }
 
 func (s *ClusterService) SetCatalogClient(client *biliutils.BiliClient) { s.catalog = client }
@@ -252,11 +256,58 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 		if service.notify != nil {
 			service.notify(fmt.Sprintf("购票成功：Intent %s，订单 %s", intent.ID, result.OrderID))
 		}
+		service.openPayQRWindow(intent, result)
 	})
 	return service
 }
 
 func (s *ClusterService) SetNotifier(notify func(string)) { s.notify = notify }
+
+func (s *ClusterService) SetApp(app *application.App) { s.wailsApp = app }
+
+func (s *ClusterService) openPayQRWindow(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
+	if s.wailsApp == nil || result.PaymentURL == "" {
+		return
+	}
+	var macro domain.MacroTask
+	if s.repository != nil {
+		if macros, err := s.repository.ListMacroTasks(context.Background()); err == nil {
+			for _, current := range macros {
+				if current.ID == intent.MacroTaskID {
+					macro = current
+					break
+				}
+			}
+		}
+	}
+	buyerNames := make([]string, 0, len(intent.Buyers))
+	for _, buyer := range intent.Buyers {
+		if buyer.Name != "" {
+			buyerNames = append(buyerNames, buyer.Name)
+		}
+	}
+	values := url.Values{}
+	values.Set("link", result.PaymentURL)
+	values.Set("title", "支付二维码")
+	values.Set("project", macro.ProjectName)
+	values.Set("screen", macro.ScreenName)
+	values.Set("sku", macro.SKUName)
+	values.Set("buyer", strings.Join(buyerNames, ", "))
+	if result.PaymentExpire > 0 {
+		values.Set("expire", fmt.Sprint(result.PaymentExpire))
+	}
+	if result.OrderTime > 0 {
+		values.Set("orderTime", fmt.Sprint(result.OrderTime))
+	}
+	window := s.wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:            "支付二维码",
+		BackgroundColour: application.RGBA{Red: 27, Green: 38, Blue: 54, Alpha: 255},
+		URL:              "/#/pay-qr?" + values.Encode(),
+	})
+	window.Show()
+	window.Center()
+	window.Focus()
+}
 
 func (s *ClusterService) Start(parent context.Context) error {
 	ctx, cancel := context.WithCancel(parent)
@@ -604,7 +655,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	}
 	s.mu.RUnlock()
 	for _, value := range s.dispatcher.Attempts() {
-		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, Reason: value.Result.Reason})
+		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, PaymentURL: value.Result.PaymentURL, Reason: value.Result.Reason})
 	}
 	return result, nil
 }

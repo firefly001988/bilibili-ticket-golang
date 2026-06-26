@@ -16,7 +16,7 @@ import {
     ReorderTickets,
     GetChainTrigger,
     SetChainTrigger,
-} from '../../wailsjs/go/scheduler/SchedulerService'
+} from '../../bindings/bilibili-ticket-golang/lib/biliutils/scheduler/schedulerservice'
 import type { FrontendTicket, FrontendTaskStatus } from '@/composables/schedulerTypes'
 import { statColor, statLabel, StatWaiting, StatPending } from '@/composables/schedulerTypes'
 import { DEFAULT_EXPIRE_DAYS, SECONDS_PER_DAY } from '@/composables/defaults'

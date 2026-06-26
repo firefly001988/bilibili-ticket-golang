@@ -1,8 +1,8 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CheckForUpdate } from '../../wailsjs/go/biliutils/BiliClient'
-import type { githubutils } from '../../wailsjs/go/models'
+import { CheckForUpdate } from '../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
+import type * as githubutils from '../../bindings/bilibili-ticket-golang/lib/githubutils/models'
 import { mirrorSelectOptionsByPrefix, MIRROR_KEYS } from '@/composables/mirrors'
 
 const { t } = useI18n()

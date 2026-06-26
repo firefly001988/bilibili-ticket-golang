@@ -3,7 +3,7 @@ import Components from 'unplugin-vue-components/vite'
 import Vue from '@vitejs/plugin-vue'
 import Vuetify, { transformAssetUrls } from 'vite-plugin-vuetify'
 import Fonts from 'unplugin-fonts/vite'
-import VueRouter from 'vue-router/vite'
+import Wails from '@wailsio/runtime/plugins/vite'
 
 // Utilities
 import { defineConfig } from 'vite'
@@ -13,9 +13,7 @@ import Icons from 'unplugin-icons/vite'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
-    VueRouter({
-      dts: 'src/typed-router.d.ts',
-    }),
+    Wails('./bindings'),
     Vue({
       template: { transformAssetUrls },
     }),
@@ -66,8 +64,8 @@ export default defineConfig({
     ],
   },
   server: {
-    port: 3000,
+    host: '127.0.0.1',
+    port: Number(process.env.WAILS_VITE_PORT) || 3000,
+    strictPort: true,
   },
 })
-
-

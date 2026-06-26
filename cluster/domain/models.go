@@ -305,16 +305,19 @@ func (s ExecutionSpec) Hash() string {
 }
 
 type ExecutionResult struct {
-	AttemptID   string        `json:"attemptId"`
-	IntentID    string        `json:"intentId"`
-	SpecHash    string        `json:"specHash"`
-	State       AttemptState  `json:"state"`
-	Success     bool          `json:"success"`
-	OrderID     string        `json:"orderId,omitempty"`
-	Reason      FailureReason `json:"reason,omitempty"`
-	Message     string        `json:"message,omitempty"`
-	Retryable   bool          `json:"retryable"`
-	Credentials Credentials   `json:"credentials"`
-	StartedAt   time.Time     `json:"startedAt,omitempty"`
-	FinishedAt  time.Time     `json:"finishedAt,omitempty"`
+	AttemptID     string        `json:"attemptId"`
+	IntentID      string        `json:"intentId"`
+	SpecHash      string        `json:"specHash"`
+	State         AttemptState  `json:"state"`
+	Success       bool          `json:"success"`
+	OrderID       string        `json:"orderId,omitempty"`
+	PaymentURL    string        `json:"paymentUrl,omitempty"`
+	PaymentExpire int64         `json:"paymentExpire,omitempty"`
+	OrderTime     int64         `json:"orderTime,omitempty"`
+	Reason        FailureReason `json:"reason,omitempty"`
+	Message       string        `json:"message,omitempty"`
+	Retryable     bool          `json:"retryable"`
+	Credentials   Credentials   `json:"credentials"`
+	StartedAt     time.Time     `json:"startedAt,omitempty"`
+	FinishedAt    time.Time     `json:"finishedAt,omitempty"`
 }

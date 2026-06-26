@@ -365,7 +365,23 @@
         "startDelayHint": "正数=延迟, 负数=提前",
         "loopDelayLabel": "请求间隔 (ms)",
         "loopDelayHint": "0=最快, 推荐 ≥50ms",
-        "addBtn": "添加"
+        "addBtn": "添加",
+        "bindRequired": "⚠️ 需要绑票",
+        "bindRequiredDesc": "您的电子票尚未绑定实名信息（错误码 75638），请先完成绑票后再获取活动。",
+        "bindTicket": "绑定电子票",
+        "bindBid": "活动 BID",
+        "bindIdType": "证件类型",
+        "bindPersonalId": "证件号码",
+        "bindTicketNo": "电子票号",
+        "bindUserName": "真实姓名",
+        "bindSubmit": "提交绑票",
+        "bindIncomplete": "请填写电子票号、证件号码和真实姓名",
+        "bindSuccess": "绑票成功！请重新点击查询获取活动信息。",
+        "bindFailed": "绑票失败: {message}",
+        "idTypeIdcard": "身份证",
+        "idTypePassport": "护照",
+        "idTypeHkMacau": "港澳通行证",
+        "idTypeTaiwan": "台湾通行证"
     },
     "pluginManagement": {
         "title": "插件管理",
@@ -391,6 +407,20 @@
     "taskLog": {
         "title": "任务日志",
         "empty": "暂无日志 — 等待任务启动..."
+    },
+    "payQR": {
+        "defaultTitle": "支付二维码",
+        "noLink": "暂无支付链接",
+        "hint": "请使用微信 / 支付宝 / QQ 财付通 扫码支付",
+        "copyLink": "复制支付链接",
+        "copied": "已复制 ✓",
+        "project": "项目",
+        "screen": "场次",
+        "sku": "票种",
+        "buyer": "购票人",
+        "orderTime": "下单时间",
+        "expireIn": "剩余支付时间",
+        "expired": "已过期"
     },
     "announcement": {
         "priority": {

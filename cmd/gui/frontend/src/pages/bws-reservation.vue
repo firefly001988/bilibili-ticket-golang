@@ -10,10 +10,11 @@ import {
     RemoveBWSEntry,
     AddBWSTask,
     GetTaskStatuses,
-} from '../../wailsjs/go/scheduler/SchedulerService'
+} from '../../bindings/bilibili-ticket-golang/lib/biliutils/scheduler/schedulerservice'
 import {
     GetBWSReservationInfo,
-} from '../../wailsjs/go/biliutils/BiliClient'
+    BindBWSTicket,
+} from '../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
 import type { FrontendBWSEntry, FrontendTaskStatus } from '@/composables/schedulerTypes'
 import { statColor, statLabel, StatWaiting, StatPending } from '@/composables/schedulerTypes'
 import { useDebug } from '@/composables/useDebug'
@@ -46,6 +47,23 @@ const pollInterval = 3000
 const reserveDates = ref('')
 const fetchingInfo = ref(false)
 const bwsData = ref<any>(null) // raw BWSReservationData
+
+// ── Bind ticket form ────────────────────────────────────
+const showBindDialog = ref(false)
+const bindBid = ref(202501)
+const bindIdType = ref(0)
+const bindPersonalId = ref('')
+const bindTicketNo = ref('')
+const bindUserName = ref('')
+const bindingTicket = ref(false)
+const bindNeeded = ref(false)
+
+const idTypeOptions = computed(() => [
+    { title: t('bwsReservation.idTypeIdcard'), value: 0 },
+    { title: t('bwsReservation.idTypePassport'), value: 1 },
+    { title: t('bwsReservation.idTypeHkMacau'), value: 2 },
+    { title: t('bwsReservation.idTypeTaiwan'), value: 3 },
+])
 
 // ── Add entry form (from selected activity) ─────────────
 const selectedActivity = ref<any>(null)
@@ -121,6 +139,7 @@ async function fetchBWSInfo() {
         messages.add({ text: t('bwsReservation.enterDates'), color: 'warning', timeout: 2000 })
         return
     }
+    bindNeeded.value = false
     fetchingInfo.value = true
     try {
         const data = await GetBWSReservationInfo(reserveDates.value.trim())
@@ -128,9 +147,42 @@ async function fetchBWSInfo() {
         bwsData.value = data
         messages.add({ text: t('bwsReservation.infoLoaded'), color: 'success', timeout: 2000 })
     } catch (e: any) {
-        messages.add({ text: t('bwsReservation.fetchFailed', { error: String(e) }), color: 'error', timeout: 4000 })
+        const errMsg = String(e)
+        if (errMsg.includes('75638')) {
+            bindNeeded.value = true
+            messages.add({ text: t('bwsReservation.bindRequired'), color: 'warning', timeout: 6000 })
+            showBindDialog.value = true
+        } else {
+            messages.add({ text: t('bwsReservation.fetchFailed', { error: errMsg }), color: 'error', timeout: 4000 })
+        }
     } finally {
         fetchingInfo.value = false
+    }
+}
+
+// ── Submit bind ticket ──────────────────────────────────
+async function submitBindTicket() {
+    if (!bindTicketNo.value.trim() || !bindPersonalId.value.trim() || !bindUserName.value.trim()) {
+        messages.add({ text: t('bwsReservation.bindIncomplete'), color: 'warning', timeout: 2000 })
+        return
+    }
+    bindingTicket.value = true
+    try {
+        await BindBWSTicket(
+            bindBid.value,
+            bindIdType.value,
+            bindPersonalId.value.trim(),
+            bindTicketNo.value.trim(),
+            bindUserName.value.trim(),
+        )
+        messages.add({ text: t('bwsReservation.bindSuccess'), color: 'success', timeout: 4000 })
+        showBindDialog.value = false
+        bindNeeded.value = false
+        await fetchBWSInfo()
+    } catch (e: any) {
+        messages.add({ text: t('bwsReservation.bindFailed', { message: String(e) }), color: 'error', timeout: 4000 })
+    } finally {
+        bindingTicket.value = false
     }
 }
 
@@ -379,6 +431,48 @@ onUnmounted(() => {
                 <p class="text-grey mt-2 mb-0">{{ t('bwsReservation.selectLog') }}</p>
             </v-card>
         </template>
+
+        <!-- ── Bind Ticket Dialog ─────────────────────────────── -->
+        <v-dialog v-model="showBindDialog" max-width="500" persistent>
+            <v-card :title="t('bwsReservation.bindTicket')">
+                <v-card-text>
+                    <v-alert density="compact" variant="tonal" color="warning" class="mb-3" closable>
+                        {{ t('bwsReservation.bindRequiredDesc') }}
+                    </v-alert>
+
+                    <v-row dense>
+                        <v-col cols="6">
+                            <v-text-field v-model="bindBid" :label="t('bwsReservation.bindBid')" type="number"
+                                variant="outlined" density="compact" hide-details="auto" />
+                        </v-col>
+                        <v-col cols="6">
+                            <v-select v-model="bindIdType" :label="t('bwsReservation.bindIdType')"
+                                :items="idTypeOptions" item-title="title" item-value="value"
+                                variant="outlined" density="compact" hide-details="auto" />
+                        </v-col>
+                    </v-row>
+                    <v-row dense class="mt-1">
+                        <v-col cols="6">
+                            <v-text-field v-model="bindTicketNo" :label="t('bwsReservation.bindTicketNo')"
+                                variant="outlined" density="compact" hide-details="auto" placeholder="1234" />
+                        </v-col>
+                        <v-col cols="6">
+                            <v-text-field v-model="bindUserName" :label="t('bwsReservation.bindUserName')"
+                                variant="outlined" density="compact" hide-details="auto" />
+                        </v-col>
+                    </v-row>
+                    <v-text-field v-model="bindPersonalId" :label="t('bwsReservation.bindPersonalId')"
+                        variant="outlined" density="compact" hide-details="auto" class="mt-1" />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showBindDialog = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="warning" variant="tonal" :loading="bindingTicket" @click="submitBindTicket">
+                        {{ t('bwsReservation.bindSubmit') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <!-- ── Fetch BWS Info Dialog ─────────────────────────── -->
         <v-dialog v-model="showFetchDialog" max-width="800" scrollable>

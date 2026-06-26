@@ -2,6 +2,8 @@ package worker
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -506,7 +508,7 @@ func executionResultToProto(r domain.ExecutionResult) *pb.ExecutionResult {
 		Success:   r.Success,
 		OrderId:   r.OrderID,
 		Reason:    failureReasonToProto(r.Reason),
-		Message:   r.Message,
+		Message:   packPaymentMetadata(r),
 		Retryable: r.Retryable,
 		Credentials: &pb.Credentials{
 			Cookies:       r.Credentials.Cookies,
@@ -535,6 +537,26 @@ func executionResultToProto(r domain.ExecutionResult) *pb.ExecutionResult {
 		er.FinishedAt = timestamppb.New(r.FinishedAt)
 	}
 	return er
+}
+
+type paymentMetadata struct {
+	PaymentURL    string `json:"paymentUrl,omitempty"`
+	PaymentExpire int64  `json:"paymentExpire,omitempty"`
+	OrderTime     int64  `json:"orderTime,omitempty"`
+}
+
+const paymentMetadataMarker = "\n__biliticket_payment_v1="
+
+func packPaymentMetadata(r domain.ExecutionResult) string {
+	message := r.Message
+	if r.PaymentURL == "" && r.PaymentExpire == 0 && r.OrderTime == 0 {
+		return message
+	}
+	payload, err := json.Marshal(paymentMetadata{PaymentURL: r.PaymentURL, PaymentExpire: r.PaymentExpire, OrderTime: r.OrderTime})
+	if err != nil {
+		return message
+	}
+	return message + paymentMetadataMarker + base64.RawURLEncoding.EncodeToString(payload)
 }
 
 func failureReasonToProto(r domain.FailureReason) pb.FailureReason {

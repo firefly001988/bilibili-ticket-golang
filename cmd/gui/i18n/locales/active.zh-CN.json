@@ -259,5 +259,8 @@
     },
     "bws.unknown_response": {
         "other": "[{{.Code}}] 未知响应: {{.Msg}}"
+    },
+    "payQR.defaultTitle": {
+        "other": "支付二维码"
     }
 }

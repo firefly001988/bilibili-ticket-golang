@@ -1,11 +1,13 @@
 {
-  "$schema": "https://wails.io/schemas/config.v2.json",
+  "$schema": "https://wails.io/schemas/config.v3.json",
   "name": "bilibili-ticket-golang",
-  "outputfilename": "bilibili-ticket-golang",
-  "frontend:install": "npm install",
-  "frontend:build": "npm run build",
-  "frontend:dev:watcher": "npm run dev",
-  "frontend:dev:serverUrl": "auto",
+  "frontend": {
+    "dir": "./frontend",
+    "install": "npm install",
+    "build": "npm run build",
+    "dev": "npm run dev",
+    "devServerUrl": "http://127.0.0.1:3000"
+  },
   "author": {
     "name": "firefly",
     "email": "firefly0019@proton.me"

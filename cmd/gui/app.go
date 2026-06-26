@@ -4,15 +4,18 @@ import (
 	"bilibili-ticket-golang/cmd/gui/i18n"
 	"bilibili-ticket-golang/cmd/gui/store/configuration"
 	"bilibili-ticket-golang/lib/biliutils"
-	"context"
+	"fmt"
+	"net/url"
 	"os"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// App struct
+// App is exposed as a Wails v3 service.
 type App struct {
-	ctx   context.Context
-	bili  *biliutils.BiliClient
-	store *configuration.DataStorage
+	bili     *biliutils.BiliClient
+	store    *configuration.DataStorage
+	wailsApp *application.App
 }
 
 // NewApp creates a new App application struct
@@ -34,12 +37,6 @@ func NewAppWithClient(c *biliutils.BiliClient) *App {
 // NewAppWithClientAndStore creates an App with BiliClient and DataStorage for locale persistence.
 func NewAppWithClientAndStore(c *biliutils.BiliClient, store *configuration.DataStorage) *App {
 	return &App{bili: c, store: store}
-}
-
-// startup is called when the app starts. The context is saved
-// so we can call the runtime methods
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
 }
 
 // IsVerified checks whether the anti-scalper declaration has been accepted.
@@ -76,4 +73,75 @@ func (a *App) SetLocale(locale string) {
 // Returns empty string if no locale has been set (first startup).
 func (a *App) GetLocale() string {
 	return i18n.GetLocale()
+}
+
+// SetApp stores the Wails v3 application reference for window management.
+func (a *App) SetApp(app *application.App) {
+	a.wailsApp = app
+}
+
+// OpenQRTestWindow creates a new window with a test QR code.
+func (a *App) OpenQRTestWindow(text string) {
+	if a.wailsApp == nil {
+		return
+	}
+	if text == "" {
+		text = "https://space.bilibili.com"
+	}
+	a.OpenPayQRWindow(PayQRWindowOptions{
+		Link:  text,
+		Title: "测试二维码",
+	})
+}
+
+type PayQRWindowOptions struct {
+	Link      string `json:"link"`
+	Title     string `json:"title,omitempty"`
+	Project   string `json:"project,omitempty"`
+	Screen    string `json:"screen,omitempty"`
+	SKU       string `json:"sku,omitempty"`
+	Buyer     string `json:"buyer,omitempty"`
+	Expire    int64  `json:"expire,omitempty"`
+	OrderTime int64  `json:"orderTime,omitempty"`
+}
+
+// OpenPayQRWindow opens a compact QR-code payment window.
+func (a *App) OpenPayQRWindow(options PayQRWindowOptions) {
+	if a.wailsApp == nil || options.Link == "" {
+		return
+	}
+	title := options.Title
+	if title == "" {
+		title = "支付二维码"
+	}
+	values := url.Values{}
+	values.Set("link", options.Link)
+	values.Set("title", title)
+	if options.Project != "" {
+		values.Set("project", options.Project)
+	}
+	if options.Screen != "" {
+		values.Set("screen", options.Screen)
+	}
+	if options.SKU != "" {
+		values.Set("sku", options.SKU)
+	}
+	if options.Buyer != "" {
+		values.Set("buyer", options.Buyer)
+	}
+	if options.Expire > 0 {
+		values.Set("expire", fmt.Sprint(options.Expire))
+	}
+	if options.OrderTime > 0 {
+		values.Set("orderTime", fmt.Sprint(options.OrderTime))
+	}
+
+	window := a.wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:            title,
+		BackgroundColour: application.RGBA{Red: 27, Green: 38, Blue: 54, Alpha: 255},
+		URL:              "/#/pay-qr?" + values.Encode(),
+	})
+	window.Show()
+	window.Center()
+	window.Focus()
 }

@@ -138,10 +138,13 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 		b.prepared = false
 	}
 	if code == 0 || code == 100048 || code == 100079 {
-		if err, ok := b.client.GetOrderStatus(ctx, strconv.FormatInt(spec.ProjectID, 10), order.Token, order.OrderId); err != nil || !ok {
-			return Outcome{Code: code, Message: "order confirmation pending", Err: err}
+		statusErr, orderStatus := b.client.GetOrderStatus(ctx, strconv.FormatInt(spec.ProjectID, 10), order.Token, order.OrderId)
+		if statusErr != nil || orderStatus == nil || order.OrderId != responseOrderID(orderStatus) {
+			return Outcome{Code: code, Message: "order confirmation pending", Err: statusErr}
 		}
-		return Outcome{Code: code, Message: message, OrderID: strconv.FormatInt(order.OrderId, 10)}
+		out := Outcome{Code: code, Message: message, OrderID: strconv.FormatInt(order.OrderId, 10)}
+		applyPaymentStatus(&out, order.Token, order.OrderId, order.OrderCreateTime, orderStatus)
+		return out
 	}
 	return Outcome{Code: code, Message: message}
 }
@@ -183,7 +186,7 @@ func (b *BilibiliBackend) submitSplitOrders(ctx context.Context, spec domain.Exe
 			if order.OrderId > 0 {
 				orderIDs = append(orderIDs, strconv.FormatInt(order.OrderId, 10))
 			}
-			b.client.GetOrderStatus(ctx, pid, order.Token, order.OrderId)
+			_, _ = b.client.GetOrderStatus(ctx, pid, order.Token, order.OrderId)
 			continue
 		}
 		// Other non-success codes: skip to next buyer
@@ -193,6 +196,70 @@ func (b *BilibiliBackend) submitSplitOrders(ctx context.Context, spec domain.Exe
 		return Outcome{Code: 0, Message: fmt.Sprintf("split into %d orders: %s", len(orderIDs), strings.Join(orderIDs, ",")), OrderID: strings.Join(orderIDs, ",")}
 	}
 	return Outcome{Code: -1, Message: "all buyers failed in split mode"}
+}
+
+func responseOrderID(status *api.OrderStatusStruct) int64 {
+	if status == nil {
+		return 0
+	}
+	value, _ := strconv.ParseInt(status.OrderId, 10, 64)
+	return value
+}
+
+func applyPaymentStatus(out *Outcome, token string, orderID, orderCreateTime int64, status *api.OrderStatusStruct) {
+	if out == nil {
+		return
+	}
+	if status != nil && status.PayParam.CodeUrl != "" {
+		out.PaymentURL = status.PayParam.CodeUrl
+	} else if orderID > 0 && token != "" {
+		out.PaymentURL = fmt.Sprintf("https://show.bilibili.com/orderdetail?id=%d&token=%s", orderID, url.QueryEscape(token))
+	}
+	if status != nil {
+		if status.PayParam.OrderCreateTime != "" {
+			out.OrderTime = parseOrderTimestamp(status.PayParam.OrderCreateTime)
+		}
+		if status.PayParam.OrderExpire != "" {
+			if sec, err := strconv.ParseInt(status.PayParam.OrderExpire, 10, 64); err == nil && sec > 0 {
+				switch {
+				case sec > 1e12:
+					out.PaymentExpire = sec / 1000
+				case sec > 1e9:
+					out.PaymentExpire = sec
+				case out.OrderTime > 0:
+					out.PaymentExpire = out.OrderTime + sec
+				default:
+					out.PaymentExpire = time.Now().Unix() + sec
+				}
+			}
+		}
+	}
+	if out.OrderTime == 0 && orderCreateTime > 0 {
+		out.OrderTime = normalizeOrderTimestamp(orderCreateTime)
+	}
+	if out.PaymentExpire == 0 && out.OrderTime > 0 {
+		out.PaymentExpire = out.OrderTime + 900
+	}
+}
+
+func parseOrderTimestamp(value string) int64 {
+	if value == "" {
+		return 0
+	}
+	if n, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return normalizeOrderTimestamp(n)
+	}
+	if t, err := time.ParseInLocation("2006-01-02 15:04:05", value, time.Local); err == nil {
+		return t.Unix()
+	}
+	return 0
+}
+
+func normalizeOrderTimestamp(value int64) int64 {
+	if value > 1e12 {
+		return value / 1000
+	}
+	return value
 }
 
 func (b *BilibiliBackend) prepare(spec domain.ExecutionSpec) Outcome {

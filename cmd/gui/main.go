@@ -1,17 +1,17 @@
 package main
 
 import (
+	clusterstorage "bilibili-ticket-golang/cluster/storage"
+	"bilibili-ticket-golang/cmd/gui/i18n"
+	"bilibili-ticket-golang/cmd/gui/store/configuration"
+	"bilibili-ticket-golang/cmd/gui/store/cookiejar"
 	"bilibili-ticket-golang/lib/biliutils"
 	"bilibili-ticket-golang/lib/biliutils/notify"
 	"bilibili-ticket-golang/lib/biliutils/scheduler"
-	clusterstorage "bilibili-ticket-golang/cluster/storage"
-	"bilibili-ticket-golang/cmd/gui/i18n"
 	"bilibili-ticket-golang/lib/models/bili/api"
 	gcaptcha "bilibili-ticket-golang/lib/models/bili/captcha"
 	"bilibili-ticket-golang/lib/plugins"
 	"bilibili-ticket-golang/lib/plugins/captcha"
-	"bilibili-ticket-golang/cmd/gui/store/configuration"
-	"bilibili-ticket-golang/cmd/gui/store/cookiejar"
 	"bytes"
 	"context"
 	"embed"
@@ -24,13 +24,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+func init() {
+	application.RegisterEvent[scheduler.LogEntry]("ticket:log")
+}
 
 func testCaptchaPlugin(solverFunc func(gt string, challenge string) (string, error), pm *plugins.PluginManager, pluginName string) {
 	go func() {
@@ -282,29 +284,35 @@ func main() {
 		}
 	}
 
-	// Create application with options
-	err = wails.Run(&options.App{
-		Title:  "bilibili-ticket-golang",
-		Width:  1024,
-		Height: 768,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
-		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup: func(ctx context.Context) {
-			logBroker.SetContext(ctx)
-		},
-		Bind: []interface{}{
-			app,
-			clusterSvc,
-			c,
-			logBroker,
-			schedSvc,
-			pluginManager,
+	// Create Wails v3 application.
+	wailsApp := application.New(application.Options{
+		Name: "bilibili-ticket-golang",
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
 		},
 	})
+	logBroker.SetApp(wailsApp)
+	schedSvc.SetApp(wailsApp)
+	app.SetApp(wailsApp)
+	clusterSvc.SetApp(wailsApp)
 
-	if err != nil {
+	// Register all services exposed to the frontend as Wails v3 bindings.
+	wailsApp.RegisterService(application.NewService(app))
+	wailsApp.RegisterService(application.NewService(clusterSvc))
+	wailsApp.RegisterService(application.NewService(c))
+	wailsApp.RegisterService(application.NewService(logBroker))
+	wailsApp.RegisterService(application.NewService(schedSvc))
+	wailsApp.RegisterService(application.NewService(pluginManager))
+
+	wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:            "bilibili-ticket-golang",
+		Width:            1024,
+		Height:           768,
+		BackgroundColour: application.RGBA{Red: 27, Green: 38, Blue: 54, Alpha: 255},
+		URL:              "/",
+	})
+
+	if err = wailsApp.Run(); err != nil {
 		log.Printf("[main] Error: %v", err)
 	}
 }

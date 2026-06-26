@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { GetAccountStatus, GetBUVID, GetFingerprint, GetAppVersion } from '../../wailsjs/go/biliutils/BiliClient';
+import { GetAccountStatus, GetBUVID, GetFingerprint, GetAppVersion } from '../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient';
 import { useAuthStore } from '@/stores/auth';
 
 const { t } = useI18n()

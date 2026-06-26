@@ -1,7 +1,7 @@
 import { ref, onUnmounted } from 'vue'
-import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
-import { GetHistory, ClearHistory } from '../../wailsjs/go/scheduler/LogBroker'
-import { scheduler } from '../../wailsjs/go/models'
+import { Events } from '@wailsio/runtime'
+import { GetHistory, ClearHistory } from '../../bindings/bilibili-ticket-golang/lib/biliutils/scheduler/logbroker'
+import type * as scheduler from '../../bindings/bilibili-ticket-golang/lib/biliutils/scheduler/models'
 
 export function useTaskLogs(taskId: string) {
     const logs = ref<scheduler.LogEntry[]>([])
@@ -43,7 +43,7 @@ export function useTaskLogs(taskId: string) {
 
     async function subscribe() {
         await loadHistory()
-        unsubscribe = EventsOn('ticket:log', onLog)
+        unsubscribe = Events.On('ticket:log', (ev: any) => { onLog(ev.data ?? ev) })
     }
 
     function doUnsubscribe() {
