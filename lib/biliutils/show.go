@@ -76,13 +76,11 @@ func (c *BiliClient) GetTicketSkuIDsByProjectIDNew(projectID string) ([]r.Ticket
 	for _, screen := range apiResp.Data.ScreenList {
 		for _, skuInfo := range screen.TicketList {
 			ticket := r.TicketSkuScreenID{
-				ScreenID:  screen.ScreenId,
-				SkuID:     skuInfo.SkuId,
-				Name:      skuInfo.ScreenName,
-				Desc:      skuInfo.Desc,
-				Price:     skuInfo.Price,
-				EventTime: time.Unix(screen.StartTime, 0),
-				BuyLimit:  skuInfo.BuyLimit,
+				ScreenID: screen.ScreenId,
+				SkuID:    skuInfo.SkuId,
+				Name:     skuInfo.ScreenName,
+				Desc:     skuInfo.Desc,
+				Price:    skuInfo.Price,
 				Flags: r.SaleFlagInfo{
 					Number:      skuInfo.SaleFlag.Number,
 					DisplayName: skuInfo.SaleFlag.DisplayName,
@@ -122,7 +120,6 @@ func (c *BiliClient) GetProjectInformation(projectID string) (*r.ProjectInformat
 		IsHotProject:    apiResp.Data.HotProject,
 		IsNeedContact:   apiResp.Data.NeedContact,
 		IsForceRealName: idBind,
-		IDBind:          apiResp.Data.IdBind,
 		ProjectName:     apiResp.Data.Name,
 	}, nil
 }
@@ -261,25 +258,23 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 		"count":          count,
 		"pay_money":      payMoney,
 		"order_type":     1,
-		"timestamp":      whenGenPToken.UnixMilli(),
-		"deviceId":       c.fingerprint.Buvidfp[0:32],
+		"timestamp":      c.Now().UnixMilli(),
+		"deviceId":       c.fingerprint.Buvidfp,
 		"sku_id":         ticket.SkuID,
 		"requestSource":  "neul-next",
 		"token":          tokens.RequestToken,
 		"newRisk":        true,
 		"orderCreateUrl": "https://show.bilibili.com/api/ticket/order/createV2",
-		"clickPosition": map[string]any{
-			"now":    c.now().UnixMilli(),
-			"origin": c.now().UnixMilli() - 10000,
+		"clickPostion": map[string]any{
+			"now":    c.Now().UnixMilli(),
+			"origin": c.Now().UnixMilli() - 10000,
 			"x":      rand.Int64N(400) + 100,
 			"y":      rand.Int64N(400) + 100,
 		},
-		"id_bind":           confirmInfo.IDBind,
-		"is_package":        confirmInfo.IsPackage,
-		"need_contact":      confirmInfo.NeedContact,
-		"coupon_code":       "",
-		"package_num":       1,
-		"contactNoticeText": "",
+		"id_bind":      confirmInfo.IDBind,
+		"is_package":   confirmInfo.IsPackage,
+		"need_contact": confirmInfo.NeedContact,
+		"coupon_code":  "",
 	}
 
 	firstBuyer := buyers[0]
@@ -301,11 +296,20 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 				if ci.Id == b.ID && !seen[ci.Id] {
 					seen[ci.Id] = true
 					buyerInfoList = append(buyerInfoList, map[string]any{
-						"id":          ci.Id,
-						"name":        ci.Name,
-						"tel":         ci.Tel,
-						"personal_id": ci.PersonalId,
-						"id_type":     ci.IdType,
+						"id":                  ci.Id,
+						"uid":                 ci.Uid,
+						"accountId":           ci.AccountId,
+						"name":                ci.Name,
+						"tel":                 ci.Tel,
+						"account_channel":     ci.AccountChannel,
+						"personal_id":         ci.PersonalId,
+						"id_card_front":       ci.IdCardFront,
+						"id_card_back":        ci.IdCardBack,
+						"is_default":          ci.IsDefault,
+						"id_type":             ci.IdType,
+						"verify_status":       ci.VerifyStatus,
+						"isBuyerInfoVerified": ci.IsBuyerInfoVerified,
+						"isBuyerValid":        ci.IsBuyerValid,
 					})
 					break
 				}
@@ -394,7 +398,7 @@ func (c *BiliClient) GetOrderStatus(ctx context.Context, projectID, token string
 		"token":      token,
 		"project_id": projectID,
 		"orderId":    strconv.FormatInt(orderID, 10),
-		"timestamp":  strconv.FormatInt(c.now().UnixMilli(), 10),
+		"timestamp":  strconv.FormatInt(c.Now().UnixMilli(), 10),
 	}).Get("https://show.bilibili.com/api/ticket/order/createstatus")
 	if err != nil {
 		return err, nil

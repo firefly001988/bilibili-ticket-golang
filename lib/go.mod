@@ -9,8 +9,18 @@ require (
 )
 
 require (
+	github.com/adrg/xdg v0.5.3 // indirect
+	github.com/coder/websocket v1.8.14 // indirect
+	github.com/ebitengine/purego v0.9.1 // indirect
+	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
+	github.com/wailsapp/wails/webview2 v1.0.24 // indirect
+)
+
+require (
 	github.com/andybalholm/brotli v1.2.1 // indirect
-	github.com/fatih/color v1.13.0 // indirect
+	github.com/fatih/color v1.18.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/hashicorp/go-hclog v1.6.3
@@ -28,12 +38,10 @@ require (
 
 require (
 	github.com/bertold/req/v3 v3.58.0
-	github.com/leaanthony/slicer v1.6.0 // indirect
-	github.com/leaanthony/u v1.1.1 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.38.0
 )

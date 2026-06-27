@@ -70,7 +70,7 @@ func (c *BiliClient) refreshWbiToken() error {
 	}
 	key := builder.String()[:32]
 
-	now := c.now()
+	now := c.Now()
 	expired := now.Add(1 * time.Hour)
 	tomorrow := now.Add(24 * time.Hour).Truncate(24 * time.Hour)
 	if utils.IsNextDayInCST(now, expired) {
@@ -90,7 +90,7 @@ func (c *BiliClient) refreshWbiToken() error {
 // parameters to the URL. If the WBI key is expired or forceUpdate is true,
 // a new key is fetched automatically.
 func (c *BiliClient) SignWithWbi(forceUpdate bool, targetURL *url.URL) error {
-	now := c.now()
+	now := c.Now()
 	keyPtr := c.wbi.Load()
 	if keyPtr == nil || keyPtr.isExpired(now) || forceUpdate {
 		if err := c.refreshWbiToken(); err != nil {
@@ -123,7 +123,7 @@ func (c *BiliClient) SignAppParams(params map[string]any) url.Values {
 	values.Del("appkey")
 	values.Del("ts")
 	values.Set("appkey", appKey)
-	values.Set("ts", strconv.FormatInt(c.now().Unix(), 10))
+	values.Set("ts", strconv.FormatInt(c.Now().Unix(), 10))
 	sign := md5.Sum([]byte(values.Encode() + appSec))
 	values.Set("sign", hex.EncodeToString(sign[:]))
 	return values
@@ -132,7 +132,7 @@ func (c *BiliClient) SignAppParams(params map[string]any) url.Values {
 // getIdentifyCookieSign generates the "identify" cookie value using APP-level signing.
 func (c *BiliClient) getIdentifyCookieSign() http.Cookie {
 	query := c.SignAppParams(map[string]any{
-		"ts": c.now().Unix(),
+		"ts": c.Now().Unix(),
 	})
 	return http.Cookie{
 		Name:  "identify",

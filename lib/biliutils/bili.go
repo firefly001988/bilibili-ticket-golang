@@ -70,8 +70,8 @@ func (c *BiliClient) GetClockOffset() time.Duration {
 	return time.Duration(c.clockOffset.Load())
 }
 
-// now returns the calibrated current time (local time + clock offset).
-func (c *BiliClient) now() time.Time {
+// Now returns the calibrated current time (local time + clock offset).
+func (c *BiliClient) Now() time.Time {
 	return time.Now().Add(time.Duration(c.clockOffset.Load()))
 }
 
@@ -145,7 +145,10 @@ func newBiliClient(jar http.CookieJar, profile *DeviceProfile) (*BiliClient, err
 		return func(req *req.Request) (resp *req.Response, err error) {
 			// Build User-Agent for show.bilibili.com (会员购)
 			var ua string
-			if req.URL.Host == "show.bilibili.com" {
+			// Filter requests by host and path to set appropriate User-Agent and headers.
+			if req.URL.Host == "passport.bilibili.com" || (req.URL.Host == "show.bilibili.com" && (req.URL.Path == "/api/ticket/order/createstatus" || req.URL.Path == "/api/ticket/order/getPayParam")) {
+				ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.56 Safari/537.36"
+			} else if req.URL.Host == "show.bilibili.com" {
 				req.SetHeader("x-requested-with", "tv.danmaku.bili")
 				ua = fmt.Sprintf(
 					`Mozilla/5.0 (Linux; Android 12; %s; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36 BiliApp/%d mobi_app/android isNotchWindow/0 NotchHeight=24 mallVersion/%d mVersion/312 disable_rcmd/0 magent/BILI_H5_ANDROID_12_%s_%d`,
@@ -164,8 +167,6 @@ func newBiliClient(jar http.CookieJar, profile *DeviceProfile) (*BiliClient, err
 					&http.Cookie{Name: "feSign", Value: getFeSign(ua, biliClient.fingerprint.Canvasfp, biliClient.fingerprint.Webglfp)},
 					&http.Cookie{Name: "screenInfo", Value: screenInfo},
 				)
-			} else if req.URL.Host == "passport.bilibili.com" {
-				ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.56 Safari/537.36"
 			} else {
 				// BiliDroid UA for other endpoints
 				ua = fmt.Sprintf(
@@ -287,6 +288,7 @@ func (c *BiliClient) GetQRLoginState(qrcodeKey string) (*api.VerifyQRLoginStateS
 	if err != nil {
 		return nil, err
 	}
+	c.SetRefreshToken(r.Data.RefreshToken)
 	return r.Data, nil
 }
 

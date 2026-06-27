@@ -7,7 +7,7 @@ require (
 	github.com/ugorji/go/codec v1.3.1
 	github.com/wailsapp/wails/v3 v3.0.0-alpha2.105
 	golang.org/x/net v0.55.0
-	golang.org/x/text v0.37.0
+	golang.org/x/text v0.38.0
 )
 
 require (
