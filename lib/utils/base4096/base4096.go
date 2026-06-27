@@ -21,7 +21,7 @@ const (
 	bitsPerChar   = 12   //
 	bytesPerGroup = 3    // LCM(8,12)/8
 	charsPerGroup = 2    // LCM(8,12)/12
-	padChar       = '='  // padding marker (same convention as Base64)
+	padChar       = '。'  // Chinese full stop as padding marker
 )
 
 var (
@@ -104,11 +104,11 @@ func Encode(src []byte) string {
 		// No padding marker — the decoder detects the incomplete final
 		// group by having only 1 char instead of 2.
 	case 2:
-		// 16 data bits → pad 8 zero bits → 2 chars + trailing '='.
+		// 16 data bits → pad 8 zero bits → 2 chars + trailing '。'.
 		val := uint32(src[i])<<8 | uint32(src[i+1])
 		b.WriteRune(charset[(val>>4)&0xFFF])
 		b.WriteRune(charset[(val&0xF)<<8])
-		b.WriteByte(byte(padChar))
+		b.WriteRune(padChar)
 	}
 
 	return b.String()
@@ -120,13 +120,14 @@ func Decode(s string) ([]byte, error) {
 		return nil, nil
 	}
 
-	// Detect and strip trailing padding.
-	hasPad := s[len(s)-1] == byte(padChar)
+	// Detect and strip trailing padding (Chinese full stop or ASCII =).
+	// Work on runes because '。' is a multi-byte UTF-8 character.
+	runes := []rune(s)
+	hasPad := len(runes) > 0 && (runes[len(runes)-1] == '。' || runes[len(runes)-1] == '=')
 	if hasPad {
-		s = s[:len(s)-1]
+		runes = runes[:len(runes)-1]
 	}
 
-	runes := []rune(s)
 	n := len(runes)
 	if n == 0 {
 		return nil, errors.New("base4096: invalid encoding (only padding)")

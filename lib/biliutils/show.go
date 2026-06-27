@@ -81,6 +81,7 @@ func (c *BiliClient) GetTicketSkuIDsByProjectIDNew(projectID string) ([]r.Ticket
 				Name:     skuInfo.ScreenName,
 				Desc:     skuInfo.Desc,
 				Price:    skuInfo.Price,
+				BuyLimit: skuInfo.StaticLimit.BuyLimit,
 				Flags: r.SaleFlagInfo{
 					Number:      skuInfo.SaleFlag.Number,
 					DisplayName: skuInfo.SaleFlag.DisplayName,

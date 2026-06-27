@@ -15,7 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 type Repository struct {
 	db   *sql.DB
@@ -36,6 +36,8 @@ func Open(path string) (*Repository, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	r := &Repository{db: db, path: path}
 	if err := r.init(context.Background()); err != nil {
 		db.Close()
@@ -57,7 +59,7 @@ func (r *Repository) init(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, role TEXT NOT NULL, enabled INTEGER NOT NULL, credential_version INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS logical_buyers (id TEXT PRIMARY KEY, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS account_buyer_mappings (account_id TEXT NOT NULL, logical_buyer_id TEXT NOT NULL, buyer_id INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(account_id, logical_buyer_id), FOREIGN KEY(account_id) REFERENCES accounts(id))`,
-		`CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, role TEXT NOT NULL, enabled INTEGER NOT NULL, payload BLOB NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'remote', role TEXT NOT NULL, enabled INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS worker_keys (worker_id TEXT PRIMARY KEY, control_key BLOB NOT NULL, FOREIGN KEY(worker_id) REFERENCES workers(id))`,
 		`CREATE TABLE IF NOT EXISTS leases (id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, account_id TEXT NOT NULL UNIQUE, worker_id TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS buyer_day_occupancy (buyer_id TEXT NOT NULL, event_day TEXT NOT NULL, intent_id TEXT NOT NULL, PRIMARY KEY(buyer_id, event_day))`,
@@ -74,8 +76,23 @@ func (r *Repository) init(ctx context.Context) error {
 			return err
 		}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO schema_meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, fmt.Sprint(schemaVersion))
-	if err != nil {
+	// ── Schema migrations ────────────────────────────────────
+	var currentVersion int
+	versionErr := tx.QueryRowContext(ctx, `SELECT value FROM schema_meta WHERE key='schema_version'`).Scan(&currentVersion)
+	if versionErr != nil && versionErr != sql.ErrNoRows {
+		return versionErr
+	}
+	// Fresh databases already have the column from CREATE TABLE; only
+	// migrate when upgrading from v1.
+	if versionErr == nil && currentVersion < 2 {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE workers ADD COLUMN type TEXT NOT NULL DEFAULT 'remote'`); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE workers SET type='local' WHERE id LIKE 'local%'`); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO schema_meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, fmt.Sprint(schemaVersion)); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -90,6 +107,45 @@ func (r *Repository) PutTaskGroup(ctx context.Context, value domain.TaskGroup) e
 	}
 	_, err = r.db.ExecContext(ctx, `INSERT INTO task_groups(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload`, value.ID, b)
 	return err
+}
+
+func (r *Repository) DeleteTaskGroup(ctx context.Context, id string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Cascade-delete all records belonging to macros owned by this task group.
+	macroSubquery := `SELECT id FROM macro_tasks WHERE task_group_id=?`
+	intentSubquery := `SELECT id FROM intents WHERE macro_task_id IN (` + macroSubquery + `)`
+	attemptSubquery := `SELECT id FROM attempts WHERE intent_id IN (` + intentSubquery + `)`
+
+	if _, err = tx.ExecContext(ctx, `DELETE FROM leases WHERE attempt_id IN (`+attemptSubquery+`)`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM execution_results WHERE attempt_id IN (`+attemptSubquery+`)`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM buyer_day_occupancy WHERE intent_id IN (`+intentSubquery+`)`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM attempts WHERE intent_id IN (`+intentSubquery+`)`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM intents WHERE macro_task_id IN (`+macroSubquery+`)`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM purchase_groups WHERE macro_task_id IN (`+macroSubquery+`)`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM macro_tasks WHERE task_group_id=?`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM task_groups WHERE id=?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 func (r *Repository) PutMacroTask(ctx context.Context, value domain.MacroTask) error {
 	b, err := marshal(value)
@@ -219,7 +275,7 @@ func (r *Repository) PutWorker(ctx context.Context, value domain.WorkerNode) err
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(ctx, `INSERT INTO workers(id,role,enabled,payload) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role,enabled=excluded.enabled,payload=excluded.payload`, value.ID, value.Role, value.Enabled, b)
+	_, err = r.db.ExecContext(ctx, `INSERT INTO workers(id,type,role,enabled,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET type=excluded.type,role=excluded.role,enabled=excluded.enabled,payload=excluded.payload`, value.ID, value.Type, value.Role, value.Enabled, b)
 	return err
 }
 
@@ -247,12 +303,18 @@ func (r *Repository) DeleteWorker(ctx context.Context, id string) error {
 
 func (r *Repository) Worker(ctx context.Context, id string) (domain.WorkerNode, error) {
 	var b []byte
-	if err := r.db.QueryRowContext(ctx, `SELECT payload FROM workers WHERE id=?`, id).Scan(&b); err != nil {
+	var typ string
+	if err := r.db.QueryRowContext(ctx, `SELECT type, payload FROM workers WHERE id=?`, id).Scan(&typ, &b); err != nil {
 		return domain.WorkerNode{}, err
 	}
 	var node domain.WorkerNode
-	err := json.Unmarshal(b, &node)
-	return node, err
+	if err := json.Unmarshal(b, &node); err != nil {
+		return domain.WorkerNode{}, err
+	}
+	if node.Type == "" {
+		node.Type = domain.WorkerType(typ)
+	}
+	return node, nil
 }
 
 func (r *Repository) PutWorkerTLS(ctx context.Context, workerID string, tls domain.WorkerTLSConfig) error {
@@ -519,20 +581,24 @@ func (r *Repository) ListTaskGroups(ctx context.Context) ([]domain.TaskGroup, er
 }
 
 func (r *Repository) ListWorkers(ctx context.Context) ([]domain.WorkerNode, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM workers ORDER BY role,id`)
+	rows, err := r.db.QueryContext(ctx, `SELECT type, payload FROM workers ORDER BY role,id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var result []domain.WorkerNode
 	for rows.Next() {
+		var typ string
 		var b []byte
-		if err := rows.Scan(&b); err != nil {
+		if err := rows.Scan(&typ, &b); err != nil {
 			return nil, err
 		}
 		var value domain.WorkerNode
 		if err := json.Unmarshal(b, &value); err != nil {
 			return nil, err
+		}
+		if value.Type == "" {
+			value.Type = domain.WorkerType(typ)
 		}
 		result = append(result, value)
 	}

@@ -66,6 +66,7 @@ type WorkerSummary struct {
 	ID              string              `json:"id"`
 	Name            string              `json:"name"`
 	Address         string              `json:"address"`
+	Type            domain.WorkerType   `json:"type"`
 	Role            domain.ResourceRole `json:"role"`
 	Enabled         bool                `json:"enabled"`
 	Healthy         bool                `json:"healthy"`
@@ -266,6 +267,10 @@ func (s *ClusterService) SetNotifier(notify func(string)) { s.notify = notify }
 
 func (s *ClusterService) SetApp(app *application.App) { s.wailsApp = app }
 
+// isLocalWorkerID returns true for worker IDs managed in-process (starts
+// with "local").
+func isLocalWorkerID(id string) bool { return strings.HasPrefix(id, "local") }
+
 func (s *ClusterService) openPayQRWindow(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
 	if s.wailsApp == nil || result.PaymentURL == "" {
 		return
@@ -350,36 +355,54 @@ func (s *ClusterService) Start(parent context.Context) error {
 	var localNode domain.WorkerNode
 	localReady := false
 	for _, node := range workers {
-		if node.ID != "local" {
-			continue
-		}
-		if s.client.IsHealthy(node.ID) {
+		if node.ID == "local" && s.client.IsHealthy(node.ID) {
 			localNode, localReady = node, true
+			break
 		}
-		break
 	}
 	var localErr error
 	if !localReady {
-		localNode, localErr = s.local.Start(ctx, s.client, employer.LocalWorkerOptions{DataDir: "data/local-worker", PluginDir: "plugins", CaptchaPlugin: pluginName, Version: global.GitCommit})
+		localNode, localErr = s.local.Start(ctx, s.client, employer.LocalWorkerOptions{PluginDir: "plugins", CaptchaPlugin: pluginName, Version: global.GitCommit})
 	}
 	if localErr == nil {
 		if err := s.repository.PutWorker(ctx, localNode); err != nil {
 			return err
 		}
-		// TLS certs are auto-generated and stored on disk;
-		// persist the TLS config in the repository for future restarts.
+		// Persist TLS config for the primary local worker.
 		tlsBundle, _, tlsErr := clusterworker.LoadOrGenerateLocalTLS("data/local-worker")
 		if tlsErr == nil {
-			tlsCfg := domain.WorkerTLSConfig{
+			_ = s.repository.PutWorkerTLS(ctx, "local", domain.WorkerTLSConfig{
 				CACertPEM:     tlsBundle.CAPEM,
 				ClientCertPEM: tlsBundle.CertPEM,
 				ClientKeyPEM:  tlsBundle.KeyPEM,
-				ServerName:    localNode.TLSServerName,
+				ServerName:    "localhost",
+			})
+		}
+
+		// Recover all other local workers persisted in the repository.
+		for _, node := range workers {
+			if node.ID == "local" || !isLocalWorkerID(node.ID) {
+				continue
 			}
-			if err := s.repository.PutWorkerTLS(ctx, localNode.ID, tlsCfg); err != nil {
-				return err
+			if _, startErr := s.local.AddWorker(ctx, s.client, node.ID, node.Name, node.Address, employer.LocalWorkerOptions{
+				PluginDir:     "plugins",
+				CaptchaPlugin: pluginName,
+				Version:       global.GitCommit,
+			}); startErr != nil {
+				log.Printf("[cluster] recover local worker %s: %v", node.ID, startErr)
+				continue
+			}
+			// Persist TLS for this recovered worker.
+			if tlsBundle, _, tlsErr := clusterworker.LoadOrGenerateLocalTLS("data/" + node.ID); tlsErr == nil {
+				_ = s.repository.PutWorkerTLS(ctx, node.ID, domain.WorkerTLSConfig{
+					CACertPEM:     tlsBundle.CAPEM,
+					ClientCertPEM: tlsBundle.CertPEM,
+					ClientKeyPEM:  tlsBundle.KeyPEM,
+					ServerName:    "localhost",
+				})
 			}
 		}
+
 		workers, err = s.repository.ListWorkers(ctx)
 		if err != nil {
 			return err
@@ -631,7 +654,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		result.Accounts = append(result.Accounts, summary)
 	}
 	for _, node := range workerList {
-		summary := WorkerSummary{ID: node.ID, Name: node.Name, Address: node.Address, Role: node.Role, Enabled: node.Enabled}
+		summary := WorkerSummary{ID: node.ID, Name: node.Name, Address: node.Address, Type: node.Type, Role: node.Role, Enabled: node.Enabled}
 		summary.Healthy = s.client.IsHealthy(node.ID)
 		if summary.Healthy {
 			// Fetch additional metadata via gRPC Health call (best-effort).
@@ -778,7 +801,17 @@ func (s *ClusterService) SaveTaskGroup(document string) error {
 	if value.CreatedAt.IsZero() {
 		value.CreatedAt = time.Now()
 	}
-	return s.repository.PutTaskGroup(context.Background(), value)
+	if err := s.repository.PutTaskGroup(context.Background(), value); err != nil {
+		return err
+	}
+	return s.refreshResources(context.Background())
+}
+
+func (s *ClusterService) DeleteTaskGroup(id string) error {
+	if err := s.repository.DeleteTaskGroup(context.Background(), id); err != nil {
+		return err
+	}
+	return s.refreshResources(context.Background())
 }
 
 func (s *ClusterService) ImportAccount(document string) error {
@@ -851,6 +884,7 @@ func (s *ClusterService) AddWorker(document string) error {
 		ID:            input.ID,
 		Name:          input.Name,
 		Address:       input.Address,
+		Type:          domain.WorkerTypeRemote,
 		Role:          input.Role,
 		Enabled:       true,
 		TLSServerName: input.TLSServerName,
@@ -904,8 +938,8 @@ func (s *ClusterService) UpdateWorker(document string) error {
 	if err := json.Unmarshal([]byte(document), &input); err != nil {
 		return err
 	}
-	if input.ID == "" || input.Address == "" || input.ClientKey == "" {
-		return fmt.Errorf("id, address and clientKey are required")
+	if input.ID == "" || input.Address == "" {
+		return fmt.Errorf("id and address are required")
 	}
 	if input.ID == "local" {
 		return fmt.Errorf("the automatically managed local worker cannot be edited")
@@ -923,22 +957,33 @@ func (s *ClusterService) UpdateWorker(document string) error {
 		ID:            input.ID,
 		Name:          input.Name,
 		Address:       input.Address,
+		Type:          domain.WorkerTypeRemote,
 		Role:          input.Role,
 		Enabled:       true,
 		TLSServerName: input.TLSServerName,
 	}
+	ctx := context.Background()
 	tlsConfig := domain.WorkerTLSConfig{
 		CACertPEM:     []byte(input.CACert),
 		ClientCertPEM: []byte(input.ClientCert),
 		ClientKeyPEM:  []byte(input.ClientKey),
 		ServerName:    input.TLSServerName,
 	}
+	// If no TLS credentials were provided, retain the existing TLS config.
+	if input.ClientKey == "" {
+		existingTLS, err := s.repository.WorkerTLS(ctx, input.ID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("fetch existing TLS config: %w", err)
+		}
+		if err == nil && len(existingTLS.ClientKeyPEM) > 0 {
+			tlsConfig = existingTLS
+		}
+	}
 	// Close existing connection before applying new TLS config.
 	s.client.RemoveTLS(input.ID)
 	if err := s.client.SetTLSFromConfig(node.ID, tlsConfig); err != nil {
 		return fmt.Errorf("invalid TLS config: %w", err)
 	}
-	ctx := context.Background()
 	if err := s.repository.PutWorker(ctx, node); err != nil {
 		return err
 	}
@@ -959,6 +1004,85 @@ func (s *ClusterService) UpdateWorker(document string) error {
 	}
 	log.Printf("[cluster] worker %s reconnected (%s)", node.ID, node.Address)
 	return nil
+}
+
+// AddLocalWorker creates and starts a new in-process local worker with
+// the given ID, name and listen address. If id is empty, one is generated.
+func (s *ClusterService) AddLocalWorker(id, name, listen string) error {
+	ctx := context.Background()
+	pluginName := ""
+	if _, statErr := os.Stat("plugins/captcha-plugin"); statErr == nil {
+		pluginName = "captcha-plugin"
+	}
+	node, err := s.local.AddWorker(ctx, s.client, id, name, listen, employer.LocalWorkerOptions{
+		PluginDir:     "plugins",
+		CaptchaPlugin: pluginName,
+		Version:       global.GitCommit,
+	})
+	if err != nil {
+		return err
+	}
+	if err := s.repository.PutWorker(ctx, node); err != nil {
+		return err
+	}
+	tlsBundle, _, tlsErr := clusterworker.LoadOrGenerateLocalTLS("data/" + node.ID)
+	if tlsErr == nil {
+		_ = s.repository.PutWorkerTLS(ctx, node.ID, domain.WorkerTLSConfig{
+			CACertPEM:     tlsBundle.CAPEM,
+			ClientCertPEM: tlsBundle.CertPEM,
+			ClientKeyPEM:  tlsBundle.KeyPEM,
+			ServerName:    "localhost",
+		})
+	}
+	return s.refreshResources(ctx)
+}
+
+// StartLocalWorker starts (or restarts) an existing local worker by ID.
+func (s *ClusterService) StartLocalWorker(workerID string) error {
+	ctx := context.Background()
+	pluginName := ""
+	if _, statErr := os.Stat("plugins/captcha-plugin"); statErr == nil {
+		pluginName = "captcha-plugin"
+	}
+	node, err := s.local.StartWorker(ctx, s.client, workerID, employer.LocalWorkerOptions{
+		PluginDir:     "plugins",
+		CaptchaPlugin: pluginName,
+		Version:       global.GitCommit,
+	})
+	if err != nil {
+		return err
+	}
+	if err := s.repository.PutWorker(ctx, node); err != nil {
+		return err
+	}
+	tlsBundle, _, tlsErr := clusterworker.LoadOrGenerateLocalTLS("data/" + workerID)
+	if tlsErr == nil {
+		_ = s.repository.PutWorkerTLS(ctx, node.ID, domain.WorkerTLSConfig{
+			CACertPEM:     tlsBundle.CAPEM,
+			ClientCertPEM: tlsBundle.CertPEM,
+			ClientKeyPEM:  tlsBundle.KeyPEM,
+			ServerName:    "localhost",
+		})
+	}
+	return s.refreshResources(ctx)
+}
+
+// StopLocalWorker stops a local in-process worker.
+func (s *ClusterService) StopLocalWorker(workerID string) error {
+	if err := s.local.StopWorker(workerID); err != nil {
+		return err
+	}
+	// Mark the worker as disabled in the repository so the dispatcher
+	// stops assigning work to it.
+	node, err := s.repository.Worker(context.Background(), workerID)
+	if err != nil {
+		return err
+	}
+	node.Enabled = false
+	if err := s.repository.PutWorker(context.Background(), node); err != nil {
+		return err
+	}
+	return s.refreshResources(context.Background())
 }
 
 // WorkerConfigResponse returns the full configuration for a worker, suitable
@@ -1007,6 +1131,8 @@ func (s *ClusterService) DeleteWorker(workerID string) error {
 			return fmt.Errorf("worker is used by active attempt %s", attempt.ID)
 		}
 	}
+	// If this is a local in-process worker, stop it first.
+	_ = s.local.RemoveWorker(workerID)
 	if err := s.repository.DeleteWorker(context.Background(), workerID); err != nil {
 		return err
 	}
@@ -1220,6 +1346,7 @@ func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string, overri
 	node := domain.WorkerNode{
 		ID:            rc.WorkerID,
 		Address:       address,
+		Type:          domain.WorkerTypeRemote,
 		Role:          domain.RolePrimary,
 		Enabled:       true,
 		TLSServerName: tlsConfig.ServerName,
@@ -1251,8 +1378,11 @@ func (s *ClusterService) SaveMacro(document string) error {
 	if err := json.Unmarshal([]byte(document), &value); err != nil {
 		return err
 	}
-	if value.ID == "" || value.TaskGroupID == "" {
-		return fmt.Errorf("id and taskGroupId are required")
+	if value.ID == "" {
+		value.ID = randomClusterID("macro")
+	}
+	if value.TaskGroupID == "" {
+		return fmt.Errorf("taskGroupId is required")
 	}
 	if s.dispatcher.MacroActive(value.ID) {
 		return fmt.Errorf("macro task cannot be edited while an attempt is active")

@@ -1,16 +1,92 @@
 <script lang="ts" setup>
-</script>
+import { computed, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n'
+import router from './router';
+import VerifiedOverlay from './components/VerifiedOverlay.vue';
+import { useMessagesStore } from './stores/snackbar';
+import {
+  Snapshot,
+  SaveTaskGroup,
+  DeleteTaskGroup,
+} from '../bindings/bilibili-ticket-golang/cmd/gui/clusterservice'
 
-<template>
-  <v-app>
-    <v-main>
-      <router-view />
-    </v-main>
-  </v-app>
-</template>
+const { t, locale } = useI18n()
+const messages = useMessagesStore();
 
-  await auth.checkLoginStatus();
+const verified = ref(false)
+const showLangPicker = ref(false)
 
+// Detect OS language for the picker default
+function detectOSLocale(): string {
+  const nav = navigator.language
+  if (nav.startsWith('zh')) return 'zh-CN'
+  if (nav.startsWith('en')) return 'en-US'
+  return 'zh-CN'
+}
+
+function selectLanguage(loc: string) {
+  locale.value = loc
+  localStorage.setItem('app_locale', loc)
+  showLangPicker.value = false
+}
+
+const calculatedPath = computed(() => {
+  const p = router.currentRoute.value.path.replace('/', '');
+  // Match partial paths (e.g. "account/list" should match "account")
+  for (const seg of ['home', 'account', 'cluster', 'notify', 'settings', 'scheduler']) {
+    if (p.startsWith(seg)) return seg;
+  }
+  return p;
+})
+
+// ── Task groups (loaded inline in sidebar) ──────────────────
+interface TaskGroup {
+  id: string
+  name: string
+  createdAt: string
+}
+const taskGroups = ref<TaskGroup[]>([])
+const addingGroup = ref(false)
+const newGroupName = ref('')
+const deletingGroup = ref<Record<string, boolean>>({})
+
+async function loadTaskGroups() {
+  try {
+    const snap = await Snapshot()
+    taskGroups.value = (snap.taskGroups || []) as TaskGroup[]
+  } catch { /* silent */ }
+}
+
+async function addTaskGroup() {
+  const name = newGroupName.value.trim()
+  if (!name) return
+  addingGroup.value = true
+  try {
+    await SaveTaskGroup(JSON.stringify({ name }))
+    newGroupName.value = ''
+    await loadTaskGroups()
+  } catch (e: any) {
+    messages.add({ text: String(e), color: 'error' })
+  }
+  addingGroup.value = false
+}
+
+async function removeTaskGroup(id: string) {
+  deletingGroup.value[id] = true
+  try {
+    await DeleteTaskGroup(id)
+    await loadTaskGroups()
+  } catch (e: any) {
+    messages.add({ text: String(e), color: 'error' })
+  }
+  deletingGroup.value[id] = false
+}
+
+function goToTaskGroup(id: string) {
+  router.push(`/cluster/task-group/${id}`)
+}
+
+onMounted(async () => {
   // Load saved locale or show language picker on first startup
   const saved = localStorage.getItem('app_locale')
   if (saved) {
@@ -18,6 +94,7 @@
   } else {
     showLangPicker.value = true
   }
+  await loadTaskGroups()
 })
 </script>
 
@@ -44,44 +121,60 @@
   </v-overlay>
 
   <v-app v-if="verified && !showLangPicker" class="rounded rounded-md">
-    <v-navigation-drawer expand-on-hover permanent rail>
+    <v-navigation-drawer expand-on-hover permanent>
       <v-list density="compact" nav activatable :activated="calculatedPath">
-        <v-list-subheader>
-          {{ t('nav.uncategorized') }}
-        </v-list-subheader>
         <v-list-item :title="t('nav.home')" value="home" prepend-icon="mdi-home" @click="router.push('/')" />
+
         <v-divider class="mt-1" />
         <v-list-subheader>
-          {{ t('nav.ticketArea') }}
+          {{ t('nav.account') }}
         </v-list-subheader>
-        <v-list-item :title="t('nav.bwsReservation')" value="bws-reservation" :disabled="!auth.isLogin || !bwsAvailable"
-          @click="router.push('/bws-reservation')" prepend-icon="mdi-ticket-confirmation">
-          <v-tooltip v-if="auth.isLogin && !bwsAvailable" activator="parent" location="right">
-            {{ bwsTooltip }}
-          </v-tooltip>
-        </v-list-item>
-        <v-list-item :title="t('nav.scheduler')" value="scheduler" @click="router.push('/scheduler')"
-          prepend-icon="mdi-calendar-clock" />
+        <v-list-item :title="t('nav.account')" value="account/list" @click="router.push('/account/list')"
+          prepend-icon="mdi-account-multiple" />
+        <v-list-item :title="t('nav.buyers')" value="account/buyers" @click="router.push('/account/buyers')"
+          prepend-icon="mdi-account-details" />
+
         <v-divider class="mt-1" />
         <v-list-subheader>
-          {{ t('nav.pluginArea') }}
+          {{ t('nav.clusterArea') }}
         </v-list-subheader>
-        <v-list-item :title="t('nav.pluginDownload')" value="plugin-download" @click="router.push('/plugin-download')"
-          prepend-icon="mdi-puzzle" />
-        <v-list-item :title="t('nav.pluginManagement')" value="plugin-management"
-          @click="router.push('/plugin-management')" prepend-icon="mdi-puzzle-edit" />
+        <v-list-item :title="t('nav.worker')" value="cluster/worker" @click="router.push('/cluster/worker')"
+          prepend-icon="mdi-server-network" />
+        <v-list-item :title="t('nav.logs')" value="cluster/logs" @click="router.push('/cluster/logs')"
+          prepend-icon="mdi-text-box-search-outline" />
+
+        <!-- Collapsible task group section -->
+        <v-list-group value="task-groups">
+          <template v-slot:activator="{ props }">
+            <v-list-item v-bind="props" :title="t('nav.taskGroups')" prepend-icon="mdi-folder-multiple" />
+          </template>
+
+          <v-list-item v-for="g in taskGroups" :key="g.id" :value="'tg-' + g.id" :title="g.name"
+            @click="goToTaskGroup(g.id)">
+            <template v-slot:append>
+              <v-btn icon="mdi-close" size="x-small" variant="text" density="compact" :loading="deletingGroup[g.id]"
+                @click.stop="removeTaskGroup(g.id)" />
+            </template>
+          </v-list-item>
+
+          <v-list-item>
+            <v-text-field v-model="newGroupName" density="compact" variant="outlined" hide-details
+              :placeholder="t('nav.groupNamePlaceholder')" @keydown.enter="addTaskGroup"
+              style="max-width:130px;font-size:12px;flex:none" />
+            <template v-slot:append>
+              <v-btn icon="mdi-plus" size="x-small" variant="text" :loading="addingGroup" @click="addTaskGroup" />
+            </template>
+          </v-list-item>
+        </v-list-group>
+
         <v-divider class="mt-1" />
         <v-list-subheader>
           {{ t('nav.settingsArea') }}
         </v-list-subheader>
         <v-list-item :title="t('nav.notify')" value="notify" @click="router.push('/notify')"
           prepend-icon="mdi-bell-ring" />
-        <v-list-item :title="t('nav.workerConfig')" value="worker-config" @click="router.push('/worker-config')"
-          prepend-icon="mdi-server-network" />
         <v-list-item :title="t('nav.settings')" value="settings" @click="router.push('/settings')"
           prepend-icon="mdi-cog" />
-        <v-list-item :title="t('nav.update')" value="update" @click="router.push('/update')"
-          prepend-icon="mdi-update" />
       </v-list>
     </v-navigation-drawer>
     <v-main>
@@ -95,8 +188,6 @@
         <v-icon-btn aria-label="Close" icon="mdi-close" size="small" variant="text" v-bind="props"></v-icon-btn>
       </template>
     </v-snackbar-queue>
-
-    <ConfirmDialog />
   </v-app>
 </template>
 

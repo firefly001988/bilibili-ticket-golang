@@ -141,9 +141,11 @@ type TicketProjectInformationNewStruct struct {
 				Number      int    `json:"number"`
 				DisplayName string `json:"display_name"`
 			} `json:"sale_flag"`
-			ScreenName   string `json:"screen_name"`
-			BuyLimit     int    `json:"num"`
-			BuyLimitType int    `json:"num_type"`
+			ScreenName  string `json:"screen_name"`
+			StaticLimit struct {
+				BuyLimit     int `json:"num"`
+				BuyLimitType int `json:"num_type"`
+			} `json:"static_limit"`
 		} `json:"ticket_list"`
 	} `json:"screenList"`
 }

@@ -163,6 +163,18 @@ func (s *Server) ListenAndServe() error {
 	return grpcServer.Serve(lis)
 }
 
+// ServeOn serves the gRPC worker on a pre-existing listener. The caller is
+// responsible for closing the listener to initiate a graceful shutdown.
+func (s *Server) ServeOn(lis net.Listener) error {
+	tlsCfg, err := NewServerTLSConfig(s.config.CACertPEM, s.config.ServerCertPEM, s.config.ServerKeyPEM)
+	if err != nil {
+		return fmt.Errorf("build server TLS config: %w", err)
+	}
+	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsCfg)))
+	pb.RegisterWorkerServiceServer(grpcServer, &workerService{server: s})
+	return grpcServer.Serve(lis)
+}
+
 // ---------------------------------------------------------------------------
 // gRPC service implementation (thin adapter over Server)
 // ---------------------------------------------------------------------------

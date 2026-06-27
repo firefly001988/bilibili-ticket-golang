@@ -224,10 +224,18 @@ type AccountBuyerMapping struct {
 	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
+type WorkerType string
+
+const (
+	WorkerTypeLocal  WorkerType = "local"
+	WorkerTypeRemote WorkerType = "remote"
+)
+
 type WorkerNode struct {
 	ID            string       `json:"id"`
 	Name          string       `json:"name"`
 	Address       string       `json:"address"`
+	Type          WorkerType   `json:"type"`
 	Role          ResourceRole `json:"role"`
 	Enabled       bool         `json:"enabled"`
 	TLSServerName string       `json:"tlsServerName,omitempty"`
