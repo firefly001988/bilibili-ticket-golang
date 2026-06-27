@@ -1,53 +1,14 @@
 <script lang="ts" setup>
-import noface from '@/assets/noface.png';
-import { computed, onMounted, ref } from 'vue';
-import { useI18n } from 'vue-i18n'
-import router from './router';
-import { useMessagesStore } from './stores/snackbar';
-import { useAuthStore } from './stores/auth';
-import VerifiedOverlay from './components/VerifiedOverlay.vue';
-import ConfirmDialog from './components/ConfirmDialog.vue';
+</script>
 
-const { t, locale } = useI18n()
-const auth = useAuthStore();
-const messages = useMessagesStore();
+<template>
+  <v-app>
+    <v-main>
+      <router-view />
+    </v-main>
+  </v-app>
+</template>
 
-const verified = ref(false)
-const showLangPicker = ref(false)
-
-// Detect OS language for the picker default
-function detectOSLocale(): string {
-  const nav = navigator.language
-  if (nav.startsWith('zh')) return 'zh-CN'
-  if (nav.startsWith('en')) return 'en-US'
-  return 'zh-CN'
-}
-
-function selectLanguage(loc: string) {
-  locale.value = loc
-  localStorage.setItem('app_locale', loc)
-  showLangPicker.value = false
-}
-
-// BWS 仅在 7月8日 00:00 ~ 7月11日 24:00 期间可用；dev 环境始终可用
-const bwsAvailable = computed(() => {
-  if (import.meta.env.DEV) return true;
-  const now = new Date();
-  const year = now.getFullYear();
-  const start = new Date(year, 6, 8, 0, 0, 0);
-  const end = new Date(year, 6, 12, 0, 0, 0);
-  return now >= start && now < end;
-});
-
-const bwsTooltip = computed(() =>
-  bwsAvailable.value ? t('nav.bwsTooltip') : t('nav.bwsUnavailableTooltip')
-);
-
-const calculatedPath = computed(() => {
-  return router.currentRoute.value.path.replace('/', '') || 'home';
-});
-
-onMounted(async () => {
   await auth.checkLoginStatus();
 
   // Load saved locale or show language picker on first startup
