@@ -39,6 +39,7 @@ type ClusterSnapshot struct {
 	Buyers     []BuyerWithAccounts `json:"buyers"`
 	Workers    []WorkerSummary     `json:"workers"`
 	Macros     []MacroSummary      `json:"macros"`
+	Intents    []IntentSummary     `json:"intents"`
 	Attempts   []AttemptSummary    `json:"attempts"`
 }
 
@@ -56,23 +57,22 @@ type BuyerWithAccounts struct {
 	Accounts []BuyerAccountBadge `json:"accounts"`
 }
 type AccountSummary struct {
-	ID                string              `json:"id"`
-	Name              string              `json:"name"`
-	Role              domain.ResourceRole `json:"role"`
-	Enabled           bool                `json:"enabled"`
-	CooldownUntil     *time.Time          `json:"cooldownUntil,omitempty"`
-	CredentialVersion int64               `json:"credentialVersion"`
+	ID                string     `json:"id"`
+	Name              string     `json:"name"`
+	Enabled           bool       `json:"enabled"`
+	VipStatus         int        `json:"vipStatus"` // 0=unknown/not VIP, 1=VIP
+	CooldownUntil     *time.Time `json:"cooldownUntil,omitempty"`
+	CredentialVersion int64      `json:"credentialVersion"`
 }
 type WorkerSummary struct {
-	ID              string              `json:"id"`
-	Name            string              `json:"name"`
-	Address         string              `json:"address"`
-	Type            domain.WorkerType   `json:"type"`
-	Role            domain.ResourceRole `json:"role"`
-	Enabled         bool                `json:"enabled"`
-	Healthy         bool                `json:"healthy"`
-	ActiveAttemptID string              `json:"activeAttemptId,omitempty"`
-	Version         string              `json:"version,omitempty"`
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	Address         string            `json:"address"`
+	Type            domain.WorkerType `json:"type"`
+	Enabled         bool              `json:"enabled"`
+	Healthy         bool              `json:"healthy"`
+	ActiveAttemptID string            `json:"activeAttemptId,omitempty"`
+	Version         string            `json:"version,omitempty"`
 }
 type MacroSummary struct {
 	domain.MacroTask
@@ -88,6 +88,23 @@ type AttemptSummary struct {
 	OrderID    string               `json:"orderId,omitempty"`
 	PaymentURL string               `json:"paymentUrl,omitempty"`
 	Reason     domain.FailureReason `json:"reason,omitempty"`
+}
+
+// IntentSummary exposes an armed intent for the UI dispatch log.
+type IntentSummary struct {
+	ID            string               `json:"id"`
+	MacroTaskID   string               `json:"macroTaskId"`
+	Phase         domain.Phase         `json:"phase"`
+	Weight        int                  `json:"weight"`
+	Priority      int                  `json:"priority"`
+	BuyerCount    int                  `json:"buyerCount"`
+	Succeeded     bool                 `json:"succeeded"`
+	Terminal      bool                 `json:"terminal"`
+	Armed         bool                 `json:"armed"`
+	ActiveCount   int                  `json:"activeCount"` // non-terminal attempts currently running
+	Deficit       int                  `json:"deficit"`     // remaining replicas to dispatch (0 = satisfied)
+	FailureReason domain.FailureReason `json:"failureReason,omitempty"`
+	CreatedAt     time.Time            `json:"createdAt"`
 }
 
 type ClusterService struct {
@@ -134,13 +151,12 @@ func (s *ClusterService) SyncMainAccount() error {
 	}
 	ctx := context.Background()
 	accountID := fmt.Sprintf("bili-%d", info.UID)
-	account := domain.Account{ID: accountID, Name: info.Name, Role: domain.RolePrimary, Enabled: true, Credentials: credentials}
+	account := domain.Account{ID: accountID, Name: info.Name, Enabled: true, Credentials: credentials}
 	if existing, existingErr := s.repository.Account(ctx, accountID); existingErr == nil {
 		account.Name = existing.Name
 		if account.Name == "" {
 			account.Name = info.Name
 		}
-		account.Role = existing.Role
 		account.Enabled = existing.Enabled
 		account.CooldownUntil = existing.CooldownUntil
 		account.Credentials.Version = existing.Credentials.Version + 1
@@ -261,6 +277,13 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 		}
 		service.openPayQRWindow(intent, result)
 	})
+
+	// Wire the bidirectional heartbeat callback: when a worker pushes a
+	// completed task, the dispatcher processes it immediately instead of
+	// waiting for the next 15s polling cycle.
+	client.SetOnCompletedTask(func(workerID string, result domain.ExecutionResult) {
+		service.dispatcher.ProcessCompletedTask(workerID, result)
+	})
 	return service
 }
 
@@ -330,6 +353,84 @@ func (s *ClusterService) Start(parent context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Refresh credentials for every enabled account so workers always
+	// operate on fresh cookies.  Workers MUST NOT refresh cookies on
+	// their own — credential rotation is the employer's responsibility.
+	// Also verify login status — stale cookies that can no longer
+	// authenticate are marked disabled and require re-login.
+	refreshedCount := 0
+	disabledCount := 0
+	for i, account := range accountsList {
+		if !account.Enabled {
+			continue
+		}
+		client, jar, clientErr := accountClient(account)
+		if clientErr != nil {
+			log.Printf("[cluster] create client for account %s: %v", account.ID, clientErr)
+			continue
+		}
+		client.SetRefreshToken(account.Credentials.RefreshToken)
+
+		// Check login status first.
+		loginInfo, statusErr := client.GetAccountStatus()
+		if statusErr != nil || loginInfo == nil || !loginInfo.Login || loginInfo.UID == 0 {
+			reason := "api error"
+			if statusErr != nil {
+				reason = statusErr.Error()
+			} else if loginInfo == nil {
+				reason = "nil response"
+			} else if !loginInfo.Login {
+				reason = "not logged in"
+			}
+			log.Printf("[cluster] account %s (%s) login check failed: %s — disabling", account.ID, account.Name, reason)
+			accountsList[i].Enabled = false
+			accountsList[i].Credentials.Version++
+			if putErr := s.repository.PutAccount(ctx, accountsList[i], nil); putErr != nil {
+				log.Printf("[cluster] persist disabled account %s: %v", account.ID, putErr)
+			}
+			disabledCount++
+			continue
+		}
+
+		// Update VIP status from the API response.
+		if loginInfo.IsVip != account.VipStatus {
+			accountsList[i].VipStatus = loginInfo.IsVip
+			changed := false
+			if loginInfo.IsVip == 1 {
+				log.Printf("[cluster] account %s (%s) is VIP", account.ID, account.Name)
+				changed = true
+			}
+			if changed {
+				if putErr := s.repository.PutAccount(ctx, accountsList[i], nil); putErr != nil {
+					log.Printf("[cluster] persist VIP status for account %s: %v", account.ID, putErr)
+				}
+			}
+		}
+
+		// Logged in — attempt cookie refresh.
+		refreshed, refreshErr := client.CheckAndUpdateCookie()
+		if refreshErr != nil {
+			log.Printf("[cluster] cookie refresh for account %s: %v", account.ID, refreshErr)
+			continue
+		}
+		if refreshed {
+			updated := credentialsFrom(client, jar, account.Credentials)
+			if updated.Version != account.Credentials.Version {
+				accountsList[i].Credentials = updated
+				if putErr := s.repository.PutAccount(ctx, accountsList[i], nil); putErr != nil {
+					log.Printf("[cluster] persist refreshed credentials for account %s: %v", account.ID, putErr)
+				}
+				refreshedCount++
+			}
+		}
+	}
+	if refreshedCount > 0 {
+		log.Printf("[cluster] refreshed cookies for %d account(s)", refreshedCount)
+	}
+	if disabledCount > 0 {
+		log.Printf("[cluster] disabled %d account(s) due to lost login", disabledCount)
+	}
+
 	workers, err := s.repository.ListWorkers(ctx)
 	if err != nil {
 		return err
@@ -532,6 +633,28 @@ func (s *ClusterService) StopMacro(macroID string) error {
 	}
 	// Force-disarm the macro: mark intents terminal and release resources.
 	s.dispatcher.DisarmMacro(macroID)
+
+	// Check if this was the last active macro in the task group.
+	// If so, release worker reservations so other task groups can use them.
+	taskGroupID := s.dispatcher.ActiveTaskGroup()
+	if taskGroupID != "" {
+		macros, _ := s.repository.ListMacroTasks(ctx)
+		hasOtherActive := false
+		for _, m := range macros {
+			if m.ID == macroID {
+				continue
+			}
+			if m.TaskGroupID == taskGroupID && s.dispatcher.MacroActive(m.ID) {
+				hasOtherActive = true
+				break
+			}
+		}
+		if !hasOtherActive {
+			s.dispatcher.ReleaseWorkers()
+			log.Printf("[cluster] released worker reservations for task group %s", taskGroupID)
+		}
+	}
+
 	return nil
 }
 
@@ -551,6 +674,10 @@ func (s *ClusterService) refreshResources(ctx context.Context) error {
 		i := i
 		node := dispatchWorkers[i]
 		if !node.Enabled {
+			continue
+		}
+		if node.Type == domain.WorkerTypeLocal {
+			// Local workers are managed in-process; skip health checks.
 			continue
 		}
 		if s.client.IsHealthy(node.ID) {
@@ -643,7 +770,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	}
 	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyersWithAccounts}
 	for _, account := range accountList {
-		summary := AccountSummary{ID: account.ID, Name: account.Name, Role: account.Role, Enabled: account.Enabled, CredentialVersion: account.Credentials.Version}
+		summary := AccountSummary{ID: account.ID, Name: account.Name, Enabled: account.Enabled, VipStatus: account.VipStatus, CredentialVersion: account.Credentials.Version}
 		if !account.CooldownUntil.IsZero() {
 			cooldown := account.CooldownUntil
 			summary.CooldownUntil = &cooldown
@@ -651,7 +778,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		result.Accounts = append(result.Accounts, summary)
 	}
 	for _, node := range workerList {
-		summary := WorkerSummary{ID: node.ID, Name: node.Name, Address: node.Address, Type: node.Type, Role: node.Role, Enabled: node.Enabled}
+		summary := WorkerSummary{ID: node.ID, Name: node.Name, Address: node.Address, Type: node.Type, Enabled: node.Enabled}
 		summary.Healthy = s.client.IsHealthy(node.ID)
 		if summary.Healthy {
 			// Fetch additional metadata via gRPC Health call (best-effort).
@@ -685,6 +812,42 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		result.Macros = append(result.Macros, MacroSummary{MacroTask: macro, Phase: phase, PurchaseGroups: groups})
 	}
 	s.mu.RUnlock()
+
+	// ── Intents (pending/armed plans) ──────────────────────────
+	// Build a quick lookup: intentID → active (non-terminal) attempt count.
+	activeByIntent := make(map[string]int)
+	for _, value := range s.dispatcher.Attempts() {
+		if !value.State.Terminal() {
+			activeByIntent[value.IntentID]++
+		}
+	}
+	for _, plan := range s.dispatcher.Plans() {
+		active := activeByIntent[plan.Intent.ID]
+		w := plan.Intent.Weight
+		if w <= 0 {
+			w = 1
+		}
+		deficit := w - active
+		if deficit < 0 {
+			deficit = 0
+		}
+		result.Intents = append(result.Intents, IntentSummary{
+			ID:            plan.Intent.ID,
+			MacroTaskID:   plan.Intent.MacroTaskID,
+			Phase:         plan.Intent.Phase,
+			Weight:        w,
+			Priority:      plan.Intent.Priority,
+			BuyerCount:    len(plan.Intent.Buyers),
+			Succeeded:     plan.Intent.Succeeded,
+			Terminal:      plan.Intent.Terminal,
+			Armed:         plan.Intent.Armed,
+			ActiveCount:   active,
+			Deficit:       deficit,
+			FailureReason: plan.Intent.FailureReason,
+			CreatedAt:     plan.Intent.CreatedAt,
+		})
+	}
+
 	for _, value := range s.dispatcher.Attempts() {
 		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, PaymentURL: value.Result.PaymentURL, Reason: value.Result.Reason})
 	}
@@ -696,7 +859,6 @@ type accountLoginSession struct {
 	Jar       *cookiejar.Jar
 	QRCodeKey string
 	Name      string
-	Role      domain.ResourceRole
 	CreatedAt time.Time
 }
 
@@ -710,7 +872,7 @@ type AccountLoginPoll struct {
 	AccountID string `json:"accountId,omitempty"`
 }
 
-func (s *ClusterService) BeginAccountLogin(name string, role domain.ResourceRole) (AccountLoginStart, error) {
+func (s *ClusterService) BeginAccountLogin(name string) (AccountLoginStart, error) {
 	jar := cookiejar.New(nil)
 	client, err := biliutils.NewBiliClientWithCookiejar(jar)
 	if err != nil {
@@ -720,12 +882,9 @@ func (s *ClusterService) BeginAccountLogin(name string, role domain.ResourceRole
 	if err != nil {
 		return AccountLoginStart{}, err
 	}
-	if role == "" {
-		role = domain.RolePrimary
-	}
 	id := randomClusterID("login")
 	s.mu.Lock()
-	s.loginSessions[id] = &accountLoginSession{Client: client, Jar: jar, QRCodeKey: qr.QRCodeKey, Name: name, Role: role, CreatedAt: time.Now()}
+	s.loginSessions[id] = &accountLoginSession{Client: client, Jar: jar, QRCodeKey: qr.QRCodeKey, Name: name, CreatedAt: time.Now()}
 	s.mu.Unlock()
 	return AccountLoginStart{SessionID: id, URL: qr.URL}, nil
 }
@@ -763,8 +922,34 @@ func (s *ClusterService) PollAccountLogin(sessionID string) (AccountLoginPoll, e
 	if name == "" {
 		name = info.Name
 	}
-	account := domain.Account{ID: accountID, Name: name, Role: session.Role, Enabled: true, Credentials: credentials}
-	if err := s.repository.PutAccount(context.Background(), account, nil); err != nil {
+	account := domain.Account{ID: accountID, Name: name, Enabled: true, Credentials: credentials}
+
+	// When the user scans a different account (new UID) than what was
+	// previously stored under the same ID, treat it as a new account.
+	// If the old account was disabled (e.g. login expired), reactivate
+	// it with the new credentials.
+	ctx := context.Background()
+	existing, existingErr := s.repository.Account(ctx, accountID)
+	if existingErr == nil {
+		// Same account re-logged — preserve custom name, device profile,
+		// and re-enable if previously disabled.
+		if len(existing.Credentials.DeviceProfile) > 0 {
+			account.Credentials.DeviceProfile = existing.Credentials.DeviceProfile
+		}
+		if existing.Name != "" && name == info.Name {
+			account.Name = existing.Name
+		}
+		if !existing.Enabled {
+			log.Printf("[cluster] reactivating disabled account %s (%s)", accountID, account.Name)
+		}
+		log.Printf("[cluster] account %s (%s) re-logged", accountID, account.Name)
+	} else if errors.Is(existingErr, sql.ErrNoRows) {
+		// Brand new account.
+		log.Printf("[cluster] new account %s (%s) added via QR login", accountID, account.Name)
+	} else {
+		return result, existingErr
+	}
+	if err := s.repository.PutAccount(ctx, account, nil); err != nil {
 		return result, err
 	}
 	// Best-effort import of the account's existing buyers. Login remains
@@ -859,14 +1044,13 @@ func (s *ClusterService) DeleteAccount(accountID string) error {
 
 func (s *ClusterService) AddWorker(document string) error {
 	var input struct {
-		ID            string              `json:"id"`
-		Name          string              `json:"name"`
-		Address       string              `json:"address"`
-		CACert        string              `json:"caCert"`
-		ClientCert    string              `json:"clientCert"`
-		ClientKey     string              `json:"clientKey"`
-		TLSServerName string              `json:"tlsServerName"`
-		Role          domain.ResourceRole `json:"role"`
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		Address       string `json:"address"`
+		CACert        string `json:"caCert"`
+		ClientCert    string `json:"clientCert"`
+		ClientKey     string `json:"clientKey"`
+		TLSServerName string `json:"tlsServerName"`
 	}
 	if err := json.Unmarshal([]byte(document), &input); err != nil {
 		return err
@@ -874,15 +1058,11 @@ func (s *ClusterService) AddWorker(document string) error {
 	if input.ID == "" || input.Address == "" || input.ClientKey == "" {
 		return fmt.Errorf("id, address and clientKey are required")
 	}
-	if input.Role == "" {
-		input.Role = domain.RolePrimary
-	}
 	node := domain.WorkerNode{
 		ID:            input.ID,
 		Name:          input.Name,
 		Address:       input.Address,
 		Type:          domain.WorkerTypeRemote,
-		Role:          input.Role,
 		Enabled:       true,
 		TLSServerName: input.TLSServerName,
 	}
@@ -896,6 +1076,17 @@ func (s *ClusterService) AddWorker(document string) error {
 		return fmt.Errorf("invalid TLS config: %w", err)
 	}
 	ctx := context.Background()
+
+	// Synchronously dial the new worker so connection errors surface
+	// immediately instead of waiting for the async health check.
+	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := s.client.Health(healthCtx, node); err != nil {
+		s.client.RemoveTLS(node.ID)
+		log.Printf("[cluster] health check for new worker %s (%s): %v", node.ID, node.Address, err)
+		return fmt.Errorf("worker unreachable: %w", err)
+	}
+
 	if err := s.repository.PutWorker(ctx, node); err != nil {
 		return err
 	}
@@ -906,14 +1097,6 @@ func (s *ClusterService) AddWorker(document string) error {
 		return err
 	}
 
-	// Synchronously dial the new worker so connection errors surface
-	// immediately instead of waiting for the async health check.
-	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, err := s.client.Health(healthCtx, node); err != nil {
-		log.Printf("[cluster] health check for new worker %s (%s): %v", node.ID, node.Address, err)
-		return fmt.Errorf("worker saved but unreachable: %w", err)
-	}
 	log.Printf("[cluster] worker %s connected (%s)", node.ID, node.Address)
 	return nil
 }
@@ -923,14 +1106,13 @@ func (s *ClusterService) AddWorker(document string) error {
 // same JSON document shape as AddWorker.
 func (s *ClusterService) UpdateWorker(document string) error {
 	var input struct {
-		ID            string              `json:"id"`
-		Name          string              `json:"name"`
-		Address       string              `json:"address"`
-		CACert        string              `json:"caCert"`
-		ClientCert    string              `json:"clientCert"`
-		ClientKey     string              `json:"clientKey"`
-		TLSServerName string              `json:"tlsServerName"`
-		Role          domain.ResourceRole `json:"role"`
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		Address       string `json:"address"`
+		CACert        string `json:"caCert"`
+		ClientCert    string `json:"clientCert"`
+		ClientKey     string `json:"clientKey"`
+		TLSServerName string `json:"tlsServerName"`
 	}
 	if err := json.Unmarshal([]byte(document), &input); err != nil {
 		return err
@@ -940,9 +1122,6 @@ func (s *ClusterService) UpdateWorker(document string) error {
 	}
 	if input.ID == "local" {
 		return fmt.Errorf("the automatically managed local worker cannot be edited")
-	}
-	if input.Role == "" {
-		input.Role = domain.RolePrimary
 	}
 	// Block if the worker is executing an active attempt.
 	for _, attempt := range s.dispatcher.Attempts() {
@@ -955,7 +1134,6 @@ func (s *ClusterService) UpdateWorker(document string) error {
 		Name:          input.Name,
 		Address:       input.Address,
 		Type:          domain.WorkerTypeRemote,
-		Role:          input.Role,
 		Enabled:       true,
 		TLSServerName: input.TLSServerName,
 	}
@@ -981,6 +1159,17 @@ func (s *ClusterService) UpdateWorker(document string) error {
 	if err := s.client.SetTLSFromConfig(node.ID, tlsConfig); err != nil {
 		return fmt.Errorf("invalid TLS config: %w", err)
 	}
+
+	// Synchronously dial the updated worker so connection errors surface
+	// immediately instead of waiting for the async health check.
+	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := s.client.Health(healthCtx, node); err != nil {
+		s.client.RemoveTLS(node.ID)
+		log.Printf("[cluster] health check for updated worker %s (%s): %v", node.ID, node.Address, err)
+		return fmt.Errorf("worker unreachable: %w", err)
+	}
+
 	if err := s.repository.PutWorker(ctx, node); err != nil {
 		return err
 	}
@@ -991,14 +1180,6 @@ func (s *ClusterService) UpdateWorker(document string) error {
 		return err
 	}
 
-	// Synchronously dial the updated worker so connection errors surface
-	// immediately instead of waiting for the async health check.
-	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, err := s.client.Health(healthCtx, node); err != nil {
-		log.Printf("[cluster] health check for updated worker %s (%s): %v", node.ID, node.Address, err)
-		return fmt.Errorf("worker updated but unreachable: %w", err)
-	}
 	log.Printf("[cluster] worker %s reconnected (%s)", node.ID, node.Address)
 	return nil
 }
@@ -1085,14 +1266,13 @@ func (s *ClusterService) StopLocalWorker(workerID string) error {
 // WorkerConfigResponse returns the full configuration for a worker, suitable
 // for pre-filling an edit form.
 type WorkerConfigResponse struct {
-	ID            string              `json:"id"`
-	Name          string              `json:"name"`
-	Address       string              `json:"address"`
-	Role          domain.ResourceRole `json:"role"`
-	CACert        string              `json:"caCert"`
-	ClientCert    string              `json:"clientCert"`
-	ClientKey     string              `json:"clientKey"`
-	TLSServerName string              `json:"tlsServerName"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Address       string `json:"address"`
+	CACert        string `json:"caCert"`
+	ClientCert    string `json:"clientCert"`
+	ClientKey     string `json:"clientKey"`
+	TLSServerName string `json:"tlsServerName"`
 }
 
 // GetWorkerConfig reads the full connection settings for a worker (node info
@@ -1111,7 +1291,6 @@ func (s *ClusterService) GetWorkerConfig(workerID string) (WorkerConfigResponse,
 		ID:            node.ID,
 		Name:          node.Name,
 		Address:       node.Address,
-		Role:          node.Role,
 		CACert:        string(tlsConfig.CACertPEM),
 		ClientCert:    string(tlsConfig.ClientCertPEM),
 		ClientKey:     string(tlsConfig.ClientKeyPEM),
@@ -1351,7 +1530,6 @@ func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string, overri
 		ID:            rc.WorkerID,
 		Address:       address,
 		Type:          domain.WorkerTypeRemote,
-		Role:          domain.RolePrimary,
 		Enabled:       true,
 		TLSServerName: tlsConfig.ServerName,
 	}
@@ -1367,13 +1545,15 @@ func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string, overri
 
 	// Synchronously dial the imported worker so connection errors surface
 	// immediately instead of waiting for the async health check.
+	// The worker is persisted regardless — it may be offline at import time.
 	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := s.client.Health(healthCtx, node); err != nil {
 		log.Printf("[cluster] health check for imported worker %s (%s): %v", node.ID, node.Address, err)
-		return fmt.Errorf("worker imported but unreachable: %w", err)
+		// Return success — the worker row is saved and will be retried later.
+	} else {
+		log.Printf("[cluster] worker %s connected (%s)", node.ID, node.Address)
 	}
-	log.Printf("[cluster] worker %s connected (%s)", node.ID, node.Address)
 	return nil
 }
 
@@ -1394,15 +1574,6 @@ func (s *ClusterService) SaveMacro(document string) error {
 	if value.OrderCapacity <= 0 {
 		value.OrderCapacity = 4
 		value.CapacitySource = domain.CapacityDefault
-	}
-	if value.DesiredReplicas <= 0 {
-		value.DesiredReplicas = 1
-	}
-	if value.HardConcurrency <= 0 {
-		value.HardConcurrency = value.DesiredReplicas
-	}
-	if value.DesiredReplicas > value.HardConcurrency {
-		return fmt.Errorf("desired replicas cannot exceed hard concurrency")
 	}
 	if value.Dispatchable() {
 		if value.StartAt.IsZero() || value.Deadline.IsZero() || !value.Deadline.After(value.StartAt) {
@@ -1464,6 +1635,10 @@ func (s *ClusterService) SavePurchaseGroup(document string) error {
 	if capacity == 0 {
 		return fmt.Errorf("macro task not found")
 	}
+	// Normalize Weight and Priority.
+	if value.Weight <= 0 {
+		value.Weight = 1
+	}
 	if len(value.Buyers) == 0 || len(value.Buyers) > capacity {
 		return fmt.Errorf("buyer count must be between 1 and %d", capacity)
 	}
@@ -1521,13 +1696,29 @@ func (s *ClusterService) StartMacro(macroID string) error {
 	return s.planAndStart(context.Background(), macroID, domain.PhasePunctual, true)
 }
 
-func (s *ClusterService) StartTaskGroup(taskGroupID string) error {
+func (s *ClusterService) StartTaskGroup(taskGroupID string, workerIDsJSON string) error {
 	ctx := context.Background()
 	if err := s.refreshResources(ctx); err != nil {
 		return err
 	}
+	// Parse worker IDs.
+	var workerIDs []string
+	if workerIDsJSON != "" {
+		if err := json.Unmarshal([]byte(workerIDsJSON), &workerIDs); err != nil {
+			return fmt.Errorf("parse worker IDs: %w", err)
+		}
+	}
+	if len(workerIDs) == 0 {
+		return fmt.Errorf("at least one worker must be selected")
+	}
+
+	// Reserve workers before planning so Reconcile only sees allowed workers.
+	s.dispatcher.ReserveWorkers(taskGroupID, workerIDs)
+	log.Printf("[cluster] reserved %d workers for task group %s", len(workerIDs), taskGroupID)
+
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
+		s.dispatcher.ReleaseWorkers()
 		return err
 	}
 	selected := make([]domain.MacroTask, 0)
@@ -1537,6 +1728,7 @@ func (s *ClusterService) StartTaskGroup(taskGroupID string) error {
 		}
 	}
 	if len(selected) == 0 {
+		s.dispatcher.ReleaseWorkers()
 		return fmt.Errorf("task group has no macro tasks")
 	}
 	sort.SliceStable(selected, func(i, j int) bool {
@@ -1555,6 +1747,7 @@ func (s *ClusterService) StartTaskGroup(taskGroupID string) error {
 		started++
 	}
 	if started == 0 {
+		s.dispatcher.ReleaseWorkers()
 		if len(failures) > 0 {
 			return fmt.Errorf("no macro task started: %s", strings.Join(failures, "; "))
 		}

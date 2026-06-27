@@ -35,7 +35,7 @@ func TestClusterServiceValidatesRunnableMacroAndPurchaseShape(t *testing.T) {
 	if err := service.SaveTaskGroup(`{"id":"group","name":"test"}`); err != nil {
 		t.Fatal(err)
 	}
-	macro := domain.MacroTask{ID: "macro", TaskGroupID: "group", ProjectID: 1, ScreenID: 2, SKUID: 3, EventDay: "2026-07-01", EventDayConfirmed: true, OrderCapacity: 2, DesiredReplicas: 2, HardConcurrency: 2}
+	macro := domain.MacroTask{ID: "macro", TaskGroupID: "group", ProjectID: 1, ScreenID: 2, SKUID: 3, EventDay: "2026-07-01", EventDayConfirmed: true, OrderCapacity: 2}
 	if err := service.SaveMacro(document(t, macro)); err == nil {
 		t.Fatal("expected missing execution window to be rejected")
 	}
@@ -102,7 +102,7 @@ func TestClusterServiceEditsAndDeletesPurchaseGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	macro := domain.MacroTask{ID: "macro", TaskGroupID: "group", ProjectID: 1, ScreenID: 2, SKUID: 3, EventDay: "2026-07-01", EventDayConfirmed: true, OrderCapacity: 4, DesiredReplicas: 1, HardConcurrency: 1, StartAt: now.Add(time.Minute), Deadline: now.Add(time.Hour)}
+	macro := domain.MacroTask{ID: "macro", TaskGroupID: "group", ProjectID: 1, ScreenID: 2, SKUID: 3, EventDay: "2026-07-01", EventDayConfirmed: true, OrderCapacity: 4, StartAt: now.Add(time.Minute), Deadline: now.Add(time.Hour)}
 	if err := service.SaveMacro(document(t, macro)); err != nil {
 		t.Fatal(err)
 	}
@@ -143,8 +143,23 @@ func TestClusterServiceStartsTaskGroup(t *testing.T) {
 	if err := service.SaveTaskGroup(`{"id":"group","name":"test"}`); err != nil {
 		t.Fatal(err)
 	}
+	// Add a local worker so StartTaskGroup has something to dispatch to.
+	worker := domain.WorkerNode{ID: "w", Name: "test-worker", Type: domain.WorkerTypeLocal, Enabled: true}
+	if err := service.repository.PutWorker(ctx, worker); err != nil {
+		t.Fatal(err)
+	}
+	// Add an account mapped to buyer "a".
+	account := domain.Account{ID: "acct", Enabled: true, Credentials: domain.Credentials{Version: 1}}
+	if err := service.repository.PutAccount(ctx, account, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Map buyer "a" to account "acct".
+	mapping := domain.AccountBuyerMapping{AccountID: "acct", LogicalBuyerID: "a", BuyerID: 1}
+	if err := service.repository.PutBuyerMapping(ctx, mapping); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now()
-	macro := domain.MacroTask{ID: "macro", TaskGroupID: "group", ProjectID: 1, ScreenID: 2, SKUID: 3, EventDay: "2026-07-01", EventDayConfirmed: true, OrderCapacity: 4, DesiredReplicas: 1, HardConcurrency: 1, StartAt: now.Add(time.Minute), Deadline: now.Add(time.Hour)}
+	macro := domain.MacroTask{ID: "macro", TaskGroupID: "group", ProjectID: 1, ScreenID: 2, SKUID: 3, EventDay: "2026-07-01", EventDayConfirmed: true, OrderCapacity: 4, StartAt: now.Add(time.Minute), Deadline: now.Add(time.Hour)}
 	if err := service.SaveMacro(document(t, macro)); err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +167,7 @@ func TestClusterServiceStartsTaskGroup(t *testing.T) {
 	if err := service.SavePurchaseGroup(document(t, group)); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.StartTaskGroup("group"); err != nil {
+	if err := service.StartTaskGroup("group", `["w"]`); err != nil {
 		t.Fatal(err)
 	}
 	intents, err := service.repository.ListIntents(ctx)

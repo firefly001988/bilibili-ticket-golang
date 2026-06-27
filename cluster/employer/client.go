@@ -37,10 +37,11 @@ type workerConn struct {
 
 // WorkerClient manages gRPC connections to workers.
 type WorkerClient struct {
-	mu           sync.Mutex
-	workers      map[string]*workerConn
-	tlsConfigs   map[string]*tls.Config
-	disconnected map[string]bool // true = user manually disconnected, skip auto-reconnect
+	mu              sync.Mutex
+	workers         map[string]*workerConn
+	tlsConfigs      map[string]*tls.Config
+	disconnected    map[string]bool // true = user manually disconnected, skip auto-reconnect
+	onCompletedTask func(workerID string, result domain.ExecutionResult)
 }
 
 func NewWorkerClient() *WorkerClient {
@@ -49,6 +50,15 @@ func NewWorkerClient() *WorkerClient {
 		tlsConfigs:   make(map[string]*tls.Config),
 		disconnected: make(map[string]bool),
 	}
+}
+
+// SetOnCompletedTask registers a callback invoked when a worker pushes a
+// completed task result via the heartbeat stream. The Dispatcher uses this
+// to process completion events immediately without polling.
+func (c *WorkerClient) SetOnCompletedTask(fn func(workerID string, result domain.ExecutionResult)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onCompletedTask = fn
 }
 
 // SetTLS configures mTLS for a worker and closes any existing connection.
@@ -175,6 +185,18 @@ func (c *WorkerClient) startHeartbeat(node domain.WorkerNode, wc *workerConn) {
 			wc.mu.Lock()
 			wc.lastHeartbeat = time.Now()
 			wc.mu.Unlock()
+
+			// If the worker pushed a completed task, process it immediately
+			// without waiting for the next polling cycle.
+			if msg.CompletedTask != nil {
+				result := executionResultFromProto(msg.CompletedTask)
+				c.mu.Lock()
+				handler := c.onCompletedTask
+				c.mu.Unlock()
+				if handler != nil {
+					handler(node.ID, result)
+				}
+			}
 
 			// Echo back as acknowledgement.
 			_ = stream.Send(&pb.HeartbeatMsg{

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
-	response "bilibili-ticket-golang/lib/models/bili/response"
 	"bilibili-ticket-golang/cmd/gui/store/configuration"
+	response "bilibili-ticket-golang/lib/models/bili/response"
 )
 
 func openTestRepository(t *testing.T) *Repository {
@@ -35,7 +35,7 @@ func TestDatabasePermissionsAndCredentialCAS(t *testing.T) {
 	if info.Mode().Perm() != 0600 {
 		t.Fatalf("mode=%o", info.Mode().Perm())
 	}
-	account := domain.Account{ID: "a", Role: domain.RolePrimary, Enabled: true, Credentials: domain.Credentials{Version: 1}}
+	account := domain.Account{ID: "a", Enabled: true, Credentials: domain.Credentials{Version: 1}}
 	if err := r.PutAccount(context.Background(), account, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestLegacyMigrationIsIdempotentAndBlocksUnreviewedMacros(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(macros) != 1 || macros[0].Dispatchable() || !macros[0].NeedsReview || macros[0].DesiredReplicas != 1 {
+	if len(macros) != 1 || macros[0].Dispatchable() || !macros[0].NeedsReview {
 		t.Fatalf("unexpected migration: %#v", macros)
 	}
 	accounts, err := r.ListAccounts(context.Background())

@@ -113,13 +113,14 @@ type LogEntry struct {
 }
 
 type Server struct {
-	config  Config
-	factory BackendFactory
-	store   *SuccessStore
-	mu      sync.Mutex
-	tasks   map[string]*task
-	active  string
-	now     func() time.Time
+	config            Config
+	factory           BackendFactory
+	store             *SuccessStore
+	mu                sync.Mutex
+	tasks             map[string]*task
+	active            string
+	now               func() time.Time
+	completedNotifier func(t *task) // called when a task completes to push result over heartbeat
 }
 
 func NewServer(config Config, factory BackendFactory) (*Server, error) {
@@ -337,6 +338,19 @@ func (ws *workerService) Heartbeat(stream pb.WorkerService_HeartbeatServer) erro
 	s := ws.server
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
+
+	// Register a notifier so complete() can push finished tasks immediately.
+	s.completedNotifier = func(t *task) {
+		msg := &pb.HeartbeatMsg{
+			WorkerId:        s.config.WorkerID,
+			ActiveAttemptId: "",
+			Sequence:        0,
+			Time:            timestamppb.New(s.now()),
+			CompletedTask:   executionResultToProto(t.result),
+		}
+		_ = stream.Send(msg)
+	}
+	defer func() { s.completedNotifier = nil }()
 
 	// Send heartbeats to the master.
 	errCh := make(chan error, 1)
@@ -631,6 +645,12 @@ func (s *Server) complete(t *task, result domain.ExecutionResult) {
 		message += " message=" + result.Message
 	}
 	s.logTask(t, "completed", message, 0, false)
+
+	// Push the result immediately via the heartbeat stream so the
+	// employer can dispatch the next task without waiting for a poll.
+	if s.completedNotifier != nil {
+		s.completedNotifier(t)
+	}
 }
 
 type Status struct {

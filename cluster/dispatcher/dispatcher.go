@@ -66,6 +66,8 @@ type Dispatcher struct {
 	next                uint64
 	onSuccess           func(domain.LogicalOrderIntent, domain.ExecutionResult)
 	stoppedPhases       map[domain.Phase]bool
+	workerReservations  map[string]string // workerID → taskGroupID
+	activeTaskGroup     string            // current active task group ID (only one at a time)
 }
 
 func (d *Dispatcher) SetSuccessHandler(handler func(domain.LogicalOrderIntent, domain.ExecutionResult)) {
@@ -75,7 +77,7 @@ func (d *Dispatcher) SetSuccessHandler(handler func(domain.LogicalOrderIntent, d
 }
 
 func New(client WorkerClient, repository Repository, resolver MappingResolver) *Dispatcher {
-	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), stoppedPhases: make(map[domain.Phase]bool), now: time.Now}
+	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), stoppedPhases: make(map[domain.Phase]bool), workerReservations: make(map[string]string), now: time.Now}
 }
 
 func (d *Dispatcher) SetResources(accounts []domain.Account, workers []domain.WorkerNode) {
@@ -90,6 +92,34 @@ func (d *Dispatcher) SetResources(accounts []domain.Account, workers []domain.Wo
 		nextWorkers[worker.ID] = worker
 	}
 	d.accounts, d.workers = nextAccounts, nextWorkers
+}
+
+// ReserveWorkers locks a set of workers for a task group.  Only the active
+// task group's workers may be picked during Reconcile.  Passing an empty
+// set releases all reservations.
+func (d *Dispatcher) ReserveWorkers(taskGroupID string, workerIDs []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.workerReservations = make(map[string]string, len(workerIDs))
+	for _, id := range workerIDs {
+		d.workerReservations[id] = taskGroupID
+	}
+	d.activeTaskGroup = taskGroupID
+}
+
+// ReleaseWorkers clears the worker reservations.
+func (d *Dispatcher) ReleaseWorkers() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.workerReservations = make(map[string]string)
+	d.activeTaskGroup = ""
+}
+
+// ActiveTaskGroup returns the currently reserved task group ID (empty if none).
+func (d *Dispatcher) ActiveTaskGroup() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.activeTaskGroup
 }
 
 func (d *Dispatcher) MarkWorkerHealthy(workerID string) {
@@ -228,6 +258,19 @@ func (d *Dispatcher) Attempts() []domain.ExecutionAttempt {
 	return result
 }
 
+// Plans returns all currently armed IntentPlans, including their macro
+// metadata so callers can map intents to macros for UI display.
+func (d *Dispatcher) Plans() []IntentPlan {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result := make([]IntentPlan, 0, len(d.plans))
+	for _, plan := range d.plans {
+		result = append(result, *plan)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Intent.CreatedAt.Before(result[j].Intent.CreatedAt) })
+	return result
+}
+
 func (d *Dispatcher) PunctualStopped() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -255,37 +298,29 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 			ordered = append(ordered, plan)
 		}
 	}
-	sort.SliceStable(ordered, func(i, j int) bool {
-		if ordered[i].Macro.Priority == ordered[j].Macro.Priority {
-			return ordered[i].Intent.CreatedAt.Before(ordered[j].Intent.CreatedAt)
-		}
-		return ordered[i].Macro.Priority > ordered[j].Macro.Priority
-	})
 
-	// Calculate max rounds needed for replica distribution.
-	maxRound := 1
-	for _, plan := range ordered {
-		desired := plan.Macro.DesiredReplicas
-		if desired <= 0 {
-			desired = 1
-		}
-		hard := plan.Macro.HardConcurrency
-		if hard <= 0 {
-			hard = desired
-		}
-		if desired > hard {
-			desired = hard
-		}
-		if desired > maxRound {
-			maxRound = desired
-		}
-	}
-
-	// Distribute replicas in round-robin fashion: each round, every intent
-	// gets at most 1 additional replica. This ensures fair resource allocation
-	// across concurrent intents when workers are limited.
-	for round := 1; round <= maxRound; round++ {
-		for _, plan := range ordered {
+	// Proportional distribution via D'Hondt method: each round, pick the
+	// intent with the highest weight/(activeCount+1).  Higher values win;
+	// ties broken by priority (higher first), then creation time (older first).
+	// Weight comes from the PurchaseGroup that generated the intent
+	// (default=1) and determines the relative share of workers.
+	orderedByDeficit := append([]*IntentPlan(nil), ordered...)
+	for {
+		dispatched := false
+		sort.SliceStable(orderedByDeficit, func(i, j int) bool {
+			wi := effectiveWeight(orderedByDeficit[i].Intent)
+			wj := effectiveWeight(orderedByDeficit[j].Intent)
+			di := float64(wi) / float64(d.activeCount(orderedByDeficit[i].Intent.ID)+1)
+			dj := float64(wj) / float64(d.activeCount(orderedByDeficit[j].Intent.ID)+1)
+			if di == dj {
+				if orderedByDeficit[i].Intent.Priority == orderedByDeficit[j].Intent.Priority {
+					return orderedByDeficit[i].Intent.CreatedAt.Before(orderedByDeficit[j].Intent.CreatedAt)
+				}
+				return orderedByDeficit[i].Intent.Priority > orderedByDeficit[j].Intent.Priority
+			}
+			return di > dj
+		})
+		for _, plan := range orderedByDeficit {
 			if d.stoppedPhases[plan.Intent.Phase] {
 				continue
 			}
@@ -299,21 +334,6 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 			if d.conflicted(plan) {
 				continue
 			}
-			desired := plan.Macro.DesiredReplicas
-			if desired <= 0 {
-				desired = 1
-			}
-			hard := plan.Macro.HardConcurrency
-			if hard <= 0 {
-				hard = desired
-			}
-			if desired > hard {
-				desired = hard
-			}
-			currentActive := d.activeCount(plan.Intent.ID)
-			if currentActive >= desired || currentActive >= round {
-				continue
-			}
 			account, worker, ok, err := d.pickResources(ctx, plan)
 			if err != nil {
 				return err
@@ -324,6 +344,11 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 			if err := d.dispatch(ctx, plan, account, worker); err != nil {
 				return err
 			}
+			dispatched = true
+			break // re-sort before next dispatch
+		}
+		if !dispatched {
+			break
 		}
 	}
 	return nil
@@ -485,6 +510,73 @@ func (d *Dispatcher) activeCount(intentID string) int {
 	return count
 }
 
+// effectiveWeight returns the relative weight of an intent, used for
+// proportional allocation via D'Hondt method.  Weight comes from the
+// PurchaseGroup that generated the intent (default=1).
+func effectiveWeight(intent domain.LogicalOrderIntent) int {
+	if intent.Weight > 0 {
+		return intent.Weight
+	}
+	return 1
+}
+
+// ProcessCompletedTask handles a task result pushed by a worker via the
+// bidirectional heartbeat stream.  It updates the attempt, releases
+// resources, and triggers reconciliation immediately instead of waiting
+// for the periodic poll cycle.
+func (d *Dispatcher) ProcessCompletedTask(workerID string, result domain.ExecutionResult) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	attempt, ok := d.attempts[result.AttemptID]
+	if !ok || attempt.value.State.Terminal() {
+		return
+	}
+
+	now := d.now()
+	attempt.value.State, attempt.value.UpdatedAt = result.State, now
+	attempt.value.Result = result
+	attempt.value.Result.Credentials = domain.Credentials{}
+
+	// Persist the update.
+	if d.repository != nil {
+		_ = d.repository.PutAttempt(context.Background(), attempt.value)
+	}
+
+	if !result.State.Terminal() {
+		return
+	}
+
+	delete(d.accountBusy, attempt.value.AccountID)
+	delete(d.workerBusy, attempt.value.WorkerID)
+
+	if result.Credentials.Version > 0 {
+		account := d.accounts[attempt.value.AccountID]
+		oldVersion := account.Credentials.Version
+		if result.Credentials.Version > oldVersion {
+			account.Credentials = result.Credentials
+			d.accounts[account.ID] = account
+			if d.repository != nil {
+				_ = d.repository.PutAccount(context.Background(), account, &oldVersion)
+			}
+		}
+	}
+
+	if result.Success {
+		_ = d.win(context.Background(), attempt, result)
+	} else {
+		d.applyFailure(context.Background(), attempt, result)
+		if d.repository != nil {
+			_ = d.repository.PutAttempt(context.Background(), attempt.value)
+		}
+	}
+
+	// Free resources immediately — trigger reconciliation in a separate
+	// goroutine to avoid deadlock (ProcessCompletedTask holds d.mu, and
+	// Reconcile also acquires d.mu).
+	go d.Reconcile(context.Background())
+}
+
 func (d *Dispatcher) pickResources(ctx context.Context, plan *IntentPlan) (domain.Account, domain.WorkerNode, bool, error) {
 	accounts := make([]domain.Account, 0, len(d.accounts))
 	recoveredAccounts := make([]domain.Account, 0)
@@ -502,9 +594,6 @@ func (d *Dispatcher) pickResources(ctx context.Context, plan *IntentPlan) (domai
 			recoveredAccounts = append(recoveredAccounts, value)
 			continue
 		}
-		if !d.degraded && value.Role == domain.RoleStandby {
-			continue
-		}
 		accounts = append(accounts, value)
 	}
 	for _, value := range d.workers {
@@ -514,19 +603,15 @@ func (d *Dispatcher) pickResources(ctx context.Context, plan *IntentPlan) (domai
 		if _, failed := d.failedWorkers[value.ID]; failed {
 			continue
 		}
-		if !d.degraded && value.Role == domain.RoleStandby {
-			continue
+		// If a task group is active, only allow workers reserved for it.
+		if d.activeTaskGroup != "" {
+			if tg, ok := d.workerReservations[value.ID]; !ok || tg != d.activeTaskGroup {
+				continue
+			}
 		}
 		workers = append(workers, value)
 	}
 	sort.Slice(workers, func(i, j int) bool { return workers[i].ID < workers[j].ID })
-	if len(accounts) == 0 && d.degraded {
-		for _, value := range d.accounts {
-			if value.Enabled && d.accountBusy[value.ID] == "" && !d.quarantinedAccounts[value.ID].After(d.now()) && value.Role == domain.RoleStandby {
-				accounts = append(accounts, value)
-			}
-		}
-	}
 	if len(accounts) == 0 {
 		accounts = append(accounts, recoveredAccounts...)
 	}

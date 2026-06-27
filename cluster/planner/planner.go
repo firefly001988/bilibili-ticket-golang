@@ -48,14 +48,41 @@ func Plan(macro domain.MacroTask, groups []domain.PurchaseGroup, phase domain.Ph
 	}
 	intents := make([]domain.LogicalOrderIntent, 0, len(shapes))
 	for index, buyers := range shapes {
+		// Map shape back to its originating purchase group(s) to
+		// inherit Weight and Priority.  For SmartMerge bins, use the
+		// first group's priority and sum the weights.
+		pg := resolvePurchaseGroup(groups, buyers)
 		id := intentID(macro.ID, phase, index, buyers)
 		intent, err := domain.NewIntent(id, macro, phase, buyers, now)
 		if err != nil {
 			return nil, err
 		}
+		// Inherit Weight/Priority from the purchase group.
+		w, p := 1, pg.Priority
+		if pg.Weight > 0 {
+			w = pg.Weight
+		}
+		intent.Weight, intent.Priority = w, p
 		intents = append(intents, intent)
 	}
 	return intents, nil
+}
+
+// resolvePurchaseGroup maps a set of buyers back to the first matching
+// PurchaseGroup so Weight and Priority can be inherited.
+func resolvePurchaseGroup(groups []domain.PurchaseGroup, buyers []domain.Buyer) domain.PurchaseGroup {
+	buyerSet := make(map[string]bool, len(buyers))
+	for _, b := range buyers {
+		buyerSet[b.LogicalID] = true
+	}
+	for _, g := range groups {
+		for _, b := range g.Buyers {
+			if buyerSet[b.LogicalID] {
+				return g
+			}
+		}
+	}
+	return domain.PurchaseGroup{Weight: 1}
 }
 
 func stableGroups(groups []domain.PurchaseGroup) []domain.PurchaseGroup {

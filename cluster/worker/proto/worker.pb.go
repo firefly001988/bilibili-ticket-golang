@@ -7,12 +7,13 @@
 package proto
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -1457,6 +1458,7 @@ type HeartbeatMsg struct {
 	ActiveAttemptId string                 `protobuf:"bytes,2,opt,name=active_attempt_id,json=activeAttemptId,proto3" json:"active_attempt_id,omitempty"`
 	Sequence        int64                  `protobuf:"varint,3,opt,name=sequence,proto3" json:"sequence,omitempty"`
 	Time            *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=time,proto3" json:"time,omitempty"`
+	CompletedTask   *ExecutionResult       `protobuf:"bytes,5,opt,name=completed_task,json=completedTask,proto3" json:"completed_task,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1515,6 +1517,13 @@ func (x *HeartbeatMsg) GetSequence() int64 {
 func (x *HeartbeatMsg) GetTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.Time
+	}
+	return nil
+}
+
+func (x *HeartbeatMsg) GetCompletedTask() *ExecutionResult {
+	if x != nil {
+		return x.CompletedTask
 	}
 	return nil
 }

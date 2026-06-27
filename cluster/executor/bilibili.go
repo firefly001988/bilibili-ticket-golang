@@ -78,6 +78,9 @@ func NewBilibiliBackendWithSolver(credentials domain.Credentials, solver biliuti
 	if err != nil {
 		return nil, err
 	}
+	// Workers MUST NOT call CheckAndUpdateCookie().  Credential rotation is
+	// an employer-side concern — doing it on the worker would cause race
+	// conditions when multiple workers share the same account.
 	client.SetRefreshToken(credentials.RefreshToken)
 	if solver != nil {
 		client.SetCaptchaSolver(solver)

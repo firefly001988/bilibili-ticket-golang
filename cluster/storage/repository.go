@@ -15,7 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 type Repository struct {
 	db   *sql.DB
@@ -59,7 +59,7 @@ func (r *Repository) init(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, role TEXT NOT NULL, enabled INTEGER NOT NULL, credential_version INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS logical_buyers (id TEXT PRIMARY KEY, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS account_buyer_mappings (account_id TEXT NOT NULL, logical_buyer_id TEXT NOT NULL, buyer_id INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(account_id, logical_buyer_id), FOREIGN KEY(account_id) REFERENCES accounts(id))`,
-		`CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'remote', role TEXT NOT NULL, enabled INTEGER NOT NULL, payload BLOB NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'remote', role TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS worker_keys (worker_id TEXT PRIMARY KEY, control_key BLOB NOT NULL, FOREIGN KEY(worker_id) REFERENCES workers(id))`,
 		`CREATE TABLE IF NOT EXISTS leases (id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, account_id TEXT NOT NULL UNIQUE, worker_id TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS buyer_day_occupancy (buyer_id TEXT NOT NULL, event_day TEXT NOT NULL, intent_id TEXT NOT NULL, PRIMARY KEY(buyer_id, event_day))`,
@@ -92,6 +92,9 @@ func (r *Repository) init(ctx context.Context) error {
 			return err
 		}
 	}
+	// V2→V3: make role column have a default (already handled by new
+	// CREATE TABLE for fresh DBs; existing DBs keep whatever value is
+	// already there — the column is no longer used in code).
 	if _, err = tx.ExecContext(ctx, `INSERT INTO schema_meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, fmt.Sprint(schemaVersion)); err != nil {
 		return err
 	}
@@ -275,7 +278,7 @@ func (r *Repository) PutWorker(ctx context.Context, value domain.WorkerNode) err
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(ctx, `INSERT INTO workers(id,type,role,enabled,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET type=excluded.type,role=excluded.role,enabled=excluded.enabled,payload=excluded.payload`, value.ID, value.Type, value.Role, value.Enabled, b)
+	_, err = r.db.ExecContext(ctx, `INSERT INTO workers(id,type,role,enabled,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET type=excluded.type,enabled=excluded.enabled,payload=excluded.payload`, value.ID, value.Type, "", value.Enabled, b)
 	return err
 }
 
@@ -345,10 +348,10 @@ func (r *Repository) PutAccount(ctx context.Context, value domain.Account, expec
 		return err
 	}
 	if expectedVersion == nil {
-		_, err = r.db.ExecContext(ctx, `INSERT INTO accounts(id,role,enabled,credential_version,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role,enabled=excluded.enabled,credential_version=excluded.credential_version,payload=excluded.payload`, value.ID, value.Role, value.Enabled, value.Credentials.Version, b)
+		_, err = r.db.ExecContext(ctx, `INSERT INTO accounts(id,role,enabled,credential_version,payload) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role,enabled=excluded.enabled,credential_version=excluded.credential_version,payload=excluded.payload`, value.ID, "", value.Enabled, value.Credentials.Version, b)
 		return err
 	}
-	result, err := r.db.ExecContext(ctx, `UPDATE accounts SET role=?,enabled=?,credential_version=?,payload=? WHERE id=? AND credential_version=?`, value.Role, value.Enabled, value.Credentials.Version, b, value.ID, *expectedVersion)
+	result, err := r.db.ExecContext(ctx, `UPDATE accounts SET role=?,enabled=?,credential_version=?,payload=? WHERE id=? AND credential_version=?`, "", value.Enabled, value.Credentials.Version, b, value.ID, *expectedVersion)
 	if err != nil {
 		return err
 	}

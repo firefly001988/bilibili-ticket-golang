@@ -185,6 +185,7 @@ message HeartbeatMsg {
   string active_attempt_id = 2;
   int64 sequence = 3;
   google.protobuf.Timestamp time = 4;
+  ExecutionResult completed_task = 5;  // non-nil when a task just completed
 }
 
 // =============================================================================

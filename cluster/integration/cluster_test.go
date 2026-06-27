@@ -102,10 +102,10 @@ func TestEmployerWorkerPlanningDispatchAndSuccessCommit(t *testing.T) {
 	defer cleanup()
 
 	client := employer.NewWorkerClient()
-	node := domain.WorkerNode{ID: "w", Address: address, Role: domain.RolePrimary, Enabled: true, TLSServerName: "localhost"}
+	node := domain.WorkerNode{ID: "w", Address: address, Enabled: true, TLSServerName: "localhost"}
 	client.SetTLS(node.ID, tlsCfg)
 
-	account := domain.Account{ID: "a", Role: domain.RolePrimary, Enabled: true, Credentials: domain.Credentials{Version: 1}}
+	account := domain.Account{ID: "a", Enabled: true, Credentials: domain.Credentials{Version: 1}}
 	if err := repository.PutAccount(ctx, account, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestEmployerWorkerPlanningDispatchAndSuccessCommit(t *testing.T) {
 	if err := repository.PutTaskGroup(ctx, group); err != nil {
 		t.Fatal(err)
 	}
-	macro := domain.MacroTask{ID: "m", TaskGroupID: group.ID, ProjectID: 1, ScreenID: 2, SKUID: 3, EventDay: "2026-07-01", EventDayConfirmed: true, OrderCapacity: 4, DesiredReplicas: 1, HardConcurrency: 1, Deadline: time.Now().Add(time.Minute)}
+	macro := domain.MacroTask{ID: "m", TaskGroupID: group.ID, ProjectID: 1, ScreenID: 2, SKUID: 3, EventDay: "2026-07-01", EventDayConfirmed: true, OrderCapacity: 4, Deadline: time.Now().Add(time.Minute)}
 	if err := repository.PutMacroTask(ctx, macro); err != nil {
 		t.Fatal(err)
 	}

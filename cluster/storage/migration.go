@@ -46,9 +46,9 @@ func (r *Repository) MigrateLegacy(ctx context.Context, legacy *configuration.Da
 	_, hasSession := cookies["SESSDATA"]
 	_, hasCSRF := cookies["bili_jct"]
 	if hasSession && hasCSRF {
-		account := domain.Account{ID: "migrated-account", Name: "Migrated account", Role: domain.RolePrimary, Enabled: true, Credentials: domain.Credentials{Cookies: cookies, CookieJar: cookieJar, RefreshToken: legacy.RefreshToken, Version: 1}}
+		account := domain.Account{ID: "migrated-account", Name: "Migrated account", Enabled: true, Credentials: domain.Credentials{Cookies: cookies, CookieJar: cookieJar, RefreshToken: legacy.RefreshToken, Version: 1}}
 		accountPayload, _ := json.Marshal(account)
-		if _, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,role,enabled,credential_version,payload) VALUES(?,?,?,?,?)`, account.ID, account.Role, account.Enabled, account.Credentials.Version, accountPayload); err != nil {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,role,enabled,credential_version,payload) VALUES(?,?,?,?,?)`, account.ID, "", account.Enabled, account.Credentials.Version, accountPayload); err != nil {
 			return err
 		}
 	}
@@ -60,7 +60,7 @@ func (r *Repository) MigrateLegacy(ctx context.Context, legacy *configuration.Da
 		key := fmt.Sprintf("%d/%d/%d/%d/%d", entry.ProjectID, entry.ScreenID, entry.SkuID, entry.Start, entry.Expire)
 		macroID := stableID("macro", key)
 		if _, ok := macros[macroID]; !ok {
-			macro := domain.MacroTask{ID: macroID, TaskGroupID: taskGroup.ID, ProjectID: entry.ProjectID, ScreenID: entry.ScreenID, SKUID: entry.SkuID, NeedsReview: true, SmartMerge: false, OrderCapacity: 4, CapacitySource: domain.CapacityDefault, Priority: 0, DesiredReplicas: 1, HardConcurrency: 1, StartAt: time.Unix(entry.Start, 0), Deadline: time.Unix(entry.Expire, 0)}
+			macro := domain.MacroTask{ID: macroID, TaskGroupID: taskGroup.ID, ProjectID: entry.ProjectID, ScreenID: entry.ScreenID, SKUID: entry.SkuID, NeedsReview: true, SmartMerge: false, OrderCapacity: 4, CapacitySource: domain.CapacityDefault, Priority: 0, StartAt: time.Unix(entry.Start, 0), Deadline: time.Unix(entry.Expire, 0)}
 			macros[macroID] = macro
 			payload, _ := json.Marshal(macro)
 			if _, err = tx.ExecContext(ctx, `INSERT INTO macro_tasks(id,task_group_id,priority,needs_review,payload) VALUES(?,?,?,?,?)`, macro.ID, macro.TaskGroupID, macro.Priority, true, payload); err != nil {

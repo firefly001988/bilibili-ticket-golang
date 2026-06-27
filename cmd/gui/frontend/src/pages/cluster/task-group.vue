@@ -3,19 +3,50 @@ import { ref, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
-import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/clusterservice'
+import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup, StopMacro, StartTaskGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/clusterservice'
 import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
 
 const route = useRoute(); const { t } = useI18n(); const messages = useMessagesStore()
 
-interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; eventDayConfirmed: boolean; needsReview: boolean; orderCapacity: number; desiredReplicas: number; hardConcurrency: number; startAt: string; deadline: string; phase?: string; purchaseGroups?: any[] }
+interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; eventDayConfirmed: boolean; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; phase?: string; purchaseGroups?: any[] }
+interface AttemptBrief { id: string; intentId: string; accountId: string; workerId: string; state: string; orderId?: string }
+interface IntentBrief { id: string; macroTaskId: string; phase: string; weight: number; priority: number; buyerCount: number; succeeded: boolean; terminal: boolean; armed: boolean; activeCount: number; deficit: number; failureReason?: string }
 
-const group = ref<any>(null); const macros = ref<MacroSummary[]>([]); const loading = ref(true)
+const group = ref<any>(null); const macros = ref<MacroSummary[]>([]); const attempts = ref<AttemptBrief[]>([]); const intents = ref<IntentBrief[]>([]); const loading = ref(true)
+const dispatching = ref<Record<string, boolean>>({}); const dispatchingAll = ref(false)
+// Worker selection for start
+const showWorkerSelectDialog = ref(false)
+const workerList = ref<{ id: string; name: string; address: string; type: string; healthy: boolean }[]>([])
+const selectedWorkerIds = ref<string[]>([])
 const lookupProjectId = ref(''); const lookupLoading = ref(false); const projectInfo = ref<any>(null); const tickets = ref<any[]>([])
 const selectedScreenId = ref(0); const selectedSkuId = ref(0); const addingMacro = ref(false); const showSkuList = ref(false)
-const deletingMacro = ref<Record<string, boolean>>({}); const confirmingMacro = ref<Record<string, boolean>>({})
+const deletingMacro = ref<Record<string, boolean>>({})
 const filterName = ref('')
 const filteredTickets = computed(() => { const kw = filterName.value.trim().toLowerCase(); if (!kw) return tickets.value; return tickets.value.filter((t: any) => (t.name || '').toLowerCase().includes(kw) || (t.desc || '').toLowerCase().includes(kw) || String(t.skuId).includes(kw)) })
+
+// Add macro confirmation dialog
+const showAddConfirmDialog = ref(false)
+const addingMacroInfo = ref<{ projectName: string; eventDay: string; screenName: string; skuName: string; price: number; buyLimit: number; saleStart: string; saleEnd: string; isRealName: boolean } | null>(null)
+
+const eventDayHumanized = computed(() => {
+    const raw = addingMacroInfo.value?.eventDay
+    if (!raw) return { prefix: '', day: '—', weekPrefix: '', weekDay: '' }
+    const iso = raw.slice(0, 10)
+    const parts = iso.split('-')
+    if (parts.length >= 3) {
+        const y = parseInt(parts[0]), m = parseInt(parts[1]), d = parseInt(parts[2])
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+            const date = new Date(y, m - 1, d)
+            return {
+                prefix: `${y}-${String(m).padStart(2, '0')}-`,
+                day: String(d).padStart(2, '0'),
+                weekPrefix: t('taskGroup.weekPrefix'),
+                weekDay: t(`taskGroup.weekDay_${date.getDay()}`),
+            }
+        }
+    }
+    return { prefix: '', day: raw, weekPrefix: '', weekDay: '' }
+})
 
 // Group tickets by screen for nested list display
 const filteredScreens = computed(() => {
@@ -32,6 +63,8 @@ const expandedMacro = ref(0); const allBuyers = ref<Array<{ logicalId: string; n
 const selectedPgBuyerIds = ref<string[]>([]); const savedPgBuyerIds = ref(new Map<string, string[]>()); const savingPg = ref(false); const deletingPg = ref<Record<string, boolean>>({})
 const editingPgId = ref(''); const editingPgMacroId = ref('')
 const allowSplit = ref(false)
+const pgWeight = ref(1)
+const pgPriority = ref(0)
 
 // Remember the selection for the currently expanded macro so we can restore it later.
 let lastExpandedMacroId = ''
@@ -62,14 +95,28 @@ function onBuyerSelectionChange(vals: string[]) {
     }
 }
 
-async function loadAll(id: string) { loading.value = true; group.value = null; macros.value = []; try { const snap = await Snapshot(); group.value = ((snap.taskGroups || []) as any[]).find(g => g.id === id) || null; macros.value = ((snap.macros || []) as MacroSummary[]).filter(m => m.taskGroupId === id); if (allBuyers.value.length === 0) { allBuyers.value = ((snap.buyers || []) as any[]).map((b: any) => ({ logicalId: b.logicalId, name: b.name || '', idCard: b.idCard || '', tel: b.tel || '' })) } } catch { } loading.value = false }
+async function loadAll(id: string) { loading.value = true; group.value = null; macros.value = []; intents.value = []; attempts.value = []; try { const snap = await Snapshot(); group.value = ((snap.taskGroups || []) as any[]).find(g => g.id === id) || null; macros.value = ((snap.macros || []) as MacroSummary[]).filter(m => m.taskGroupId === id); intents.value = ((snap.intents || []) as IntentBrief[]).filter(i => macros.value.some(m => m.id === i.macroTaskId)); attempts.value = ((snap.attempts || []) as AttemptBrief[]); if (allBuyers.value.length === 0) { allBuyers.value = ((snap.buyers || []) as any[]).map((b: any) => ({ logicalId: b.logicalId, name: b.name || '', idCard: b.idCard || '', tel: b.tel || '' })) } } catch { } loading.value = false }
 watch(() => route.params.id, (newId) => { if (newId) loadAll(newId as string) }, { immediate: true })
 
 async function lookupProject() { const pid = lookupProjectId.value.trim(); if (!pid) { messages.add({ text: t('taskGroup.projectIdRequired'), color: 'warning' }); return } lookupLoading.value = true; projectInfo.value = null; tickets.value = []; selectedScreenId.value = 0; selectedSkuId.value = 0; try { const [info, tks] = await Promise.all([GetProjectInformationNew(pid), GetTicketSkuIDsByProjectIDNew(pid)]); if (!info) messages.add({ text: t('taskGroup.projectNotFound'), color: 'warning' }); else { projectInfo.value = info; tickets.value = tks || [] } } catch (e: any) { messages.add({ text: t('taskGroup.lookupFailed', { error: String(e) }), color: 'error' }) } lookupLoading.value = false }
 
-async function addMacro() { if (!projectInfo.value || !selectedScreenId.value || !selectedSkuId.value || !group.value) return; addingMacro.value = true; const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value); try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value.ProjectID), projectName: projectInfo.value.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: projectInfo.value.StartTime || '', eventDayConfirmed: false, needsReview: projectInfo.value.IsForceRealName || false, orderCapacity: ticket?.buyLimit || 1, desiredReplicas: 1, hardConcurrency: 1, startAt: ticket?.saleStat?.start || '', deadline: ticket?.saleStat?.end || '' })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; await loadAll(group.value.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) } addingMacro.value = false }
+async function addMacro() { if (!projectInfo.value || !selectedScreenId.value || !selectedSkuId.value || !group.value) return; const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value); addingMacroInfo.value = { projectName: projectInfo.value.ProjectName || '', eventDay: projectInfo.value.StartTime || '', screenName: ticket?.name || '', skuName: ticket?.desc || '', price: ((ticket?.price || 0) / 100), buyLimit: ticket?.buyLimit || 1, saleStart: ticket?.saleStat?.start || '', saleEnd: ticket?.saleStat?.end || '', isRealName: projectInfo.value.IsForceRealName || false }; showAddConfirmDialog.value = true }
 
-async function confirmEventDay(m: MacroSummary) { const newVal = !m.eventDayConfirmed; confirmingMacro.value[m.id] = true; try { await SaveMacro(JSON.stringify({ id: m.id, taskGroupId: m.taskGroupId, projectId: m.projectId, projectName: m.projectName || '', screenId: m.screenId, screenName: m.screenName || '', skuId: m.skuId, skuName: m.skuName || '', eventDay: m.eventDay || '', eventDayConfirmed: newVal, needsReview: m.needsReview || false, orderCapacity: m.orderCapacity || 1, desiredReplicas: m.desiredReplicas || 1, hardConcurrency: m.hardConcurrency || 1, startAt: m.startAt || '', deadline: m.deadline || '' })); m.eventDayConfirmed = newVal } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) } confirmingMacro.value[m.id] = false }
+async function confirmAddMacro() {
+    if (!addingMacroInfo.value || !group.value) return
+    addingMacro.value = true
+    showAddConfirmDialog.value = false
+    const info = addingMacroInfo.value
+    const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value)
+    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: projectInfo.value!.IsForceRealName || false, orderCapacity: ticket?.buyLimit || 1, startAt: ticket?.saleStat?.start || '', deadline: ticket?.saleStat?.end || '' })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
+    addingMacro.value = false
+    addingMacroInfo.value = null
+}
+
+function cancelAddMacro() {
+    showAddConfirmDialog.value = false
+    addingMacroInfo.value = null
+}
 
 async function removeMacro(m: MacroSummary) { deletingMacro.value[m.id] = true; try { await DeleteMacro(m.id); await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroDeleted'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroDeleteFailed', { error: String(e) }), color: 'error' }) } deletingMacro.value[m.id] = false }
 
@@ -79,9 +126,11 @@ async function savePurchaseGroup(m: MacroSummary) {
     savingPg.value = true
     try {
         const buyers = selectedPgBuyerIds.value.map(id => { const b = allBuyers.value.find(x => x.logicalId === id)!; return { logicalId: id, name: b.name, idCard: b.idCard, tel: b.tel } })
-        await SavePurchaseGroup(JSON.stringify({ id: isEdit ? editingPgId.value : '', macroTaskId: m.id, buyers, allowSplit: allowSplit.value }))
+        await SavePurchaseGroup(JSON.stringify({ id: isEdit ? editingPgId.value : '', macroTaskId: m.id, buyers, allowSplit: allowSplit.value, weight: pgWeight.value || 1, priority: pgPriority.value || 0 }))
         editingPgId.value = ''; editingPgMacroId.value = ''
         allowSplit.value = false
+        pgWeight.value = 1
+        pgPriority.value = 0
         const restored = isEdit ? [...(savedPgBuyerIds.value.get(m.id) || [])] : []
         savedPgBuyerIds.value.set(m.id, [])
         selectedPgBuyerIds.value = restored
@@ -98,6 +147,8 @@ function openEditPg(macroId: string, pg: any) {
     editingPgId.value = pg.id; editingPgMacroId.value = macroId
     selectedPgBuyerIds.value = (pg.buyers || []).map((b: any) => b.logicalId)
     allowSplit.value = pg.allowSplit || false
+    pgWeight.value = pg.weight || 1
+    pgPriority.value = pg.priority || 0
 }
 
 function cancelEditPg() {
@@ -106,6 +157,8 @@ function cancelEditPg() {
     selectedPgBuyerIds.value = macroId ? [...(savedPgBuyerIds.value.get(macroId) || [])] : []
     editingPgId.value = ''; editingPgMacroId.value = ''
     allowSplit.value = false
+    pgWeight.value = 1
+    pgPriority.value = 0
 }
 
 async function removePurchaseGroup(macroId: string, pgId: string) {
@@ -123,6 +176,67 @@ function buyerByLogicalId(id: string) { return allBuyers.value.find(b => b.logic
 async function loadBuyersOnce() { if (allBuyers.value.length > 0) return; try { const snap = await Snapshot(); allBuyers.value = ((snap.buyers || []) as any[]).map((b: any) => ({ logicalId: b.logicalId, name: b.name || '', idCard: b.idCard || '', tel: b.tel || '' })) } catch { } }
 
 function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRandomValues(arr); return prefix + '-' + Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('') }
+
+// ── Dispatch ─────────────────────────────────────────────────
+const hasIntent = (m: MacroSummary) => m.phase === 'punctual' || m.phase === 'reflow'
+const isRunning = (m: MacroSummary) => (dispatching.value[m.id] || hasIntent(m))
+
+function dispatchStats(m: MacroSummary) {
+    const macroIntents = intents.value.filter(i => i.macroTaskId === m.id && i.armed && !i.terminal && !i.succeeded)
+    const running = macroIntents.reduce((sum, i) => sum + (i.activeCount || 0), 0)
+    const deficit = macroIntents.reduce((sum, i) => sum + (i.deficit || 0), 0)
+    const succeeded = intents.value.filter(i => i.macroTaskId === m.id && i.succeeded).length
+    const failed = intents.value.filter(i => i.macroTaskId === m.id && i.terminal && !i.succeeded).length
+    return { running, deficit, succeeded, failed, total: macroIntents.length, intents: macroIntents }
+}
+
+
+async function startAllMacros() {
+    if (!group.value) return
+    workerList.value = ((await Snapshot()).workers || []) as any[]
+    if (workerList.value.length === 0) {
+        messages.add({ text: t('taskGroup.noWorkersAvailable'), color: 'warning' })
+        return
+    }
+    selectedWorkerIds.value = workerList.value.filter(w => w.healthy).map(w => w.id)
+    showWorkerSelectDialog.value = true
+}
+
+async function confirmStartTaskGroup() {
+    if (!group.value || selectedWorkerIds.value.length === 0) return
+    showWorkerSelectDialog.value = false
+    dispatchingAll.value = true
+    try {
+        await StartTaskGroup(group.value.id, JSON.stringify(selectedWorkerIds.value))
+        await loadAll(group.value.id); messages.add({ text: t('taskGroup.allStarted'), color: 'success' })
+    }
+    catch (e: any) { messages.add({ text: t('taskGroup.allStartFailed', { error: String(e) }), color: 'error' }) }
+    dispatchingAll.value = false
+}
+
+async function stopAllMacros() {
+    if (!group.value) return
+    dispatchingAll.value = true
+    try {
+        for (const m of dispatchableMacros.value) { await StopMacro(m.id).catch(() => { }) }
+        await loadAll(group.value.id); messages.add({ text: t('taskGroup.allStopped'), color: 'info' })
+    }
+    catch (e: any) { messages.add({ text: t('taskGroup.allStopFailed', { error: String(e) }), color: 'error' }) }
+    dispatchingAll.value = false
+}
+
+const dispatchableMacros = computed(() => macros.value.filter(m => m.purchaseGroups && m.purchaseGroups.length > 0))
+const anyRunning = computed(() => dispatchableMacros.value.some(m => hasIntent(m)))
+const groupStats = computed(() => {
+    const groupIntents = intents.value.filter(i => i.armed && !i.succeeded)
+    return {
+        total: groupIntents.length,
+        deficit: groupIntents.reduce((sum, i) => sum + (i.deficit || 0), 0),
+        running: groupIntents.reduce((sum, i) => sum + (i.activeCount || 0), 0),
+        succeeded: intents.value.filter(i => i.succeeded).length,
+        failed: intents.value.filter(i => i.terminal && !i.succeeded).length,
+    }
+})
 </script>
 
 <template>
@@ -132,6 +246,36 @@ function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRan
         <div v-else-if="group">
             <h1>{{ group.name }}</h1>
             <v-divider class="mt-2 mb-4" thickness="3" />
+
+            <!-- Dispatch bar -->
+            <v-card v-if="macros.length > 0" class="mb-4" elevation="2" color="surface-variant">
+                <v-card-text class="py-2 px-4">
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                        <span class="text-subtitle-2">{{ t('taskGroup.dispatch') }}</span>
+                        <v-chip v-if="groupStats.total > 0" size="small" variant="tonal" color="grey">{{
+                            t('taskGroup.intents', { count: groupStats.total })
+                            }}</v-chip>
+                        <v-chip v-if="groupStats.deficit > 0" size="small" variant="tonal" color="warning">{{
+                            t('taskGroup.queued', { count: groupStats.deficit }) }}</v-chip>
+                        <v-chip v-if="groupStats.running > 0" size="small" color="info" variant="tonal">{{
+                            t('taskGroup.running', { count: groupStats.running }) }}</v-chip>
+                        <v-chip v-if="groupStats.succeeded > 0" size="small" color="success" variant="tonal">{{
+                            t('taskGroup.succeeded', { count: groupStats.succeeded }) }}</v-chip>
+                        <v-chip v-if="groupStats.failed > 0" size="small" color="error" variant="tonal">{{
+                            t('taskGroup.failed', { count: groupStats.failed }) }}</v-chip>
+                        <v-spacer />
+                        <v-btn v-if="!anyRunning" prepend-icon="mdi-play-circle-outline" color="success" variant="tonal"
+                            size="small" :loading="dispatchingAll" :disabled="dispatchableMacros.length === 0"
+                            @click="startAllMacros">
+                            {{ t('taskGroup.startAll') }}
+                        </v-btn>
+                        <v-btn v-else prepend-icon="mdi-stop-circle-outline" color="error" variant="tonal" size="small"
+                            :loading="dispatchingAll" @click="stopAllMacros">
+                            {{ t('taskGroup.stopAll') }}
+                        </v-btn>
+                    </div>
+                </v-card-text>
+            </v-card>
 
             <!-- Add Macro -->
             <v-card class="mb-4" elevation="2">
@@ -244,6 +388,12 @@ function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRan
                                                 m.screenId }}</span>
                                         <span class="text-caption text-medium-emphasis text-truncate"
                                             style="min-width:0;flex-shrink:1">{{ m.skuName || m.skuId }}</span>
+                                        <v-chip v-if="hasIntent(m)" size="x-small" variant="tonal"
+                                            :color="m.phase === 'reflow' ? 'warning' : 'info'"
+                                            class="ml-1 flex-shrink-0">
+                                            {{ m.phase === 'reflow' ? t('taskGroup.phaseReflow') :
+                                                t('taskGroup.phaseRunning') }}
+                                        </v-chip>
                                     </div>
                                     <div class="text-caption text-medium-emphasis text-truncate mt-2">{{
                                         t('taskGroup.eventDay') }}: {{
@@ -252,21 +402,55 @@ function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRan
                                         t('taskGroup.saleTime') }}: {{ m.startAt || '—' }} ~ {{ m.deadline || '—' }}
                                     </div>
                                 </div>
-                                <div>
-                                    <div class="text-caption ml-auto mr-2 d-flex align-center flex-shrink-0"
-                                        style="gap:2px;cursor:pointer;white-space:nowrap"
-                                        @click.stop="confirmEventDay(m)">
-                                        <v-checkbox-btn :model-value="m.eventDayConfirmed" color="success"
-                                            density="compact" :loading="confirmingMacro[m.id]" hide-details
-                                            @click.stop="confirmEventDay(m)" />
-                                        {{ t('taskGroup.confirmEventDay') }}
-                                    </div>
-                                </div>
-                                <template v-slot:actions><v-btn icon="mdi-delete" size="medium" variant="text"
-                                        color="error" :loading="deletingMacro[m.id]"
-                                        @click.stop="removeMacro(m)" /></template>
+                                <template v-slot:actions>
+                                    <v-btn icon="mdi-delete" size="medium" variant="text" color="error"
+                                        :loading="deletingMacro[m.id]" @click.stop="removeMacro(m)" />
+                                </template>
                             </v-expansion-panel-title>
                             <v-expansion-panel-text>
+                                <!-- Dispatch stats -->
+                                <v-card v-if="dispatchStats(m).total > 0" variant="outlined" class="mb-3 pa-2">
+                                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                                        <span class="text-caption text-medium-emphasis">{{ t('taskGroup.dispatchStatus')
+                                        }}:</span>
+                                        <v-chip v-if="dispatchStats(m).deficit > 0" size="x-small" variant="tonal"
+                                            color="warning">{{
+                                                t('taskGroup.queued', { count: dispatchStats(m).deficit }) }}</v-chip>
+                                        <v-chip v-if="dispatchStats(m).running > 0" size="x-small" variant="tonal"
+                                            color="info">{{
+                                                t('taskGroup.running', { count: dispatchStats(m).running }) }}</v-chip>
+                                        <v-chip v-if="dispatchStats(m).succeeded > 0" size="x-small" variant="tonal"
+                                            color="success">{{
+                                                t('taskGroup.succeeded', { count: dispatchStats(m).succeeded }) }}</v-chip>
+                                        <v-chip v-if="dispatchStats(m).failed > 0" size="x-small" variant="tonal"
+                                            color="error">{{
+                                                t('taskGroup.failed', { count: dispatchStats(m).failed }) }}</v-chip>
+                                        <span v-if="dispatchStats(m).deficit === 0 && dispatchStats(m).running === 0"
+                                            class="text-caption text-medium-emphasis">—</span>
+                                    </div>
+                                    <!-- Intent list -->
+                                    <v-list v-if="dispatchStats(m).intents.length > 0" density="compact"
+                                        class="py-0 mt-1">
+                                        <v-list-item v-for="i in dispatchStats(m).intents" :key="i.id" class="px-2"
+                                            :density="'compact'">
+                                            <template #title>
+                                                <span class="text-caption">{{ i.id.slice(0, 12) }}…</span>
+                                                <v-chip size="x-small" variant="outlined" class="ml-1" color="info">×{{
+                                                    i.weight }}</v-chip>
+                                                <v-chip v-if="i.priority !== 0" size="x-small" variant="outlined"
+                                                    class="ml-1" :color="i.priority > 0 ? 'success' : 'warning'">P{{
+                                                    i.priority }}</v-chip>
+                                            </template>
+                                            <template #append>
+                                                <v-chip size="x-small" variant="tonal"
+                                                    :color="i.deficit > 0 ? 'warning' : i.activeCount > 0 ? 'info' : 'grey'">
+                                                    {{ i.activeCount }}/{{ i.weight }}
+                                                    <span v-if="i.deficit > 0" class="ml-1">(-{{ i.deficit }})</span>
+                                                </v-chip>
+                                            </template>
+                                        </v-list-item>
+                                    </v-list>
+                                </v-card>
                                 <div class="mb-3">
                                     <v-label class="text-caption mb-1">{{ t('taskGroup.purchaseGroups') }} ({{
                                         (m.purchaseGroups || []).length
@@ -283,6 +467,15 @@ function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRan
                                                         <v-chip v-if="pg.allowSplit" color="primary" size="x-small"
                                                             variant="outlined" class="ml-1">{{
                                                                 t('taskGroup.pgAllowSplit') }}</v-chip>
+                                                        <v-chip v-if="(pg.weight || 1) !== 1" size="x-small"
+                                                            variant="outlined" class="ml-1" color="info">
+                                                            ×{{ pg.weight || 1 }}
+                                                        </v-chip>
+                                                        <v-chip v-if="(pg.priority || 0) !== 0" size="x-small"
+                                                            variant="outlined" class="ml-1"
+                                                            :color="(pg.priority || 0) > 0 ? 'success' : 'warning'">
+                                                            P{{ pg.priority || 0 }}
+                                                        </v-chip>
                                                     </template>
                                                     <template #append>
                                                         <v-tooltip :text="t('taskGroup.pgEdit')" location="top">
@@ -321,6 +514,18 @@ function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRan
                                         </v-select>
                                         <v-checkbox-btn v-model="allowSplit" color="primary" density="compact"
                                             :label="t('taskGroup.pgAllowSplitHint')" hide-details class="mb-2" />
+                                        <v-row dense class="mb-2">
+                                            <v-col cols="6">
+                                                <v-text-field v-model="pgWeight" :label="t('taskGroup.pgWeight')"
+                                                    type="number" min="1" variant="outlined" density="compact"
+                                                    hide-details :hint="t('taskGroup.pgWeightHint')" persistent-hint />
+                                            </v-col>
+                                            <v-col cols="6">
+                                                <v-text-field v-model="pgPriority" :label="t('taskGroup.pgPriority')"
+                                                    type="number" variant="outlined" density="compact" hide-details
+                                                    :hint="t('taskGroup.pgPriorityHint')" persistent-hint />
+                                            </v-col>
+                                        </v-row>
                                         <p v-if="allBuyers.length === 0" class="text-caption text-medium-emphasis mb-2">
                                             {{
                                                 t('taskGroup.pgNoBuyers') }}</p>
@@ -344,6 +549,96 @@ function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRan
         </div>
         <v-card v-else class="mt-4 pa-6 text-center" variant="outlined"><v-card-text>{{ t('taskGroup.notFound')
         }}</v-card-text></v-card>
+
+        <!-- ═══ Add Macro Confirmation Dialog ═══ -->
+        <v-dialog v-model="showAddConfirmDialog" max-width="460" persistent>
+            <v-card class="pa-4">
+                <v-card-title>{{ t('taskGroup.addMacroConfirmTitle') }}</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 mb-3">
+                        {{ t('taskGroup.addMacroConfirmHint') }}
+                    </p>
+                    <v-card variant="outlined" class="pa-3 mb-3">
+                        <div class="info-row">
+                            <span class="info-label">{{ t('taskGroup.colProject') }}</span>
+                            <span class="info-value">{{ addingMacroInfo?.projectName || '—' }}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">{{ t('taskGroup.colScreen') }}</span>
+                            <span class="info-value">{{ addingMacroInfo?.screenName || '—' }}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">{{ t('taskGroup.colSku') }}</span>
+                            <span class="info-value">{{ addingMacroInfo?.skuName || '—' }}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">{{ t('taskGroup.eventDay') }}</span>
+                            <span class="info-value">{{ eventDayHumanized.prefix }}<span
+                                    style="color:rgb(var(--v-theme-error));font-weight:700">{{ eventDayHumanized.day
+                                    }}</span>{{
+                                        eventDayHumanized.weekPrefix }}<span
+                                    style="color:rgb(var(--v-theme-error));font-weight:700">{{
+                                        eventDayHumanized.weekDay }}</span></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">{{ t('taskGroup.price') }}</span>
+                            <span class="info-value">¥{{ addingMacroInfo?.price?.toFixed(0) || '—' }}</span>
+                        </div>
+                        <div class="info-row" v-if="addingMacroInfo?.isRealName">
+                            <span class="info-label"></span>
+                            <v-chip color="warning" size="x-small" variant="tonal">{{ t('taskGroup.realName')
+                            }}</v-chip>
+                        </div>
+                    </v-card>
+                    <p class="text-caption text-medium-emphasis">
+                        {{ t('taskGroup.addMacroConfirmNote') }}
+                    </p>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="cancelAddMacro">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="success" :loading="addingMacro" :disabled="!addingMacroInfo?.eventDay"
+                        @click="confirmAddMacro">
+                        {{ t('taskGroup.addMacroConfirmBtn') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+        <!-- ═══ Worker Selection Dialog ═══ -->
+        <v-dialog v-model="showWorkerSelectDialog" max-width="480" persistent>
+            <v-card class="pa-4">
+                <v-card-title>{{ t('taskGroup.selectWorkersTitle') }}</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 text-medium-emphasis mb-3">
+                        {{ t('taskGroup.selectWorkersHint') }}
+                    </p>
+                    <v-select v-model="selectedWorkerIds" :items="workerList" item-title="name" item-value="id"
+                        :label="t('taskGroup.selectedWorkers', { count: selectedWorkerIds.length })" variant="outlined"
+                        multiple chips closable-chips class="mb-3">
+                        <template #item="{ props, item }">
+                            <v-list-item v-bind="props"
+                                :subtitle="`${item.address} ${item.healthy ? '· ' + t('worker.online') : '· ' + t('worker.offline')}`">
+                                <template #append>
+                                    <v-chip :color="item.healthy ? 'success' : 'error'" size="x-small" variant="tonal">
+                                        {{ item.healthy ? t('worker.online') : t('worker.offline') }}
+                                    </v-chip>
+                                </template>
+                            </v-list-item>
+                        </template>
+                    </v-select>
+                    <p class="text-caption text-medium-emphasis">
+                        {{ t('taskGroup.selectWorkersNote') }}
+                    </p>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showWorkerSelectDialog = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="success" :disabled="selectedWorkerIds.length === 0" @click="confirmStartTaskGroup">
+                        {{ t('taskGroup.startAll') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-container>
 </template>
 
@@ -373,5 +668,37 @@ function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRan
 .sku-check-icon--selected {
     opacity: 1;
     transform: scale(1);
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.info-row+.info-row {
+    border-top: 1px solid rgba(var(--v-theme-surface-variant), 0.3);
+}
+
+.info-label {
+    font-size: 0.75rem;
+    color: rgba(var(--v-theme-on-surface), 0.6);
+    white-space: nowrap;
+}
+
+.info-value {
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-align: right;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.info-value--scroll {
+    text-overflow: unset;
+    overflow-x: auto;
 }
 </style>

@@ -24,7 +24,6 @@ interface WorkerSummary {
     name: string
     address: string
     type: string
-    role: string
     enabled: boolean
     healthy: boolean
     activeAttemptId?: string
@@ -45,7 +44,6 @@ const importing = ref(false)
 const showEditDialog = ref(false)
 const editTarget = ref<WorkerSummary | null>(null)
 const editAddress = ref('')
-const editRole = ref('')
 const saving = ref(false)
 
 // Delete dialog
@@ -112,7 +110,6 @@ async function doImport() {
 function openEdit(w: WorkerSummary) {
     editTarget.value = w
     editAddress.value = w.address
-    editRole.value = w.role
     showEditDialog.value = true
 }
 
@@ -130,7 +127,6 @@ async function saveEdit() {
             clientCert: '',
             clientKey: '',
             tlsServerName: '',
-            role: editRole.value || 'primary',
         }))
         showEditDialog.value = false
         await load()
@@ -265,7 +261,6 @@ function confirmAddFromConfig() {
 }
 
 // ── Computed ──────────────────────────────────────────────────
-const roleColor = (role: string) => role === 'primary' ? 'primary' : 'secondary'
 
 const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
 </script>
@@ -273,18 +268,25 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
 <template>
     <v-container>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <h1>{{ t('worker.title') }}</h1>
+            <h1 style="margin: 0;">{{ t('worker.title') }}</h1>
             <v-spacer />
-            <v-btn prepend-icon="mdi-import" variant="tonal" @click="showImportDialog = true">
-                {{ t('worker.importWorker') }}
-            </v-btn>
-            <v-btn prepend-icon="mdi-cog-outline" variant="tonal" color="info" class="ml-2" @click="openGenerateConfig">
-                {{ t('worker.generateConfig') }}
-            </v-btn>
-            <v-btn prepend-icon="mdi-plus-circle-outline" variant="tonal" color="primary" class="ml-2"
-                @click="showAddLocalDialog = true">
-                {{ t('worker.addLocalWorker') }}
-            </v-btn>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+
+                <v-btn prepend-icon="mdi-import" variant="tonal" @click="showImportDialog = true">
+                    {{ t('worker.importWorker') }}
+                </v-btn>
+                <v-btn prepend-icon="mdi-cog-outline" variant="tonal" color="info" class="ml-2"
+                    @click="openGenerateConfig">
+                    {{ t('worker.generateConfig') }}
+                </v-btn>
+                <v-btn prepend-icon="mdi-plus-circle-outline" variant="tonal" color="primary" class="ml-2"
+                    @click="showAddLocalDialog = true">
+                    {{ t('worker.addLocalWorker') }}
+                </v-btn>
+                <v-btn prepend-icon="mdi-refresh" variant="tonal" :loading="loading" class="ml-2" @click="load">
+                    {{ t('common.refresh') }}
+                </v-btn>
+            </div>
         </div>
 
         <v-divider class="mt-2 mb-4" thickness="3" />
@@ -312,7 +314,6 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                     <th class="text-no-wrap">{{ t('worker.colName') }}</th>
                     <th class="text-no-wrap">{{ t('worker.colId') }}</th>
                     <th class="text-no-wrap">{{ t('worker.colAddress') }}</th>
-                    <th class="text-no-wrap">{{ t('worker.colRole') }}</th>
                     <th class="text-no-wrap" style="width:1%;white-space:nowrap">{{ t('worker.colStatus') }}</th>
                     <th class="text-no-wrap" style="width:1%;white-space:nowrap">{{ t('worker.colActions') }}</th>
                 </tr>
@@ -338,15 +339,10 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                     <td style="max-width:200px">
                         <span class="text-caption font-monospace text-truncate d-block">{{ w.address }}</span>
                     </td>
-                    <td>
-                        <v-chip :color="roleColor(w.role)" size="small" variant="tonal">
-                            {{ w.role }}
-                        </v-chip>
-                    </td>
                     <td class="text-no-wrap" style="white-space:nowrap">
                         <v-chip :color="w.healthy ? 'success' : 'error'" size="small" variant="tonal">
                             <v-icon start size="x-small">{{ w.healthy ? 'mdi-check-circle' : 'mdi-close-circle'
-                            }}</v-icon>
+                                }}</v-icon>
                             {{ w.healthy ? t('worker.online') : t('worker.offline') }}
                         </v-chip>
                         <v-chip v-if="w.activeAttemptId" size="x-small" color="orange" variant="tonal" class="ml-1">
@@ -422,10 +418,7 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                         {{ t('worker.editHint', { name: editTarget?.name || editTarget?.id }) }}
                     </p>
                     <v-text-field v-model="editAddress" :label="t('worker.colAddress')"
-                        :placeholder="t('worker.editAddressPlaceholder')" variant="outlined" density="compact"
-                        class="mb-3" />
-                    <v-select v-model="editRole" :label="t('worker.colRole')" variant="outlined" density="compact"
-                        :items="[{ title: 'primary', value: 'primary' }, { title: 'secondary', value: 'secondary' }]" />
+                        :placeholder="t('worker.editAddressPlaceholder')" variant="outlined" density="compact" />
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />

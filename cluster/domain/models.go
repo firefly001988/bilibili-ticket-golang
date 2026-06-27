@@ -108,8 +108,6 @@ type MacroTask struct {
 	OrderCapacity     int            `json:"orderCapacity"`
 	CapacitySource    CapacitySource `json:"capacitySource"`
 	Priority          int            `json:"priority"`
-	DesiredReplicas   int            `json:"desiredReplicas"`
-	HardConcurrency   int            `json:"hardConcurrency"`
 	StartAt           time.Time      `json:"startAt"`
 	Deadline          time.Time      `json:"deadline"`
 }
@@ -130,6 +128,8 @@ type PurchaseGroup struct {
 	MacroTaskID string    `json:"macroTaskId"`
 	Buyers      []Buyer   `json:"buyers"`
 	AllowSplit  bool      `json:"allowSplit"`
+	Weight      int       `json:"weight"`   // number of worker replicas (default=1)
+	Priority    int       `json:"priority"` // intra-macro ordering (higher=first)
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -143,6 +143,8 @@ type LogicalOrderIntent struct {
 	Succeeded     bool          `json:"succeeded"`
 	Armed         bool          `json:"armed"`
 	Terminal      bool          `json:"terminal"`
+	Weight        int           `json:"weight"`   // worker replicas for this intent
+	Priority      int           `json:"priority"` // sort order (higher=first)
 	FailureReason FailureReason `json:"failureReason,omitempty"`
 	CreatedAt     time.Time     `json:"createdAt"`
 }
@@ -209,12 +211,12 @@ type HTTPCookie struct {
 }
 
 type Account struct {
-	ID            string       `json:"id"`
-	Name          string       `json:"name"`
-	Role          ResourceRole `json:"role"`
-	Credentials   Credentials  `json:"credentials"`
-	CooldownUntil time.Time    `json:"cooldownUntil,omitempty"`
-	Enabled       bool         `json:"enabled"`
+	ID            string      `json:"id"`
+	Name          string      `json:"name"`
+	Credentials   Credentials `json:"credentials"`
+	CooldownUntil time.Time   `json:"cooldownUntil,omitempty"`
+	Enabled       bool        `json:"enabled"`
+	VipStatus     int         `json:"vipStatus"` // 0=unknown, 1=VIP
 }
 
 type AccountBuyerMapping struct {
@@ -232,14 +234,13 @@ const (
 )
 
 type WorkerNode struct {
-	ID            string       `json:"id"`
-	Name          string       `json:"name"`
-	Address       string       `json:"address"`
-	Type          WorkerType   `json:"type"`
-	Role          ResourceRole `json:"role"`
-	Enabled       bool         `json:"enabled"`
-	TLSServerName string       `json:"tlsServerName,omitempty"`
-	LastSeen      time.Time    `json:"lastSeen,omitempty"`
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	Address       string     `json:"address"`
+	Type          WorkerType `json:"type"`
+	Enabled       bool       `json:"enabled"`
+	TLSServerName string     `json:"tlsServerName,omitempty"`
+	LastSeen      time.Time  `json:"lastSeen,omitempty"`
 }
 
 // WorkerTLSConfig holds the mTLS material for connecting to a worker.

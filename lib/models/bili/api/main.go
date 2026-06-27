@@ -35,6 +35,7 @@ type GetLoginInfoStruct struct {
 	Name  string `json:"uname,omitempty"`
 	UID   int64  `json:"mid,omitempty"`
 	Face  string `json:"face,omitempty"`
+	IsVip int    `json:"vipStatus,omitempty"` // 0 = not VIP, 1 = VIP
 }
 
 type GetBVUID34Struct struct {

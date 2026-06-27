@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AnnouncementFloatingCard: typeof import('./components/AnnouncementFloatingCard.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     VerifiedOverlay: typeof import('./components/VerifiedOverlay.vue')['default']

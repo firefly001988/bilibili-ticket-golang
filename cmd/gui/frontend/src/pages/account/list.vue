@@ -17,8 +17,8 @@ const messages = useMessagesStore()
 interface AccountSummary {
     id: string
     name: string
-    role: string
     enabled: boolean
+    vipStatus: number
     cooldownUntil?: string
     credentialVersion: number
 }
@@ -29,7 +29,6 @@ const loading = ref(true)
 
 // QR login dialog
 const showLoginDialog = ref(false)
-const loginRole = ref('Primary')
 const loginQR = ref('')
 const loginSessionID = ref('')
 const loginStatusMsg = ref('')
@@ -67,7 +66,7 @@ onUnmounted(() => {
 // ── QR Login ──────────────────────────────────────────────────
 async function startLogin() {
     try {
-        const result = await BeginAccountLogin('', loginRole.value)
+        const result = await BeginAccountLogin('')
         loginQR.value = result.url
         loginSessionID.value = result.sessionId
         loginStatusMsg.value = ''
@@ -170,8 +169,6 @@ function promptDelete(account: AccountSummary) {
 }
 
 // ── Computed ──────────────────────────────────────────────────
-const roleColor = (role: string) => role === 'Primary' ? 'primary' : 'secondary'
-
 const qrExpirySeconds = ref(0)
 
 const loginQRCodeUrl = computed(() => {
@@ -217,7 +214,6 @@ const loginQRCodeUrl = computed(() => {
                 <tr>
                     <th>{{ t('account.colName') }}</th>
                     <th>{{ t('account.colId') }}</th>
-                    <th>{{ t('account.colRole') }}</th>
                     <th>{{ t('account.colStatus') }}</th>
                     <th>{{ t('account.colActions') }}</th>
                 </tr>
@@ -230,13 +226,12 @@ const loginQRCodeUrl = computed(() => {
                     </td>
                     <td class="text-caption">{{ acc.id }}</td>
                     <td>
-                        <v-chip :color="roleColor(acc.role)" size="small" variant="tonal">
-                            {{ acc.role }}
-                        </v-chip>
-                    </td>
-                    <td>
                         <v-chip :color="acc.enabled ? 'success' : 'grey'" size="small" variant="tonal">
                             {{ acc.enabled ? t('account.enabled') : t('account.disabled') }}
+                        </v-chip>
+                        <v-chip v-if="acc.vipStatus === 1" color="pink" size="small" variant="tonal" class="ml-1"
+                            prepend-icon="mdi-crown">
+                            {{ t('account.vip') }}
                         </v-chip>
                         <v-chip v-if="acc.cooldownUntil" color="warning" size="small" variant="tonal" class="ml-1">
                             {{ t('account.cooldown') }}
@@ -257,9 +252,6 @@ const loginQRCodeUrl = computed(() => {
             <v-card class="pa-4">
                 <v-card-title>{{ t('account.addAccountTitle') }}</v-card-title>
                 <v-card-text>
-                    <v-select v-model="loginRole" :items="['Primary', 'Secondary']" :label="t('account.roleLabel')"
-                        variant="outlined" density="compact" class="mb-3" :disabled="loginPolling" />
-
                     <!-- QR code display -->
                     <div v-if="loginQR" class="text-center mt-4">
                         <img :src="loginQRCodeUrl" alt="QR Login" style="max-width:200px" class="elevation-2" />

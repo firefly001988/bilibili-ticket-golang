@@ -395,39 +395,51 @@ const filterAccountItems = computed(() => {
             </thead>
             <tbody>
                 <tr v-for="b in filteredBuyers" :key="b.logicalId"
-                    :class="{ 'bg-primary-lighten-5': selected.has(b.logicalId) }">
+                    :class="{ 'bg-primary-lighten-5': selected.has(b.logicalId) }" style="table-layout:fixed">
                     <td>
                         <v-checkbox-btn :model-value="selected.has(b.logicalId)" @click="toggleSelect(b.logicalId)"
                             density="compact" hide-details />
                     </td>
-                    <td>
-                        <v-icon start size="small" class="mr-1">mdi-account</v-icon>
-                        <strong>{{ b.name || t('buyer.unnamed') }}</strong>
+                    <td style="max-width:180px">
+                        <div class="text-truncate" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
+                            <v-icon start size="small" class="mr-1">mdi-account</v-icon>
+                            <strong>{{ b.name || t('buyer.unnamed') }}</strong>
+                        </div>
                     </td>
-                    <td class="text-caption">
-                        <template v-if="b.type != null">{{ idTypeLabel(b.type) }}</template>
-                        <span v-else class="text-medium-emphasis">—</span>
+                    <td class="text-caption" style="max-width:100px">
+                        <div class="text-truncate">
+                            <template v-if="b.type != null">{{ idTypeLabel(b.type) }}</template>
+                            <span v-else class="text-medium-emphasis">—</span>
+                        </div>
                     </td>
-                    <td class="text-caption font-monospace">
-                        <template v-if="b.idCard">{{ b.idCard }}</template>
-                        <span v-else class="text-medium-emphasis">—</span>
+                    <td class="text-caption font-monospace" style="max-width:180px">
+                        <div class="text-truncate">
+                            <template v-if="b.idCard">{{ b.idCard }}</template>
+                            <span v-else class="text-medium-emphasis">—</span>
+                        </div>
                     </td>
-                    <td class="text-caption">
-                        <template v-if="b.tel">{{ b.tel }}</template>
-                        <span v-else class="text-medium-emphasis">—</span>
+                    <td class="text-caption" style="max-width:140px">
+                        <div class="text-truncate">
+                            <template v-if="b.tel">{{ b.tel }}</template>
+                            <span v-else class="text-medium-emphasis">—</span>
+                        </div>
                     </td>
-                    <td>
-                        <div v-if="b.accounts && b.accounts.length > 0" style="display:flex;gap:4px;flex-wrap:wrap">
-                            <v-chip v-for="acc in b.accounts" :key="acc.accountId" size="x-small" color="primary"
-                                variant="tonal">
+                    <td style="max-width:200px">
+                        <div v-if="b.accounts && b.accounts.length > 0"
+                            style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
+                            <v-chip v-for="(acc, i) in b.accounts.slice(0, 3)" :key="acc.accountId" size="x-small"
+                                color="primary" variant="tonal" class="mr-1">
                                 {{ acc.accountName || acc.uid }}
+                            </v-chip>
+                            <v-chip v-if="b.accounts.length > 3" size="x-small" variant="tonal" class="mr-1">
+                                +{{ b.accounts.length - 3 }}
                             </v-chip>
                         </div>
                         <span v-else class="text-caption text-medium-emphasis">
                             {{ t('buyer.noAccounts') }}
                         </span>
                     </td>
-                    <td>
+                    <td class="text-no-wrap" style="white-space:nowrap">
                         <div style="display:flex;gap:4px">
                             <v-btn icon="mdi-account-plus" size="small" variant="text" :loading="syncing[b.logicalId]"
                                 :title="t('buyer.syncToAccount')" @click="openSync(b)" />

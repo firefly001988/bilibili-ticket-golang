@@ -213,7 +213,6 @@ func (m *LocalWorkerManager) startLocked(ctx context.Context, id, name, listen, 
 		Name:          name,
 		Address:       listen,
 		Type:          domain.WorkerTypeLocal,
-		Role:          domain.RolePrimary,
 		Enabled:       true,
 		TLSServerName: serverName,
 	}

@@ -43,7 +43,6 @@ func NewManager(repository Repository, provisioner Provisioner) *Manager {
 type CredentialDocument struct {
 	ID            string              `json:"id"`
 	Name          string              `json:"name"`
-	Role          domain.ResourceRole `json:"role"`
 	Cookies       map[string]string   `json:"cookies"`
 	CookieJar     []domain.HTTPCookie `json:"cookieJar,omitempty"`
 	RefreshToken  string              `json:"refreshToken"`
@@ -61,10 +60,7 @@ func (m *Manager) Import(ctx context.Context, data []byte) (domain.Account, erro
 	if document.ID == "" {
 		document.ID = randomID("account")
 	}
-	if document.Role == "" {
-		document.Role = domain.RolePrimary
-	}
-	account := domain.Account{ID: document.ID, Name: document.Name, Role: document.Role, Enabled: true, Credentials: domain.Credentials{Cookies: document.Cookies, CookieJar: document.CookieJar, RefreshToken: document.RefreshToken, Version: 1, DeviceProfile: document.DeviceProfile}}
+	account := domain.Account{ID: document.ID, Name: document.Name, Enabled: true, Credentials: domain.Credentials{Cookies: document.Cookies, CookieJar: document.CookieJar, RefreshToken: document.RefreshToken, Version: 1, DeviceProfile: document.DeviceProfile}}
 	if err := m.repository.PutAccount(ctx, account, nil); err != nil {
 		return domain.Account{}, err
 	}

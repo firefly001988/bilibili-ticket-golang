@@ -8,6 +8,7 @@ const routes = [
   { path: '/cluster/worker', component: () => import('@/pages/cluster/worker.vue') },
   { path: '/cluster/task-group/:id', component: () => import('@/pages/cluster/task-group.vue') },
   { path: '/cluster/logs', component: () => import('@/pages/cluster/logs.vue') },
+  { path: '/pay-qr', component: () => import('@/pages/pay-qr.vue') },
 ]
 
 const router = createRouter({
