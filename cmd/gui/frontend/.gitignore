@@ -23,3 +23,4 @@ pnpm-debug.log*
 
 wailsjs/*
 package.json.md5
+bindings
