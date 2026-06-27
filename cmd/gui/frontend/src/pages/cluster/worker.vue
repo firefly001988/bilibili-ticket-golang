@@ -68,6 +68,9 @@ const configHosts = ref('')
 const configResult = ref('')
 const generating = ref(false)
 
+// Quick-add after generating config
+const showConfigAddConfirm = ref(false)
+
 // Connecting state
 const connecting = ref<Record<string, boolean>>({})
 
@@ -250,6 +253,15 @@ function copyConfig() {
     if (!configResult.value) return
     navigator.clipboard.writeText(configResult.value)
     messages.add({ text: t('worker.configCopied'), color: 'success' })
+    showConfigAddConfirm.value = true
+}
+
+function confirmAddFromConfig() {
+    showConfigAddConfirm.value = false
+    showGenerateConfigDialog.value = false
+    importEncodedConfig.value = configResult.value
+    importOverrideAddress.value = ''
+    showImportDialog.value = true
 }
 
 // ── Computed ──────────────────────────────────────────────────
@@ -334,7 +346,7 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                     <td class="text-no-wrap" style="white-space:nowrap">
                         <v-chip :color="w.healthy ? 'success' : 'error'" size="small" variant="tonal">
                             <v-icon start size="x-small">{{ w.healthy ? 'mdi-check-circle' : 'mdi-close-circle'
-                                }}</v-icon>
+                            }}</v-icon>
                             {{ w.healthy ? t('worker.online') : t('worker.offline') }}
                         </v-chip>
                         <v-chip v-if="w.activeAttemptId" size="x-small" color="orange" variant="tonal" class="ml-1">
@@ -498,6 +510,23 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                     <v-btn variant="text" @click="showGenerateConfigDialog = false">{{ t('common.cancel') }}</v-btn>
                     <v-btn color="info" :loading="generating" @click="doGenerateConfig">
                         {{ t('worker.generateConfig') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <!-- ═══ Config add confirmation dialog ═══ -->
+        <v-dialog v-model="showConfigAddConfirm" max-width="420">
+            <v-card class="pa-4">
+                <v-card-title>{{ t('worker.configAddConfirmTitle') }}</v-card-title>
+                <v-card-text>
+                    <p>{{ t('worker.configAddConfirmHint') }}</p>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showConfigAddConfirm = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="primary" @click="confirmAddFromConfig">
+                        {{ t('worker.configAddConfirmBtn') }}
                     </v-btn>
                 </v-card-actions>
             </v-card>

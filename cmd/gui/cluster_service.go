@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -267,10 +268,6 @@ func (s *ClusterService) SetNotifier(notify func(string)) { s.notify = notify }
 
 func (s *ClusterService) SetApp(app *application.App) { s.wailsApp = app }
 
-// isLocalWorkerID returns true for worker IDs managed in-process (starts
-// with "local").
-func isLocalWorkerID(id string) bool { return strings.HasPrefix(id, "local") }
-
 func (s *ClusterService) openPayQRWindow(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
 	if s.wailsApp == nil || result.PaymentURL == "" {
 		return
@@ -381,7 +378,7 @@ func (s *ClusterService) Start(parent context.Context) error {
 
 		// Recover all other local workers persisted in the repository.
 		for _, node := range workers {
-			if node.ID == "local" || !isLocalWorkerID(node.ID) {
+			if node.ID == "local" || node.Type != domain.WorkerTypeLocal {
 				continue
 			}
 			if _, startErr := s.local.AddWorker(ctx, s.client, node.ID, node.Name, node.Address, employer.LocalWorkerOptions{
@@ -1310,8 +1307,15 @@ func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string, overri
 	// Determine the dial address.  Prefer the override supplied by the
 	// employer (the real IP:port of the employee's machine); fall back to
 	// the listen address embedded in the config.
+	// If the override address has no port, keep the port from rc.Listen.
 	address := rc.Listen
 	if overrideAddress != "" {
+		if !strings.Contains(overrideAddress, ":") {
+			// No port given — extract port from rc.Listen and append it.
+			if _, port, portErr := net.SplitHostPort(rc.Listen); portErr == nil {
+				overrideAddress = net.JoinHostPort(overrideAddress, port)
+			}
+		}
 		address = overrideAddress
 	}
 
