@@ -123,6 +123,7 @@ async function removeMacro(m: MacroSummary) { deletingMacro.value[m.id] = true; 
 async function savePurchaseGroup(m: MacroSummary) {
     if (selectedPgBuyerIds.value.length === 0) { messages.add({ text: t('taskGroup.pgSelectBuyer'), color: 'warning' }); return }
     const isEdit = !!editingPgId.value && editingPgMacroId.value === m.id
+    const shouldAutoStart = !isEdit && shouldAutoStartAfterPurchaseGroup(m)
     savingPg.value = true
     try {
         const buyers = selectedPgBuyerIds.value.map(id => { const b = allBuyers.value.find(x => x.logicalId === id)!; return { logicalId: id, name: b.name, idCard: b.idCard, tel: b.tel } })
@@ -136,8 +137,46 @@ async function savePurchaseGroup(m: MacroSummary) {
         selectedPgBuyerIds.value = restored
         await loadAll(group.value!.id)
         messages.add({ text: isEdit ? t('taskGroup.pgUpdated') : t('taskGroup.pgAdded'), color: 'success' })
+        if (shouldAutoStart) {
+            await autoStartTaskGroupForPastSale()
+        }
     } catch (e: any) { messages.add({ text: isEdit ? t('taskGroup.pgUpdateFailed', { error: String(e) }) : t('taskGroup.pgAddFailed', { error: String(e) }), color: 'error' }) }
     savingPg.value = false
+}
+
+function shouldAutoStartAfterPurchaseGroup(m: MacroSummary) {
+    if (!m.eventDayConfirmed || m.needsReview) return false
+    const startAt = Date.parse(m.startAt || '')
+    if (!Number.isFinite(startAt) || Date.now() < startAt) return false
+    const deadline = Date.parse(m.deadline || '')
+    if (Number.isFinite(deadline) && Date.now() > deadline) return false
+    const hasActiveIntent = intents.value.some(i => i.macroTaskId === m.id && i.armed && !i.terminal && !i.succeeded)
+    const hasActiveAttempt = attempts.value.some(a => {
+        const intent = intents.value.find(i => i.id === a.intentId)
+        return intent?.macroTaskId === m.id && !['succeeded', 'failed', 'stopped'].includes(String(a.state).toLowerCase())
+    })
+    return !hasActiveIntent && !hasActiveAttempt
+}
+
+async function autoStartTaskGroupForPastSale() {
+    if (!group.value) return
+    dispatchingAll.value = true
+    try {
+        const snap = await Snapshot()
+        const workers = ((snap.workers || []) as any[]).filter(w => w.healthy)
+        if (workers.length === 0) {
+            messages.add({ text: t('taskGroup.autoStartNoWorkers'), color: 'warning' })
+            return
+        }
+        const ids = workers.map(w => w.id)
+        await StartTaskGroup(group.value.id, JSON.stringify(ids))
+        await loadAll(group.value.id)
+        messages.add({ text: t('taskGroup.autoStarted', { count: ids.length }), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('taskGroup.autoStartFailed', { error: String(e) }), color: 'error' })
+    } finally {
+        dispatchingAll.value = false
+    }
 }
 
 function openEditPg(macroId: string, pg: any) {
