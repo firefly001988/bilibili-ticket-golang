@@ -710,8 +710,15 @@
     "selectWorkersNote": "Selected workers are locked for this task group. Other groups must wait for release.",
     "selectedWorkers": "{count} Workers Selected",
     "noWorkersAvailable": "No workers available",
+    "macroWorkers": "Workers",
+    "macroPrimaryWorkers": "Primary Workers",
+    "macroPrimaryWorkersHint": "Leave empty to allow any worker selected for the task group",
+    "macroStandbyWorkers": "Standby Workers",
+    "macroStandbyWorkersHint": "Used for this macro only when primary workers are insufficient",
+    "macroPrimaryShort": "Primary",
+    "macroStandbyShort": "Standby",
     "pgWeight": "Weight",
-    "pgWeightHint": "Worker replicas, default 1",
+    "pgWeightHint": "Relative resource share, default 1",
     "pgPriority": "Priority",
-    "pgPriorityHint": "Higher = dispatch first"
+    "pgPriorityHint": "Lower values receive remainder slots first"
 }

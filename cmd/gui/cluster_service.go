@@ -102,7 +102,7 @@ type IntentSummary struct {
 	Terminal      bool                 `json:"terminal"`
 	Armed         bool                 `json:"armed"`
 	ActiveCount   int                  `json:"activeCount"` // non-terminal attempts currently running
-	Deficit       int                  `json:"deficit"`     // remaining replicas to dispatch (0 = satisfied)
+	Deficit       int                  `json:"deficit"`     // remaining attempts to reach current proportional target
 	FailureReason domain.FailureReason `json:"failureReason,omitempty"`
 	CreatedAt     time.Time            `json:"createdAt"`
 }
@@ -608,51 +608,58 @@ func (s *ClusterService) StopAttempt(attemptID string) error {
 	return fmt.Errorf("attempt %s not found", attemptID)
 }
 
-// StopMacro stops all active attempts belonging to a macro and disarms its intents.
+// StopMacro is intentionally disabled: ticket dispatch is task-group scoped.
 func (s *ClusterService) StopMacro(macroID string) error {
+	return fmt.Errorf("macro task cannot be stopped independently; stop the task group instead")
+}
+
+// StopTaskGroup stops all active attempts belonging to a task group, disarms
+// its intents, and releases the workers reserved by the task group.
+func (s *ClusterService) StopTaskGroup(taskGroupID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	activeTaskGroupID := s.dispatcher.ActiveTaskGroup()
+	if activeTaskGroupID != "" && activeTaskGroupID != taskGroupID {
+		return fmt.Errorf("task group %s is not active; active task group is %s", taskGroupID, activeTaskGroupID)
+	}
 	workerList, err := s.repository.ListWorkers(ctx)
 	if err != nil {
 		return err
+	}
+	macros, err := s.repository.ListMacroTasks(ctx)
+	if err != nil {
+		return err
+	}
+	macroIDs := make(map[string]struct{})
+	for _, macro := range macros {
+		if macro.TaskGroupID == taskGroupID {
+			macroIDs[macro.ID] = struct{}{}
+		}
+	}
+	if len(macroIDs) == 0 {
+		return fmt.Errorf("task group has no macro tasks")
 	}
 	workerByID := make(map[string]domain.WorkerNode, len(workerList))
 	for _, w := range workerList {
 		workerByID[w.ID] = w
 	}
 	// Send stop to all active worker attempts.
-	for _, a := range s.dispatcher.MacroAttempts(macroID) {
-		if a.State.Terminal() {
-			continue
-		}
-		worker, ok := workerByID[a.WorkerID]
-		if !ok {
-			continue
-		}
-		_ = s.client.Stop(ctx, worker, a.ID)
-	}
-	// Force-disarm the macro: mark intents terminal and release resources.
-	s.dispatcher.DisarmMacro(macroID)
-
-	// Check if this was the last active macro in the task group.
-	// If so, release worker reservations so other task groups can use them.
-	taskGroupID := s.dispatcher.ActiveTaskGroup()
-	if taskGroupID != "" {
-		macros, _ := s.repository.ListMacroTasks(ctx)
-		hasOtherActive := false
-		for _, m := range macros {
-			if m.ID == macroID {
+	for macroID := range macroIDs {
+		for _, a := range s.dispatcher.MacroAttempts(macroID) {
+			if a.State.Terminal() {
 				continue
 			}
-			if m.TaskGroupID == taskGroupID && s.dispatcher.MacroActive(m.ID) {
-				hasOtherActive = true
-				break
+			worker, ok := workerByID[a.WorkerID]
+			if !ok {
+				continue
 			}
+			_ = s.client.Stop(ctx, worker, a.ID)
 		}
-		if !hasOtherActive {
-			s.dispatcher.ReleaseWorkers()
-			log.Printf("[cluster] released worker reservations for task group %s", taskGroupID)
-		}
+		s.dispatcher.DisarmMacro(macroID)
+	}
+	if activeTaskGroupID == taskGroupID {
+		s.dispatcher.ReleaseWorkers()
+		log.Printf("[cluster] released worker reservations for task group %s", taskGroupID)
 	}
 
 	return nil
@@ -821,13 +828,14 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 			activeByIntent[value.IntentID]++
 		}
 	}
+	targets := s.dispatcher.AllocationTargets()
 	for _, plan := range s.dispatcher.Plans() {
 		active := activeByIntent[plan.Intent.ID]
 		w := plan.Intent.Weight
 		if w <= 0 {
 			w = 1
 		}
-		deficit := w - active
+		deficit := targets[plan.Intent.ID] - active
 		if deficit < 0 {
 			deficit = 0
 		}
@@ -1690,10 +1698,7 @@ func (s *ClusterService) invalidateMacroConfiguration(macroID string) error {
 }
 
 func (s *ClusterService) StartMacro(macroID string) error {
-	if err := s.refreshResources(context.Background()); err != nil {
-		return err
-	}
-	return s.planAndStart(context.Background(), macroID, domain.PhasePunctual, true)
+	return fmt.Errorf("macro task cannot be started independently; start the task group instead")
 }
 
 func (s *ClusterService) StartTaskGroup(taskGroupID string, workerIDsJSON string) error {
@@ -1739,10 +1744,15 @@ func (s *ClusterService) StartTaskGroup(taskGroupID string, workerIDsJSON string
 	})
 	var failures []string
 	started := 0
+	plannedIntentIDs := make(map[string]struct{})
 	for _, macro := range selected {
-		if err := s.planAndStart(ctx, macro.ID, domain.PhasePunctual, false); err != nil {
+		intentIDs, err := s.planMacro(ctx, macro.ID, domain.PhasePunctual)
+		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", macro.ID, err))
 			continue
+		}
+		for id := range intentIDs {
+			plannedIntentIDs[id] = struct{}{}
 		}
 		started++
 	}
@@ -1755,6 +1765,12 @@ func (s *ClusterService) StartTaskGroup(taskGroupID string, workerIDsJSON string
 	}
 	if len(failures) > 0 {
 		return fmt.Errorf("started %d macro task(s), but some failed: %s", started, strings.Join(failures, "; "))
+	}
+	if err := s.dispatcher.Reconcile(ctx); err != nil {
+		return err
+	}
+	if s.dispatcher.ActiveAttemptsFor(plannedIntentIDs) == 0 {
+		return fmt.Errorf("task group was planned but no attempt started: check deadline, healthy workers, enabled accounts, and buyer mappings")
 	}
 	return nil
 }
@@ -1785,11 +1801,11 @@ func (s *ClusterService) AttemptLogs(attemptID string) ([]clusterworker.LogEntry
 	return nil, fmt.Errorf("worker %s not found", selected.WorkerID)
 }
 
-func (s *ClusterService) planAndStart(ctx context.Context, macroID string, phase domain.Phase, requireActive bool) error {
+func (s *ClusterService) planMacro(ctx context.Context, macroID string, phase domain.Phase) (map[string]struct{}, error) {
 	s.dispatcher.ResumePhase(phase)
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var selected *domain.MacroTask
 	for i := range macros {
@@ -1799,25 +1815,25 @@ func (s *ClusterService) planAndStart(ctx context.Context, macroID string, phase
 		}
 	}
 	if selected == nil {
-		return fmt.Errorf("macro task not found")
+		return nil, fmt.Errorf("macro task not found")
 	}
 	groups, err := s.repository.ListPurchaseGroups(ctx, macroID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(groups) == 0 {
-		return fmt.Errorf("macro task has no purchase groups")
+		return nil, fmt.Errorf("macro task has no purchase groups")
 	}
 	intents, err := planner.Plan(*selected, groups, phase, time.Now())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(intents) == 0 {
-		return fmt.Errorf("planner produced no order intents")
+		return nil, fmt.Errorf("planner produced no order intents")
 	}
 	existing, err := s.repository.ListIntents(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	existingByID := make(map[string]domain.LogicalOrderIntent, len(existing))
 	for _, intent := range existing {
@@ -1826,10 +1842,10 @@ func (s *ClusterService) planAndStart(ctx context.Context, macroID string, phase
 	intentIDs := make(map[string]struct{}, len(intents))
 	for _, intent := range intents {
 		if previous, ok := existingByID[intent.ID]; ok && previous.Succeeded {
-			return fmt.Errorf("order intent %s has already succeeded and cannot be restarted", intent.ID)
+			return nil, fmt.Errorf("order intent %s has already succeeded and cannot be restarted", intent.ID)
 		}
 		if err := s.repository.PutIntent(ctx, intent); err != nil {
-			return err
+			return nil, err
 		}
 		s.dispatcher.Add(dispatcher.IntentPlan{Macro: *selected, Intent: intent})
 		intentIDs[intent.ID] = struct{}{}
@@ -1837,13 +1853,7 @@ func (s *ClusterService) planAndStart(ctx context.Context, macroID string, phase
 	s.mu.Lock()
 	s.phases[macroID] = phase
 	s.mu.Unlock()
-	if err := s.dispatcher.Reconcile(ctx); err != nil {
-		return err
-	}
-	if requireActive && s.dispatcher.ActiveAttemptsFor(intentIDs) == 0 {
-		return fmt.Errorf("task was planned but no attempt started: check deadline, healthy workers, enabled accounts, and buyer mappings")
-	}
-	return nil
+	return intentIDs, nil
 }
 
 func (s *ClusterService) SwitchToReflow() error {
@@ -1867,11 +1877,11 @@ func (s *ClusterService) SwitchToReflow() error {
 		return err
 	}
 	for _, macro := range macros {
-		if err := s.planAndStart(ctx, macro.ID, domain.PhaseReflow, false); err != nil {
+		if _, err := s.planMacro(ctx, macro.ID, domain.PhaseReflow); err != nil {
 			return err
 		}
 	}
-	return nil
+	return s.dispatcher.Reconcile(ctx)
 }
 
 func (s *ClusterService) ProvisionBuyer(document string, confirmed bool) error {

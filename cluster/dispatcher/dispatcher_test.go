@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -86,6 +87,79 @@ func resources() ([]domain.Account, []domain.WorkerNode) {
 	return []domain.Account{{ID: "a1", Enabled: true}, {ID: "a2", Enabled: true}, {ID: "spare", Enabled: true}}, []domain.WorkerNode{{ID: "w1", Enabled: true}, {ID: "w2", Enabled: true}, {ID: "wspare", Enabled: true}}
 }
 
+func resourcesN(n int) ([]domain.Account, []domain.WorkerNode) {
+	accounts := make([]domain.Account, n)
+	workers := make([]domain.WorkerNode, n)
+	for i := 0; i < n; i++ {
+		accounts[i] = domain.Account{ID: fmt.Sprintf("a%d", i+1), Enabled: true}
+		workers[i] = domain.WorkerNode{ID: fmt.Sprintf("w%d", i+1), Enabled: true}
+	}
+	return accounts, workers
+}
+
+func TestWeightedAllocationUsesLargestRemainder(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, nil)
+	accounts, workers := resourcesN(10)
+	d.SetResources(accounts, workers)
+	weights := map[string]int{"i10": 10, "i4a": 4, "i4b": 4, "i2": 2}
+	for id, weight := range weights {
+		intent := dispatchIntent(id, "m"+id, weight, "buyer-"+id)
+		d.Add(IntentPlan{Macro: dispatchMacro("m"+id, 0), Intent: intent})
+	}
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"i10": 5, "i4a": 2, "i4b": 2, "i2": 1}
+	for id, expected := range want {
+		if got := d.activeCount(id); got != expected {
+			t.Fatalf("intent %s active=%d want=%d", id, got, expected)
+		}
+	}
+}
+
+func TestPriorityBreaksEqualWeightRemaindersAscending(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, nil)
+	accounts, workers := resourcesN(15)
+	d.SetResources(accounts, workers)
+	for priority := 0; priority < 4; priority++ {
+		id := fmt.Sprintf("i%d", priority)
+		intent := dispatchIntent(id, "m"+id, 1, "buyer-"+id)
+		intent.Priority = priority
+		d.Add(IntentPlan{Macro: dispatchMacro("m"+id, 0), Intent: intent})
+	}
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"i0": 4, "i1": 4, "i2": 4, "i3": 3}
+	for id, expected := range want {
+		if got := d.activeCount(id); got != expected {
+			t.Fatalf("intent %s active=%d want=%d", id, got, expected)
+		}
+	}
+}
+
+func TestMacroWorkerPrimaryAndStandbyScope(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, nil)
+	accounts, workers := resourcesN(4)
+	d.SetResources(accounts, workers)
+	macro := dispatchMacro("m", 0)
+	macro.PrimaryWorkerIDs = []string{"w2"}
+	macro.StandbyWorkerIDs = []string{"w4"}
+	d.Add(IntentPlan{Macro: macro, Intent: dispatchIntent("i", "m", 10, "buyer")})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.submitWorkers) != 2 {
+		t.Fatalf("expected exactly primary+standby workers, got %#v", c.submitWorkers)
+	}
+	if c.submitWorkers[0] != "w2" || c.submitWorkers[1] != "w4" {
+		t.Fatalf("worker scope/order mismatch: %#v", c.submitWorkers)
+	}
+}
+
 func TestReplicasUseDistinctAccountsAndWorkers(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	d := New(c, nil, nil)
@@ -96,10 +170,9 @@ func TestReplicasUseDistinctAccountsAndWorkers(t *testing.T) {
 	if err := d.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// D'Hondt proportional allocation: single intent with weight=2 and
-	// 3 available workers dispatches all 3 replicas.
+	// Relative-share allocation: a single intent receives all available slots.
 	if len(c.submitted) != 3 {
-		t.Fatalf("expected 3 replicas (D'Hondt saturates workers), got %d: %#v", len(c.submitted), c.submitted)
+		t.Fatalf("expected 3 attempts, got %d: %#v", len(c.submitted), c.submitted)
 	}
 	// Verify distinct accounts.
 	seen := make(map[string]bool)
@@ -115,19 +188,18 @@ func TestReplicasUseDistinctAccountsAndWorkers(t *testing.T) {
 func TestConflictingShapesSerializeByPriorityAndWinnerStopsSibling(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	d := New(c, nil, nil)
-	// 2 workers, 2 accounts — D'Hondt gives each intent exactly 1 replica.
+	// 2 workers, 2 accounts. Conflicting intents serialize; lower numeric
+	// priority wins and receives the whole runnable allocation.
 	accounts := []domain.Account{{ID: "a1", Enabled: true}, {ID: "a2", Enabled: true}}
 	workers := []domain.WorkerNode{{ID: "w1", Enabled: true}, {ID: "w2", Enabled: true}}
 	d.SetResources(accounts, workers)
 	high := dispatchMacro("high", 10)
 	low := dispatchMacro("low", 1)
-	// Same buyer -> same ShapeHash -> conflict.  Equal weights; D'Hondt tie
-	// broken by priority.  High wins round 1, low is conflicted round 2 so
-	// high takes the second worker too.
+	// Same buyer -> same ShapeHash -> conflict.
 	lowIntent := dispatchIntent("low-i", "low", 2, "buyer")
 	highIntent := dispatchIntent("high-i", "high", 2, "buyer")
-	lowIntent.Priority = 1
-	highIntent.Priority = 10
+	lowIntent.Priority = 10
+	highIntent.Priority = 0
 	d.Add(IntentPlan{Macro: low, Intent: lowIntent})
 	d.Add(IntentPlan{Macro: high, Intent: highIntent})
 	if err := d.Reconcile(context.Background()); err != nil {
@@ -153,16 +225,12 @@ func TestStandbyIsIdleUntilMachineFailure(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	d := New(c, nil, nil)
 	accounts, workers := resources()
-	// Two intents A and B with equal weight=2 and 3 workers.
-	// D'Hondt: round 1 A (priority) → A=1;
-	//   round 2 B (higher D'Hondt) → B=1;
-	//   round 3 A (tie, priority) → A=2.
-	// Result: A=2, B=1.
-	// When A's first worker fails, A's D'Hondt=2/2=1 ties B's=2/2=1 → A priority wins replacement.
+	// Two intents A and B with equal weight=2 and 3 workers. Largest remainder
+	// gives the extra slot to the lower numeric priority.
 	d.SetResources(accounts, workers)
 	aIntent := dispatchIntent("a", "ma", 2, "buyer-a")
 	bIntent := dispatchIntent("b", "mb", 2, "buyer-b")
-	aIntent.Priority = 10
+	aIntent.Priority = 0
 	bIntent.Priority = 1
 	d.Add(IntentPlan{Macro: dispatchMacro("ma", 0), Intent: aIntent})
 	d.Add(IntentPlan{Macro: dispatchMacro("mb", 0), Intent: bIntent})
@@ -170,7 +238,7 @@ func TestStandbyIsIdleUntilMachineFailure(t *testing.T) {
 	aCount := d.activeCount(aIntent.ID)
 	bCount := d.activeCount(bIntent.ID)
 	if aCount != 2 || bCount != 1 {
-		t.Fatalf("D'Hondt allocation mismatch: A=%d B=%d (submitted=%d)", aCount, bCount, len(c.submitted))
+		t.Fatalf("allocation mismatch: A=%d B=%d (submitted=%d)", aCount, bCount, len(c.submitted))
 	}
 	// Find A's first attempt and mark it failed.
 	var firstAID string
@@ -192,7 +260,7 @@ func TestStandbyIsIdleUntilMachineFailure(t *testing.T) {
 func TestSwitchToReflowDoesNotReplaceStoppedPunctualAttempt(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	d := New(c, nil, nil)
-	// Single worker so D'Hondt dispatches exactly 1 replica.
+	// Single worker so exactly 1 attempt is dispatched.
 	accounts := []domain.Account{{ID: "a1", Enabled: true}}
 	workers := []domain.WorkerNode{{ID: "w1", Enabled: true}}
 	d.SetResources(accounts, workers)
@@ -219,7 +287,7 @@ func TestSwitchToReflowDoesNotReplaceStoppedPunctualAttempt(t *testing.T) {
 func TestRestoreAttemptReservesResourcesAndKeepsWorkerResult(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	d := New(c, nil, nil)
-	// 1 worker so only 1 replica from D'Hondt.
+	// 1 worker so only 1 attempt can be active.
 	accounts := []domain.Account{{ID: "a1", Enabled: true}}
 	workers := []domain.WorkerNode{{ID: "w1", Enabled: true}}
 	d.SetResources(accounts, workers)
@@ -243,8 +311,7 @@ func TestAmbiguousSubmitFailureIsolatesAccountAndUsesStandby(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus), failWorker: "w1"}
 	d := New(c, nil, nil)
 	accounts, workers := resources()
-	// 2 intents A (weight=2) and B (weight=2) with 2 workers.
-	// D'Hondt: A gets 1 (priority), B gets 1. A fails on w1, replacement dispatched.
+	// 2 intents A (weight=2) and B (weight=2) with 2 workers: each receives 1 slot.
 	workers2 := []domain.WorkerNode{workers[0], workers[2]} // w1, wspare
 	d.SetResources(accounts, workers2)
 	aIntent := dispatchIntent("a", "ma", 2, "buyer-a")
@@ -276,7 +343,7 @@ func TestAccountWithoutBuyerMappingIsSkipped(t *testing.T) {
 	if err := d.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// D'Hondt dispatches to a2 + spare (a1 unavailable). Both must be valid.
+	// Dispatches only to accounts that have the requested buyer mapping.
 	if len(c.submitted) < 1 {
 		t.Fatalf("expected at least one attempt, got %#v", c.submitted)
 	}
@@ -317,7 +384,7 @@ func TestUnarmedRestoredIntentIsNotDispatched(t *testing.T) {
 func TestWorkerRPCsUseShortDeadline(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	d := New(c, nil, nil)
-	// 1 worker so D'Hondt dispatches exactly 1 replica.
+	// 1 worker so exactly 1 attempt is dispatched.
 	accounts := []domain.Account{{ID: "a1", Enabled: true}}
 	workers := []domain.WorkerNode{{ID: "w1", Enabled: true}}
 	d.SetResources(accounts, workers)
@@ -349,7 +416,7 @@ func TestFailedWorkerIsNotPickedForNewAttempt(t *testing.T) {
 	if err := d.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// D'Hondt dispatches to w2 + wspare; w1 is failed and must never appear.
+	// Failed worker is skipped and must never appear.
 	for _, wid := range c.submitWorkers {
 		if wid == "w1" {
 			t.Fatalf("failed worker was selected: %#v", c.submitWorkers)
@@ -364,7 +431,7 @@ func TestWinnerTerminalsAllConflictingIntents(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	r := &repo{}
 	d := New(c, r, nil)
-	// 1 worker — D'Hondt gives the single replica to high priority intent.
+	// 1 worker — lower numeric priority receives the single slot.
 	accounts := []domain.Account{{ID: "a1", Enabled: true}}
 	workers := []domain.WorkerNode{{ID: "w1", Enabled: true}}
 	d.SetResources(accounts, workers)
@@ -372,8 +439,8 @@ func TestWinnerTerminalsAllConflictingIntents(t *testing.T) {
 	low := dispatchMacro("low", 1)
 	highIntent := dispatchIntent("high-i", "high", 1, "buyer")
 	lowIntent := dispatchIntent("low-i", "low", 1, "buyer")
-	highIntent.Priority = 10
-	lowIntent.Priority = 1
+	highIntent.Priority = 0
+	lowIntent.Priority = 10
 	d.Add(IntentPlan{Macro: low, Intent: lowIntent})
 	d.Add(IntentPlan{Macro: high, Intent: highIntent})
 	if err := d.Reconcile(context.Background()); err != nil {

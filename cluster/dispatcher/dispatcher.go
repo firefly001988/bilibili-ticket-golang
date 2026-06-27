@@ -285,53 +285,28 @@ func (d *Dispatcher) PunctualStopped() bool {
 	return true
 }
 
-// Reconcile first observes every active attempt, then fills replica deficits.
+// Reconcile first observes every active attempt, then fills each intent up to
+// its current task-group-wide proportional allocation target.
 func (d *Dispatcher) Reconcile(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.poll(ctx); err != nil {
 		return err
 	}
-	ordered := make([]*IntentPlan, 0, len(d.plans))
-	for _, plan := range d.plans {
-		if plan.Intent.Armed && !plan.Intent.Succeeded && !plan.Intent.Terminal {
-			ordered = append(ordered, plan)
-		}
-	}
-
-	// Proportional distribution via D'Hondt method: each round, pick the
-	// intent with the highest weight/(activeCount+1).  Higher values win;
-	// ties broken by priority (higher first), then creation time (older first).
-	// Weight comes from the PurchaseGroup that generated the intent
-	// (default=1) and determines the relative share of workers.
-	orderedByDeficit := append([]*IntentPlan(nil), ordered...)
 	for {
+		ordered := d.dispatchablePlans(ctx)
+		targets := d.allocationTargets(ordered, d.totalSlotCount(ordered))
 		dispatched := false
-		sort.SliceStable(orderedByDeficit, func(i, j int) bool {
-			wi := effectiveWeight(orderedByDeficit[i].Intent)
-			wj := effectiveWeight(orderedByDeficit[j].Intent)
-			di := float64(wi) / float64(d.activeCount(orderedByDeficit[i].Intent.ID)+1)
-			dj := float64(wj) / float64(d.activeCount(orderedByDeficit[j].Intent.ID)+1)
+		sort.SliceStable(ordered, func(i, j int) bool {
+			di := targets[ordered[i].Intent.ID] - d.activeCount(ordered[i].Intent.ID)
+			dj := targets[ordered[j].Intent.ID] - d.activeCount(ordered[j].Intent.ID)
 			if di == dj {
-				if orderedByDeficit[i].Intent.Priority == orderedByDeficit[j].Intent.Priority {
-					return orderedByDeficit[i].Intent.CreatedAt.Before(orderedByDeficit[j].Intent.CreatedAt)
-				}
-				return orderedByDeficit[i].Intent.Priority > orderedByDeficit[j].Intent.Priority
+				return planOrderLess(ordered[i], ordered[j])
 			}
 			return di > dj
 		})
-		for _, plan := range orderedByDeficit {
-			if d.stoppedPhases[plan.Intent.Phase] {
-				continue
-			}
-			if d.now().After(plan.Macro.Deadline) {
-				plan.Intent.Terminal, plan.Intent.FailureReason = true, domain.FailureDeadline
-				if d.repository != nil {
-					_ = d.repository.PutIntent(ctx, plan.Intent)
-				}
-				continue
-			}
-			if d.conflicted(plan) {
+		for _, plan := range ordered {
+			if targets[plan.Intent.ID] <= d.activeCount(plan.Intent.ID) {
 				continue
 			}
 			account, worker, ok, err := d.pickResources(ctx, plan)
@@ -352,6 +327,102 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// AllocationTargets returns the current proportional active-attempt target for
+// each armed intent. It is intentionally best-effort for UI display; Reconcile
+// recomputes targets again before dispatching.
+func (d *Dispatcher) AllocationTargets() map[string]int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	plans := d.dispatchablePlans(context.Background())
+	return d.allocationTargets(plans, d.totalSlotCount(plans))
+}
+
+func (d *Dispatcher) dispatchablePlans(ctx context.Context) []*IntentPlan {
+	ordered := make([]*IntentPlan, 0, len(d.plans))
+	for _, plan := range d.plans {
+		if !plan.Intent.Armed || plan.Intent.Succeeded || plan.Intent.Terminal {
+			continue
+		}
+		if d.stoppedPhases[plan.Intent.Phase] {
+			continue
+		}
+		if d.now().After(plan.Macro.Deadline) {
+			plan.Intent.Terminal, plan.Intent.FailureReason = true, domain.FailureDeadline
+			if d.repository != nil {
+				_ = d.repository.PutIntent(ctx, plan.Intent)
+			}
+			continue
+		}
+		if d.conflicted(plan) {
+			continue
+		}
+		ordered = append(ordered, plan)
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return planOrderLess(ordered[i], ordered[j])
+	})
+	return ordered
+}
+
+func (d *Dispatcher) totalSlotCount(plans []*IntentPlan) int {
+	if len(plans) == 0 {
+		return 0
+	}
+	active := 0
+	planIDs := make(map[string]struct{}, len(plans))
+	for _, plan := range plans {
+		planIDs[plan.Intent.ID] = struct{}{}
+	}
+	for _, current := range d.attempts {
+		if _, ok := planIDs[current.planID]; ok && !current.value.State.Terminal() {
+			active++
+		}
+	}
+	idleAccounts := len(d.availableAccounts())
+	idleWorkers := d.availableWorkerCount(plans)
+	if idleAccounts < idleWorkers {
+		return active + idleAccounts
+	}
+	return active + idleWorkers
+}
+
+func (d *Dispatcher) allocationTargets(plans []*IntentPlan, totalSlots int) map[string]int {
+	targets := make(map[string]int, len(plans))
+	if totalSlots <= 0 || len(plans) == 0 {
+		return targets
+	}
+	totalWeight := 0
+	for _, plan := range plans {
+		totalWeight += effectiveWeight(plan.Intent)
+	}
+	if totalWeight <= 0 {
+		return targets
+	}
+	type share struct {
+		plan      *IntentPlan
+		remainder int
+	}
+	shares := make([]share, 0, len(plans))
+	assigned := 0
+	for _, plan := range plans {
+		weightedSlots := totalSlots * effectiveWeight(plan.Intent)
+		base := weightedSlots / totalWeight
+		targets[plan.Intent.ID] = base
+		assigned += base
+		shares = append(shares, share{plan: plan, remainder: weightedSlots % totalWeight})
+	}
+	sort.SliceStable(shares, func(i, j int) bool {
+		if shares[i].remainder == shares[j].remainder {
+			return planOrderLess(shares[i].plan, shares[j].plan)
+		}
+		return shares[i].remainder > shares[j].remainder
+	})
+	for remaining, index := totalSlots-assigned, 0; remaining > 0 && index < len(shares); remaining, index = remaining-1, index+1 {
+		targets[shares[index].plan.Intent.ID]++
+	}
+	return targets
 }
 
 func (d *Dispatcher) poll(ctx context.Context) error {
@@ -500,6 +571,16 @@ func (d *Dispatcher) conflicted(candidate *IntentPlan) bool {
 	return false
 }
 
+func planOrderLess(a, b *IntentPlan) bool {
+	if a.Intent.Priority == b.Intent.Priority {
+		if a.Intent.CreatedAt.Equal(b.Intent.CreatedAt) {
+			return a.Intent.ID < b.Intent.ID
+		}
+		return a.Intent.CreatedAt.Before(b.Intent.CreatedAt)
+	}
+	return a.Intent.Priority < b.Intent.Priority
+}
+
 func (d *Dispatcher) activeCount(intentID string) int {
 	count := 0
 	for _, current := range d.attempts {
@@ -578,42 +659,24 @@ func (d *Dispatcher) ProcessCompletedTask(workerID string, result domain.Executi
 }
 
 func (d *Dispatcher) pickResources(ctx context.Context, plan *IntentPlan) (domain.Account, domain.WorkerNode, bool, error) {
-	accounts := make([]domain.Account, 0, len(d.accounts))
-	recoveredAccounts := make([]domain.Account, 0)
-	workers := make([]domain.WorkerNode, 0, len(d.workers))
-	for _, value := range d.accounts {
-		if until := d.quarantinedAccounts[value.ID]; until.After(d.now()) {
-			continue
-		} else if !until.IsZero() {
-			delete(d.quarantinedAccounts, value.ID)
-		}
-		if !value.Enabled || d.accountBusy[value.ID] != "" || value.CooldownUntil.After(d.now()) {
-			continue
-		}
-		if !value.CooldownUntil.IsZero() {
-			recoveredAccounts = append(recoveredAccounts, value)
-			continue
-		}
-		accounts = append(accounts, value)
-	}
+	accounts := d.availableAccounts()
+	primaryWorkers := make([]domain.WorkerNode, 0, len(d.workers))
+	standbyWorkers := make([]domain.WorkerNode, 0, len(d.workers))
 	for _, value := range d.workers {
-		if !value.Enabled || d.workerBusy[value.ID] != "" {
+		if !d.workerAvailableForPlan(value, plan) {
 			continue
 		}
-		if _, failed := d.failedWorkers[value.ID]; failed {
-			continue
+		if d.isStandbyWorker(plan.Macro, value.ID) {
+			standbyWorkers = append(standbyWorkers, value)
+		} else {
+			primaryWorkers = append(primaryWorkers, value)
 		}
-		// If a task group is active, only allow workers reserved for it.
-		if d.activeTaskGroup != "" {
-			if tg, ok := d.workerReservations[value.ID]; !ok || tg != d.activeTaskGroup {
-				continue
-			}
-		}
-		workers = append(workers, value)
 	}
-	sort.Slice(workers, func(i, j int) bool { return workers[i].ID < workers[j].ID })
-	if len(accounts) == 0 {
-		accounts = append(accounts, recoveredAccounts...)
+	sort.Slice(primaryWorkers, func(i, j int) bool { return primaryWorkers[i].ID < primaryWorkers[j].ID })
+	sort.Slice(standbyWorkers, func(i, j int) bool { return standbyWorkers[i].ID < standbyWorkers[j].ID })
+	workers := primaryWorkers
+	if len(workers) == 0 {
+		workers = standbyWorkers
 	}
 	sort.Slice(accounts, func(i, j int) bool { return accounts[i].ID < accounts[j].ID })
 	if len(accounts) == 0 || len(workers) == 0 {
@@ -635,6 +698,81 @@ func (d *Dispatcher) pickResources(ctx context.Context, plan *IntentPlan) (domai
 		return domain.Account{}, domain.WorkerNode{}, false, nil
 	}
 	return accounts[0], workers[0], true, nil
+}
+
+func (d *Dispatcher) availableAccounts() []domain.Account {
+	accounts := make([]domain.Account, 0, len(d.accounts))
+	recoveredAccounts := make([]domain.Account, 0)
+	for _, value := range d.accounts {
+		if until := d.quarantinedAccounts[value.ID]; until.After(d.now()) {
+			continue
+		} else if !until.IsZero() {
+			delete(d.quarantinedAccounts, value.ID)
+		}
+		if !value.Enabled || d.accountBusy[value.ID] != "" || value.CooldownUntil.After(d.now()) {
+			continue
+		}
+		if !value.CooldownUntil.IsZero() {
+			recoveredAccounts = append(recoveredAccounts, value)
+			continue
+		}
+		accounts = append(accounts, value)
+	}
+	if len(accounts) == 0 {
+		accounts = append(accounts, recoveredAccounts...)
+	}
+	return accounts
+}
+
+func (d *Dispatcher) availableWorkerCount(plans []*IntentPlan) int {
+	count := 0
+	for _, worker := range d.workers {
+		for _, plan := range plans {
+			if d.workerAvailableForPlan(worker, plan) {
+				count++
+				break
+			}
+		}
+	}
+	return count
+}
+
+func (d *Dispatcher) workerAvailableForPlan(worker domain.WorkerNode, plan *IntentPlan) bool {
+	if !worker.Enabled || d.workerBusy[worker.ID] != "" {
+		return false
+	}
+	if _, failed := d.failedWorkers[worker.ID]; failed {
+		return false
+	}
+	if d.activeTaskGroup != "" {
+		if tg, ok := d.workerReservations[worker.ID]; !ok || tg != d.activeTaskGroup {
+			return false
+		}
+	}
+	return d.workerAllowedByMacro(plan.Macro, worker.ID)
+}
+
+func (d *Dispatcher) workerAllowedByMacro(macro domain.MacroTask, workerID string) bool {
+	if len(macro.PrimaryWorkerIDs) > 0 {
+		return containsString(macro.PrimaryWorkerIDs, workerID) || containsString(macro.StandbyWorkerIDs, workerID)
+	}
+	return true
+}
+
+func (d *Dispatcher) isStandbyWorker(macro domain.MacroTask, workerID string) bool {
+	if containsString(macro.PrimaryWorkerIDs, workerID) {
+		return false
+	}
+	return containsString(macro.StandbyWorkerIDs, workerID)
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account domain.Account, worker domain.WorkerNode) error {

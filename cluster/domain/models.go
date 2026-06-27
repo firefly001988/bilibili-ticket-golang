@@ -108,6 +108,8 @@ type MacroTask struct {
 	OrderCapacity     int            `json:"orderCapacity"`
 	CapacitySource    CapacitySource `json:"capacitySource"`
 	Priority          int            `json:"priority"`
+	PrimaryWorkerIDs  []string       `json:"primaryWorkerIds,omitempty"`
+	StandbyWorkerIDs  []string       `json:"standbyWorkerIds,omitempty"`
 	StartAt           time.Time      `json:"startAt"`
 	Deadline          time.Time      `json:"deadline"`
 }
@@ -128,8 +130,8 @@ type PurchaseGroup struct {
 	MacroTaskID string    `json:"macroTaskId"`
 	Buyers      []Buyer   `json:"buyers"`
 	AllowSplit  bool      `json:"allowSplit"`
-	Weight      int       `json:"weight"`   // number of worker replicas (default=1)
-	Priority    int       `json:"priority"` // intra-macro ordering (higher=first)
+	Weight      int       `json:"weight"`   // relative worker/account share (default=1)
+	Priority    int       `json:"priority"` // lower values receive remainder slots first
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -143,8 +145,8 @@ type LogicalOrderIntent struct {
 	Succeeded     bool          `json:"succeeded"`
 	Armed         bool          `json:"armed"`
 	Terminal      bool          `json:"terminal"`
-	Weight        int           `json:"weight"`   // worker replicas for this intent
-	Priority      int           `json:"priority"` // sort order (higher=first)
+	Weight        int           `json:"weight"`   // relative worker/account share
+	Priority      int           `json:"priority"` // lower values receive remainder slots first
 	FailureReason FailureReason `json:"failureReason,omitempty"`
 	CreatedAt     time.Time     `json:"createdAt"`
 }

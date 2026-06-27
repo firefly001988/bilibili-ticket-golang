@@ -137,7 +137,7 @@ func TestClusterServiceEditsAndDeletesPurchaseGroups(t *testing.T) {
 	}
 }
 
-func TestClusterServiceStartsTaskGroup(t *testing.T) {
+func TestClusterServicePlansTaskGroupAndRequiresHealthyWorker(t *testing.T) {
 	service := testClusterService(t)
 	ctx := context.Background()
 	if err := service.SaveTaskGroup(`{"id":"group","name":"test"}`); err != nil {
@@ -167,8 +167,8 @@ func TestClusterServiceStartsTaskGroup(t *testing.T) {
 	if err := service.SavePurchaseGroup(document(t, group)); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.StartTaskGroup("group", `["w"]`); err != nil {
-		t.Fatal(err)
+	if err := service.StartTaskGroup("group", `["w"]`); err == nil {
+		t.Fatal("task group start must not silently succeed without a healthy worker client")
 	}
 	intents, err := service.repository.ListIntents(ctx)
 	if err != nil {

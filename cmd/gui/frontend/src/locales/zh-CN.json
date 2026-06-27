@@ -710,8 +710,15 @@
     "selectWorkersNote": "启动后选中的 Worker 将被独占，其他任务组需等待释放。",
     "selectedWorkers": "已选择 {count} 个 Worker",
     "noWorkersAvailable": "没有可用的 Worker",
+    "macroWorkers": "Worker",
+    "macroPrimaryWorkers": "主力 Worker",
+    "macroPrimaryWorkersHint": "留空表示可使用任务组选择的任意 Worker",
+    "macroStandbyWorkers": "后备 Worker",
+    "macroStandbyWorkersHint": "主力 Worker 不足时才会用于这个宏任务",
+    "macroPrimaryShort": "主力",
+    "macroStandbyShort": "后备",
     "pgWeight": "权重",
-    "pgWeightHint": "Worker 副本数，默认 1",
+    "pgWeightHint": "相对资源份额，默认 1",
     "pgPriority": "优先级",
-    "pgPriorityHint": "越大越优先分配"
+    "pgPriorityHint": "数字越小越优先获得余量资源"
 }
