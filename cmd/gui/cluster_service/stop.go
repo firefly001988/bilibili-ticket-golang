@@ -51,6 +51,41 @@ func (s *ClusterService) StopTaskGroup(taskGroupID string) error {
 	if activeTaskGroupID != "" && activeTaskGroupID != taskGroupID {
 		return fmt.Errorf("task group %s is not active; active task group is %s", taskGroupID, activeTaskGroupID)
 	}
+	return s.stopTaskGroupInternal(ctx, taskGroupID)
+}
+
+// ForceStopTaskGroup stops a task group unconditionally — even if another
+// task group is marked as active.  It also force-resets all macros so that
+// the group can be re-run after a successful order.
+func (s *ClusterService) ForceStopTaskGroup(taskGroupID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	macros, err := s.repository.ListMacroTasks(ctx)
+	if err != nil {
+		return err
+	}
+	for _, macro := range macros {
+		if macro.TaskGroupID != taskGroupID {
+			continue
+		}
+		if resetErr := s.repository.ForceResetMacroExecution(ctx, macro.ID); resetErr != nil {
+			return fmt.Errorf("force reset macro %s: %w", macro.ID, resetErr)
+		}
+	}
+	return s.stopTaskGroupInternal(ctx, taskGroupID)
+}
+
+// ForceRestartTaskGroup force-stops a task group, resets all macros, and
+// immediately re-plans and starts the task group with the given workers.
+func (s *ClusterService) ForceRestartTaskGroup(taskGroupID string, workerIDsJSON string) error {
+	if err := s.ForceStopTaskGroup(taskGroupID); err != nil {
+		return fmt.Errorf("force stop: %w", err)
+	}
+	return s.StartTaskGroup(taskGroupID, workerIDsJSON)
+}
+
+func (s *ClusterService) stopTaskGroupInternal(ctx context.Context, taskGroupID string) error {
 	workerList, err := s.repository.ListWorkers(ctx)
 	if err != nil {
 		return err
@@ -86,7 +121,7 @@ func (s *ClusterService) StopTaskGroup(taskGroupID string) error {
 		}
 		s.dispatcher.DisarmMacro(macroID)
 	}
-	if activeTaskGroupID == taskGroupID {
+	if activeTG := s.dispatcher.ActiveTaskGroup(); activeTG == taskGroupID {
 		s.dispatcher.ReleaseWorkers()
 		log.Printf("[cluster] released worker reservations for task group %s", taskGroupID)
 	}

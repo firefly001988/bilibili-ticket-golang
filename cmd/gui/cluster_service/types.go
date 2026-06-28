@@ -99,19 +99,20 @@ type AttemptSummary struct {
 
 // IntentSummary exposes an armed intent for the UI dispatch log.
 type IntentSummary struct {
-	ID            string               `json:"id"`
-	MacroTaskID   string               `json:"macroTaskId"`
-	Phase         domain.Phase         `json:"phase"`
-	Weight        int                  `json:"weight"`
-	Priority      int                  `json:"priority"`
-	BuyerCount    int                  `json:"buyerCount"`
-	Succeeded     bool                 `json:"succeeded"`
-	Terminal      bool                 `json:"terminal"`
-	Armed         bool                 `json:"armed"`
-	ActiveCount   int                  `json:"activeCount"` // non-terminal attempts currently running
-	Deficit       int                  `json:"deficit"`     // remaining attempts to reach current proportional target
-	FailureReason domain.FailureReason `json:"failureReason,omitempty"`
-	CreatedAt     time.Time            `json:"createdAt"`
+	ID              string               `json:"id"`
+	MacroTaskID     string               `json:"macroTaskId"`
+	PurchaseGroupID string               `json:"purchaseGroupId,omitempty"`
+	Phase           domain.Phase         `json:"phase"`
+	Weight          int                  `json:"weight"`
+	Priority        int                  `json:"priority"`
+	BuyerCount      int                  `json:"buyerCount"`
+	Succeeded       bool                 `json:"succeeded"`
+	Terminal        bool                 `json:"terminal"`
+	Armed           bool                 `json:"armed"`
+	ActiveCount     int                  `json:"activeCount"` // non-terminal attempts currently running
+	Deficit         int                  `json:"deficit"`     // remaining attempts to reach current proportional target
+	FailureReason   domain.FailureReason `json:"failureReason,omitempty"`
+	CreatedAt       time.Time            `json:"createdAt"`
 }
 
 // ClusterService is the top-level orchestrator: it wires together the

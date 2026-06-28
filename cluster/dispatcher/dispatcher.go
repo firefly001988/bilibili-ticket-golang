@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -527,6 +528,8 @@ func (d *Dispatcher) poll(ctx context.Context) error {
 			}
 		}
 		if status.Result.Success {
+			log.Printf("[dispatcher] poll detected success: attempt=%s intent=%s orderID=%s paymentURL=%q",
+				current.value.ID, current.value.IntentID, status.Result.OrderID, status.Result.PaymentURL)
 			if err := d.win(ctx, current, status.Result); err != nil {
 				return err
 			}
@@ -543,16 +546,22 @@ func (d *Dispatcher) poll(ctx context.Context) error {
 func (d *Dispatcher) win(ctx context.Context, winner *attempt, result domain.ExecutionResult) error {
 	plan := d.plans[winner.planID]
 	if plan.Intent.Succeeded {
+		log.Printf("[dispatcher] win SKIP: intent %s already succeeded", plan.Intent.ID)
 		return nil
 	}
+	log.Printf("[dispatcher] win: intent=%s orderID=%s paymentURL=%q onSuccess=%v",
+		plan.Intent.ID, result.OrderID, result.PaymentURL, d.onSuccess != nil)
 	plan.Intent.Succeeded, plan.Intent.Terminal = true, true
-	if d.repository != nil {
-		if err := d.repository.MarkIntentSucceeded(ctx, plan.Intent, result); err != nil {
-			return err
-		}
-	}
+	// Call onSuccess BEFORE MarkIntentSucceeded so that the payment
+	// window opens even if the database write fails.
 	if d.onSuccess != nil {
 		go d.onSuccess(plan.Intent, result)
+	}
+	if d.repository != nil {
+		if err := d.repository.MarkIntentSucceeded(ctx, plan.Intent, result); err != nil {
+			log.Printf("[dispatcher] win: MarkIntentSucceeded failed for intent=%s: %v", plan.Intent.ID, err)
+			return err
+		}
 	}
 	for _, other := range d.plans {
 		if other.Intent.ID == plan.Intent.ID || other.Intent.Succeeded || other.Intent.Terminal {
@@ -676,8 +685,15 @@ func (d *Dispatcher) ProcessCompletedTask(workerID string, result domain.Executi
 
 	attempt, ok := d.attempts[result.AttemptID]
 	if !ok || attempt.value.State.Terminal() {
+		if !ok {
+			log.Printf("[dispatcher] ProcessCompletedTask SKIP: attempt %s not found (worker=%s, resultState=%s, success=%v)",
+				result.AttemptID, workerID, result.State, result.Success)
+		}
 		return
 	}
+
+	log.Printf("[dispatcher] ProcessCompletedTask: attempt=%s worker=%s state=%s success=%v orderID=%s paymentURL=%q",
+		result.AttemptID, workerID, result.State, result.Success, result.OrderID, result.PaymentURL)
 
 	now := d.now()
 	attempt.value.State, attempt.value.UpdatedAt = result.State, now

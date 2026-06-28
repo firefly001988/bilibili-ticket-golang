@@ -18,6 +18,7 @@ import (
 	"bilibili-ticket-golang/cluster/employer"
 	clusterstorage "bilibili-ticket-golang/cluster/storage"
 	clusterworker "bilibili-ticket-golang/cluster/worker"
+	"bilibili-ticket-golang/cmd/gui/payqr"
 	"bilibili-ticket-golang/lib/global"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -40,16 +41,26 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 		},
 	})
 	service.dispatcher.SetSuccessHandler(func(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
+		log.Printf("[cluster] onSuccess callback ENTER: intent=%s success=%v orderID=%s paymentURL=%q",
+			intent.ID, result.Success, result.OrderID, result.PaymentURL)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[cluster] onSuccess callback PANIC: intent=%s panic=%v", intent.ID, r)
+			}
+		}()
 		if service.notify != nil {
 			service.notify(fmt.Sprintf("购票成功：Intent %s，订单 %s", intent.ID, result.OrderID))
 		}
 		service.openPayQRWindow(intent, result)
+		log.Printf("[cluster] onSuccess callback DONE: intent=%s", intent.ID)
 	})
 
 	// Wire the bidirectional heartbeat callback: when a worker pushes a
 	// completed task, the dispatcher processes it immediately instead of
 	// waiting for the next 15s polling cycle.
 	client.SetOnCompletedTask(func(workerID string, result domain.ExecutionResult) {
+		log.Printf("[cluster] heartbeat push received: worker=%s attempt=%s success=%v orderID=%s paymentURL=%q",
+			workerID, result.AttemptID, result.Success, result.OrderID, result.PaymentURL)
 		service.dispatcher.ProcessCompletedTask(workerID, result)
 	})
 	return service
@@ -62,7 +73,14 @@ func (s *ClusterService) SetNotifier(notify func(string)) { s.notify = notify }
 func (s *ClusterService) SetApp(app *application.App) { s.wailsApp = app }
 
 func (s *ClusterService) openPayQRWindow(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
-	if s.wailsApp == nil || result.PaymentURL == "" {
+	log.Printf("[cluster] openPayQRWindow called: intent=%s success=%v orderID=%s paymentURL=%q wailsApp=%v",
+		intent.ID, result.Success, result.OrderID, result.PaymentURL, s.wailsApp != nil)
+	if s.wailsApp == nil {
+		log.Printf("[cluster] openPayQRWindow SKIP: wailsApp is nil (SetApp not called)")
+		return
+	}
+	if result.PaymentURL == "" {
+		log.Printf("[cluster] openPayQRWindow SKIP: PaymentURL is empty (orderID=%s)", result.OrderID)
 		return
 	}
 	var macro domain.MacroTask
@@ -95,14 +113,8 @@ func (s *ClusterService) openPayQRWindow(intent domain.LogicalOrderIntent, resul
 	if result.OrderTime > 0 {
 		values.Set("orderTime", fmt.Sprint(result.OrderTime))
 	}
-	window := s.wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:            "支付二维码",
-		BackgroundColour: application.RGBA{Red: 27, Green: 38, Blue: 54, Alpha: 255},
-		URL:              "/#/pay-qr?" + values.Encode(),
-	})
-	window.Show()
-	window.Center()
-	window.Focus()
+
+	payqr.OpenWindow(s.wailsApp, "支付二维码", values)
 }
 
 // Start brings the cluster online: loads persisted resources, refreshes
@@ -321,9 +333,13 @@ func (s *ClusterService) Start(parent context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-tickCh:
-				_ = s.refreshResources(ctx)
+				if err := s.refreshResources(ctx); err != nil {
+					log.Printf("[cluster] reconcile: refreshResources: %v", err)
+				}
 				s.autoStartReadyTaskGroups(ctx)
-				_ = s.dispatcher.Reconcile(ctx)
+				if err := s.dispatcher.Reconcile(ctx); err != nil {
+					log.Printf("[cluster] reconcile: Reconcile error: %v", err)
+				}
 				// Switch to 5s polling if any worker is under 412 cooldown
 				// and there are intents waiting for an attempt.
 				useFast = s.dispatcher.HasCooldownWorkersWithDeficit()

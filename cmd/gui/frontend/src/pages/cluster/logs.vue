@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, shallowRef, triggerRef, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
-import { Snapshot, AttemptLogs } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
+import { Snapshot, AttemptLogs, DeleteTerminalAttempts } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t } = useI18n(); const messages = useMessagesStore()
 
@@ -12,8 +12,10 @@ interface LogEntry { sequence: number; time: string; stage: string; message: str
 const attempts = ref<AttemptBrief[]>([])
 const logs = ref<LogEntry[]>([])
 const selectedAttemptId = ref('')
+const selectedIds = ref<string[]>([])
 const loadingAttempts = ref(true)
 const loadingLogs = ref(false)
+const deleting = ref(false)
 const stateFilter = ref('all')
 const autoRefresh = ref(true)
 let timer: ReturnType<typeof setInterval> | null = null
@@ -37,6 +39,27 @@ function toggleAutoRefresh() {
     autoRefresh.value = !autoRefresh.value
     if (autoRefresh.value) { timer = setInterval(loadAttempts, 5000) }
     else if (timer) { clearInterval(timer); timer = null }
+}
+
+async function deleteSelected() {
+    const ids = selectedIds.value.filter(id => {
+        const a = attempts.value.find(x => x.id === id)
+        return a && ['succeeded', 'failed', 'stopped'].includes(a.state)
+    })
+    if (ids.length === 0) {
+        messages.add({ text: t('logs.selectTerminalFirst'), color: 'warning' })
+        return
+    }
+    deleting.value = true
+    try {
+        await DeleteTerminalAttempts(ids)
+        selectedIds.value = []
+        messages.add({ text: t('logs.deleted', { count: ids.length }), color: 'success' })
+        await loadAttempts()
+    } catch (e: any) {
+        messages.add({ text: t('logs.deleteFailed', { error: String(e) }), color: 'error' })
+    }
+    deleting.value = false
 }
 
 const filteredAttempts = computed(() => stateFilter.value === 'all' ? attempts.value : attempts.value.filter(a => a.state === stateFilter.value))
@@ -167,25 +190,25 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
         <v-row dense class="mb-4">
             <v-col cols="6" sm="3">
                 <v-card variant="outlined" class="pa-3 text-center">
-                    <div class="text-caption text-medium-emphasis">{{ t('logs.statTotal') }}</div>
+                    <div class="text-caption text-medium-emphasis">{{ t('logs.stateTotal') }}</div>
                     <div class="text-h6 mt-1">{{ summaryStats.total }}</div>
                 </v-card>
             </v-col>
             <v-col cols="6" sm="3">
                 <v-card variant="outlined" class="pa-3 text-center" color="info">
-                    <div class="text-caption text-medium-emphasis">{{ t('logs.statRunning') }}</div>
+                    <div class="text-caption text-medium-emphasis">{{ t('logs.stateRunning') }}</div>
                     <div class="text-h6 mt-1 text-info">{{ summaryStats.running }}</div>
                 </v-card>
             </v-col>
             <v-col cols="6" sm="3">
                 <v-card variant="outlined" class="pa-3 text-center" color="success">
-                    <div class="text-caption text-medium-emphasis">{{ t('logs.statSuccess') }}</div>
+                    <div class="text-caption text-medium-emphasis">{{ t('logs.stateSuccess') }}</div>
                     <div class="text-h6 mt-1 text-success">{{ summaryStats.success }}</div>
                 </v-card>
             </v-col>
             <v-col cols="6" sm="3">
                 <v-card variant="outlined" class="pa-3 text-center" color="error">
-                    <div class="text-caption text-medium-emphasis">{{ t('logs.statFailed') }}</div>
+                    <div class="text-caption text-medium-emphasis">{{ t('logs.stateFailed') }}</div>
                     <div class="text-h6 mt-1 text-error">{{ summaryStats.failed }}</div>
                 </v-card>
             </v-col>
@@ -197,13 +220,17 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
                     <v-card-item class="py-2 px-4">
                         <template #title><span class="text-subtitle-2">{{ t('logs.attempts') }}</span></template>
                         <template #append>
+                            <v-btn v-if="selectedIds.length > 0" size="x-small" color="error" variant="tonal"
+                                :loading="deleting" @click="deleteSelected" class="mr-2">
+                                {{ t('logs.deleteSelected', { count: selectedIds.length }) }}
+                            </v-btn>
                             <v-select v-model="stateFilter" :items="stateOptions" density="compact" variant="outlined"
                                 hide-details style="max-width:110px" />
                         </template>
                     </v-card-item>
                     <v-data-table v-if="filteredAttempts.length > 0" :headers="tableHeaders" :items="filteredAttempts"
                         :items-per-page="20" :items-per-page-options="[10, 20, 50]" density="compact" item-value="id"
-                        fixed-header height="320" hover
+                        fixed-header height="320" hover show-select v-model="selectedIds"
                         :row-props="(row: any) => ({ class: selectedAttemptId === row.item.id ? 'bg-primary-lighten-4' : '', style: 'cursor:pointer' })"
                         @click:row="(_: any, row: any) => selectAttempt(row.item.id)">
                         <template #item.id="{ item }">
@@ -211,7 +238,7 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
                         </template>
                         <template #item.state="{ item }">
                             <v-chip :color="stateColor(item.state)" size="x-small" variant="flat"
-                                :prepend-icon="stateIcon(item.state)" density="compact">
+                                :prepend-icon="stateIcon(item.state)">
                                 {{ stateLabel(item.state) }}
                             </v-chip>
                         </template>
@@ -243,7 +270,7 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
                         <template #title>
                             <span class="text-body-2 font-weight-bold">#{{ selectedAttemptId.slice(-8) }}</span>
                             <v-chip v-if="selectedAttempt" :color="stateColor(selectedAttempt.state)" size="x-small"
-                                variant="flat" class="ml-2" density="compact">
+                                variant="flat" class="ml-2">
                                 {{ stateLabel(selectedAttempt.state) }}
                             </v-chip>
                         </template>

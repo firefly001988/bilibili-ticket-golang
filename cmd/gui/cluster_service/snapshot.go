@@ -158,24 +158,39 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 			deficit = 0
 		}
 		result.Intents = append(result.Intents, IntentSummary{
-			ID:            plan.Intent.ID,
-			MacroTaskID:   plan.Intent.MacroTaskID,
-			Phase:         plan.Intent.Phase,
-			Weight:        w,
-			Priority:      plan.Intent.Priority,
-			BuyerCount:    len(plan.Intent.Buyers),
-			Succeeded:     plan.Intent.Succeeded,
-			Terminal:      plan.Intent.Terminal,
-			Armed:         plan.Intent.Armed,
-			ActiveCount:   active,
-			Deficit:       deficit,
-			FailureReason: plan.Intent.FailureReason,
-			CreatedAt:     plan.Intent.CreatedAt,
+			ID:              plan.Intent.ID,
+			MacroTaskID:     plan.Intent.MacroTaskID,
+			PurchaseGroupID: plan.Intent.PurchaseGroupID,
+			Phase:           plan.Intent.Phase,
+			Weight:          w,
+			Priority:        plan.Intent.Priority,
+			BuyerCount:      len(plan.Intent.Buyers),
+			Succeeded:       plan.Intent.Succeeded,
+			Terminal:        plan.Intent.Terminal,
+			Armed:           plan.Intent.Armed,
+			ActiveCount:     active,
+			Deficit:         deficit,
+			FailureReason:   plan.Intent.FailureReason,
+			CreatedAt:       plan.Intent.CreatedAt,
 		})
 	}
 
+	// ── Attempts: merge dispatcher in-memory + DB historical records ──────────
+	seen := make(map[string]bool)
 	for _, value := range s.dispatcher.Attempts() {
 		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, PaymentURL: value.Result.PaymentURL, Reason: value.Result.Reason})
+		seen[value.ID] = true
+	}
+	// Also load terminal attempts from DB that were purged from dispatcher
+	// memory (e.g. after force-reset), so the logs page retains history.
+	dbAttempts, dbErr := s.repository.ListAttempts(ctx)
+	if dbErr == nil {
+		for _, value := range dbAttempts {
+			if seen[value.ID] {
+				continue
+			}
+			result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, PaymentURL: value.Result.PaymentURL, Reason: value.Result.Reason})
+		}
 	}
 	return result, nil
 }

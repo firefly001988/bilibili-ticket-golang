@@ -91,6 +91,38 @@ func (s *ClusterService) autoStartReadyTaskGroups(ctx context.Context) {
 		if !ready {
 			continue
 		}
+
+		// Skip task groups where all intents have already succeeded.
+		// For the purpose of this check, a macro without any intents
+		// is NOT considered "all succeeded" (it still needs planning).
+		intents, _ := s.repository.ListIntents(ctx)
+		allSucceeded := len(tgMacroList) > 0
+		for _, macro := range tgMacroList {
+			macroIntents := 0
+			macroSucceeded := 0
+			for _, intent := range intents {
+				if intent.MacroTaskID != macro.ID {
+					continue
+				}
+				macroIntents++
+				if intent.Succeeded {
+					macroSucceeded++
+				}
+			}
+			if macroIntents == 0 {
+				allSucceeded = false
+				break
+			}
+			if macroSucceeded < macroIntents {
+				allSucceeded = false
+				break
+			}
+		}
+		if allSucceeded {
+			log.Printf("[cluster] auto-start: skip task group %s — all %d macro(s) fully succeeded", tgID, len(tgMacroList))
+			continue
+		}
+
 		// Check that task group has purchase groups.  We only need
 		// one macro with purchase groups to be actionable.
 		hasGroups := false

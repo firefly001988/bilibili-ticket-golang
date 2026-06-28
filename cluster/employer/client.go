@@ -168,6 +168,8 @@ func (c *WorkerClient) startHeartbeat(node domain.WorkerNode, wc *workerConn) {
 		return
 	}
 
+	log.Printf("[worker-client] heartbeat stream established to %s (%s)", node.ID, node.Address)
+
 	// Read heartbeats from the worker.
 	go func() {
 		defer cancel()

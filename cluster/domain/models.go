@@ -136,19 +136,20 @@ type PurchaseGroup struct {
 }
 
 type LogicalOrderIntent struct {
-	ID            string        `json:"id"`
-	MacroTaskID   string        `json:"macroTaskId"`
-	Phase         Phase         `json:"phase"`
-	Buyers        []Buyer       `json:"buyers"`
-	BuyerDays     []BuyerDayKey `json:"buyerDays"`
-	ShapeHash     string        `json:"shapeHash"`
-	Succeeded     bool          `json:"succeeded"`
-	Armed         bool          `json:"armed"`
-	Terminal      bool          `json:"terminal"`
-	Weight        int           `json:"weight"`   // relative worker/account share
-	Priority      int           `json:"priority"` // lower values receive remainder slots first
-	FailureReason FailureReason `json:"failureReason,omitempty"`
-	CreatedAt     time.Time     `json:"createdAt"`
+	ID              string        `json:"id"`
+	MacroTaskID     string        `json:"macroTaskId"`
+	PurchaseGroupID string        `json:"purchaseGroupId,omitempty"` // originating purchase group
+	Phase           Phase         `json:"phase"`
+	Buyers          []Buyer       `json:"buyers"`
+	BuyerDays       []BuyerDayKey `json:"buyerDays"`
+	ShapeHash       string        `json:"shapeHash"`
+	Succeeded       bool          `json:"succeeded"`
+	Armed           bool          `json:"armed"`
+	Terminal        bool          `json:"terminal"`
+	Weight          int           `json:"weight"`   // relative worker/account share
+	Priority        int           `json:"priority"` // lower values receive remainder slots first
+	FailureReason   FailureReason `json:"failureReason,omitempty"`
+	CreatedAt       time.Time     `json:"createdAt"`
 }
 
 func NewIntent(id string, macro MacroTask, phase Phase, buyers []Buyer, now time.Time) (LogicalOrderIntent, error) {

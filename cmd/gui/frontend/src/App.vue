@@ -39,6 +39,8 @@ const calculatedPath = computed(() => {
   return p;
 })
 
+const isPayQR = computed(() => router.currentRoute.value.path.startsWith('/pay-qr'))
+
 // ── Task groups (loaded inline in sidebar) ──────────────────
 interface TaskGroup {
   id: string
@@ -121,7 +123,7 @@ onMounted(async () => {
   </v-overlay>
 
   <v-app v-if="verified && !showLangPicker" class="rounded rounded-md">
-    <v-navigation-drawer expand-on-hover permanent>
+    <v-navigation-drawer v-if="!isPayQR" expand-on-hover permanent>
       <v-list density="compact" nav activatable :activated="calculatedPath">
         <v-list-item :title="t('nav.home')" value="home" prepend-icon="mdi-home" @click="router.push('/')" />
 

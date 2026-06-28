@@ -35,3 +35,9 @@ func (s *ClusterService) AttemptLogs(attemptID string) ([]clusterworker.LogEntry
 	}
 	return nil, fmt.Errorf("worker %s not found", selected.WorkerID)
 }
+
+// DeleteTerminalAttempts removes terminal (succeeded/failed/stopped) attempts
+// from the database.  Running or queued attempts are silently kept.
+func (s *ClusterService) DeleteTerminalAttempts(attemptIDs []string) error {
+	return s.repository.DeleteAttempts(context.Background(), attemptIDs)
+}

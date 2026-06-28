@@ -2,6 +2,7 @@ package main
 
 import (
 	"bilibili-ticket-golang/cmd/gui/i18n"
+	"bilibili-ticket-golang/cmd/gui/payqr"
 	"bilibili-ticket-golang/cmd/gui/store/configuration"
 	"bilibili-ticket-golang/lib/biliutils"
 	"fmt"
@@ -136,12 +137,5 @@ func (a *App) OpenPayQRWindow(options PayQRWindowOptions) {
 		values.Set("orderTime", fmt.Sprint(options.OrderTime))
 	}
 
-	window := a.wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:            title,
-		BackgroundColour: application.RGBA{Red: 27, Green: 38, Blue: 54, Alpha: 255},
-		URL:              "/#/pay-qr?" + values.Encode(),
-	})
-	window.Show()
-	window.Center()
-	window.Focus()
+	payqr.OpenWindow(a.wailsApp, title, values)
 }

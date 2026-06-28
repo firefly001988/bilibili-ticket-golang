@@ -149,7 +149,10 @@ func (s *ClusterService) invalidateMacroConfiguration(macroID string) error {
 		return fmt.Errorf("macro task cannot be changed while an attempt is active")
 	}
 	if err := s.repository.ResetMacroExecution(context.Background(), macroID); err != nil {
-		return err
+		// If the normal reset is blocked by a successful order, force-reset.
+		// Purchase group edits are orthogonal to the previous success and
+		// should always be allowed when no attempt is active.
+		return s.repository.ForceResetMacroExecution(context.Background(), macroID)
 	}
 	return s.dispatcher.RemoveMacro(macroID)
 }
@@ -287,9 +290,12 @@ func (s *ClusterService) planMacro(ctx context.Context, macroID string, phase do
 		existingByID[intent.ID] = intent
 	}
 	intentIDs := make(map[string]struct{}, len(intents))
+	skipped := 0
 	for _, intent := range intents {
 		if previous, ok := existingByID[intent.ID]; ok && previous.Succeeded {
-			return nil, fmt.Errorf("order intent %s has already succeeded and cannot be restarted", intent.ID)
+			// Already succeeded — skip, don't re-dispatch.
+			skipped++
+			continue
 		}
 		if err := s.repository.PutIntent(ctx, intent); err != nil {
 			return nil, err
@@ -297,10 +303,113 @@ func (s *ClusterService) planMacro(ctx context.Context, macroID string, phase do
 		s.dispatcher.Add(dispatcher.IntentPlan{Macro: *selected, Intent: intent})
 		intentIDs[intent.ID] = struct{}{}
 	}
+	if skipped > 0 && len(intentIDs) == 0 {
+		return nil, fmt.Errorf("all %d intent(s) already succeeded", skipped)
+	}
 	s.mu.Lock()
 	s.phases[macroID] = phase
 	s.mu.Unlock()
 	return intentIDs, nil
+}
+
+// RestartMacro force-resets a single macro and re-plans it.  Intents that
+// already succeeded are skipped (not re-dispatched).  Callers should
+// ensure workers are reserved before calling this.
+func (s *ClusterService) RestartMacro(macroID string) error {
+	ctx := context.Background()
+	if err := s.repository.ForceResetMacroExecution(ctx, macroID); err != nil {
+		return err
+	}
+	if err := s.dispatcher.RemoveMacro(macroID); err != nil {
+		return err
+	}
+	_, err := s.planMacro(ctx, macroID, domain.PhasePunctual)
+	if err != nil {
+		return err
+	}
+	return s.dispatcher.Reconcile(ctx)
+}
+
+// StopIntent stops all active attempts belonging to a single intent.
+func (s *ClusterService) StopIntent(intentID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	workerList, err := s.repository.ListWorkers(ctx)
+	if err != nil {
+		return err
+	}
+	workerByID := make(map[string]domain.WorkerNode, len(workerList))
+	for _, w := range workerList {
+		workerByID[w.ID] = w
+	}
+	for _, a := range s.dispatcher.Attempts() {
+		if a.IntentID != intentID || a.State.Terminal() {
+			continue
+		}
+		worker, ok := workerByID[a.WorkerID]
+		if !ok {
+			continue
+		}
+		_ = s.client.Stop(ctx, worker, a.ID)
+	}
+	return nil
+}
+
+// StartPurchaseGroup plans and dispatches intents for a single purchase group
+// within a macro.  Only this purchase group's intents are armed; other
+// groups' intents remain untouched.  Already-succeeded intents from this
+// group are overwritten (upsert) so they can be re-dispatched.
+func (s *ClusterService) StartPurchaseGroup(macroID, purchaseGroupID string) error {
+	ctx := context.Background()
+
+	if s.dispatcher.MacroActive(macroID) {
+		return fmt.Errorf("macro task is already active; stop it first")
+	}
+
+	macros, err := s.repository.ListMacroTasks(ctx)
+	if err != nil {
+		return err
+	}
+	var selected *domain.MacroTask
+	for i := range macros {
+		if macros[i].ID == macroID {
+			selected = &macros[i]
+			break
+		}
+	}
+	if selected == nil {
+		return fmt.Errorf("macro task not found")
+	}
+
+	group, err := s.repository.PurchaseGroup(ctx, purchaseGroupID)
+	if err != nil {
+		return fmt.Errorf("purchase group not found: %w", err)
+	}
+	if group.MacroTaskID != macroID {
+		return fmt.Errorf("purchase group belongs to another macro")
+	}
+
+	s.dispatcher.ResumePhase(domain.PhasePunctual)
+	intents, err := planner.PlanGroups(*selected, []domain.PurchaseGroup{group}, domain.PhasePunctual, time.Now())
+	if err != nil {
+		return err
+	}
+	if len(intents) == 0 {
+		return fmt.Errorf("planner produced no order intents for purchase group %s", purchaseGroupID)
+	}
+
+	for _, intent := range intents {
+		if err := s.repository.PutIntent(ctx, intent); err != nil {
+			return err
+		}
+		s.dispatcher.Add(dispatcher.IntentPlan{Macro: *selected, Intent: intent})
+	}
+
+	s.mu.Lock()
+	s.phases[macroID] = domain.PhasePunctual
+	s.mu.Unlock()
+
+	return s.dispatcher.Reconcile(ctx)
 }
 
 // SwitchToReflow transitions all punctual intents to the reflow phase,

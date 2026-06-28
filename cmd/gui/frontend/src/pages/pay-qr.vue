@@ -1,11 +1,14 @@
 <script lang="ts" setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { Window } from '@wailsio/runtime'
+import VueQr from 'vue-qr'
 
 const route = useRoute()
 const { t } = useI18n()
 
+const pageRef = ref<HTMLElement | null>(null)
 const link = ref('')
 const title = ref('')
 const project = ref('')
@@ -49,18 +52,76 @@ onMounted(() => {
 
 onUnmounted(() => { if (timer) clearInterval(timer) })
 
-function copyLink() {
-    navigator.clipboard.writeText(link.value)
+// Auto-resize window to fit content.
+// Uses scrollWidth/scrollHeight (real content size, not viewport-clipped rect)
+// and retries to account for async-rendered vue-qr canvas.
+function measureAndResize() {
+    const el = pageRef.value
+    if (!el) return
+    const w = el.scrollWidth
+    const h = el.scrollHeight
+    if (w > 0 && h > 0) {
+        Window.SetSize(Math.ceil(w) + 32, Math.ceil(h) + 32)
+        return true
+    }
+    return false
+}
+
+let resizeRetries = 0
+let resizeTimer: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+    // Try immediately, then retry every 150ms up to 15 times (~2.25s)
+    // for async components (vue-qr canvas) to finish rendering.
+    nextTick(() => {
+        requestAnimationFrame(() => {
+            if (measureAndResize()) return
+            resizeTimer = setInterval(() => {
+                resizeRetries++
+                if (measureAndResize() || resizeRetries >= 15) {
+                    if (resizeTimer) { clearInterval(resizeTimer); resizeTimer = null }
+                }
+            }, 150)
+        })
+    })
+})
+
+onUnmounted(() => {
+    if (resizeTimer) clearInterval(resizeTimer)
+})
+
+const copied = ref(false)
+
+async function copyLink() {
+    if (!link.value) return
+    try {
+        await navigator.clipboard.writeText(link.value)
+        copied.value = true
+        setTimeout(() => { copied.value = false }, 2000)
+    } catch {
+        const el = document.createElement('textarea')
+        el.value = link.value
+        el.style.position = 'fixed'
+        el.style.opacity = '0'
+        document.body.appendChild(el)
+        el.select()
+        document.execCommand('copy')
+        document.body.removeChild(el)
+        copied.value = true
+        setTimeout(() => { copied.value = false }, 2000)
+    }
 }
 
 const displayOrderTime = computed(() => {
     if (orderTime.value <= 0) return ''
     return new Date(orderTime.value * 1000).toLocaleString()
 })
+
+
 </script>
 
 <template>
-    <div class="pay-qr-window">
+    <div ref="pageRef" class="pay-qr-window">
         <div v-if="!link" class="text-center pa-8">
             <v-icon size="64" color="medium-emphasis" class="mb-3">mdi-qrcode</v-icon>
             <p class="text-body-1 text-medium-emphasis">{{ t('payQR.noLink') }}</p>
@@ -76,7 +137,7 @@ const displayOrderTime = computed(() => {
 
             <!-- QR code -->
             <div class="qr-wrapper">
-                <img :src="link" alt="QR Code" class="qr-image" />
+                <vue-qr :text="link" :size="220" :margin="8" style="border-radius: 8px;" />
             </div>
 
             <!-- Info -->
@@ -105,8 +166,9 @@ const displayOrderTime = computed(() => {
 
             <!-- Copy link button -->
             <div class="text-center mt-4">
-                <v-btn prepend-icon="mdi-content-copy" variant="tonal" size="small" @click="copyLink">
-                    {{ t('payQR.copyLink') }}
+                <v-btn :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'" variant="tonal" size="small"
+                    :color="copied ? 'success' : undefined" @click="copyLink">
+                    {{ copied ? t('payQR.copied') : t('payQR.copyLink') }}
                 </v-btn>
             </div>
         </template>
@@ -116,9 +178,8 @@ const displayOrderTime = computed(() => {
 <style scoped>
 .pay-qr-window {
     padding: 20px 24px;
-    min-width: 320px;
-    max-width: 400px;
-    margin: 0 auto;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .qr-wrapper {
@@ -127,12 +188,7 @@ const displayOrderTime = computed(() => {
     margin: 16px 0;
 }
 
-.qr-image {
-    width: 220px;
-    height: 220px;
-    border-radius: 8px;
-    border: 2px solid rgba(var(--v-theme-surface-variant), 0.5);
-}
+
 
 .info-section {
     background: rgba(var(--v-theme-surface-variant), 0.3);
@@ -164,5 +220,18 @@ const displayOrderTime = computed(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+</style>
+
+<style>
+/* Ensure body fills the window and doesn't scroll during auto-resize */
+html,
+body,
+#app {
+    height: 100% !important;
+    min-height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
 }
 </style>

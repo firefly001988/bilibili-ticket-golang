@@ -3,14 +3,14 @@ import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
-import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup, StopTaskGroup, StartTaskGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
+import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup, StopTaskGroup, ForceStopTaskGroup, ForceRestartTaskGroup, StartTaskGroup, RestartMacro, StopIntent, StartPurchaseGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
 
 const route = useRoute(); const { t } = useI18n(); const messages = useMessagesStore()
 
 interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; phase?: string; purchaseGroups?: any[] }
 interface AttemptBrief { id: string; intentId: string; accountId: string; workerId: string; state: string; orderId?: string }
-interface IntentBrief { id: string; macroTaskId: string; phase: string; weight: number; priority: number; buyerCount: number; succeeded: boolean; terminal: boolean; armed: boolean; activeCount: number; deficit: number; failureReason?: string }
+interface IntentBrief { id: string; macroTaskId: string; purchaseGroupId?: string; phase: string; weight: number; priority: number; buyerCount: number; succeeded: boolean; terminal: boolean; armed: boolean; activeCount: number; deficit: number; failureReason?: string }
 
 const group = ref<any>(null); const macros = ref<MacroSummary[]>([]); const attempts = ref<AttemptBrief[]>([]); const intents = ref<IntentBrief[]>([]); const loading = ref(true)
 const dispatching = ref<Record<string, boolean>>({}); const dispatchingAll = ref(false)
@@ -331,6 +331,17 @@ function dispatchStats(m: MacroSummary) {
     return { running, deficit, succeeded, failed, total: macroIntents.length, intents: macroIntents }
 }
 
+/** Per-purchase-group dispatch stats: running/queued/succeeded/failed */
+function pgStats(m: MacroSummary, pgId: string) {
+    const pgIntents = intents.value.filter(i => i.macroTaskId === m.id && i.purchaseGroupId === pgId && i.armed && !i.terminal && !i.succeeded)
+    const running = pgIntents.reduce((sum, i) => sum + (i.activeCount || 0), 0)
+    const deficit = pgIntents.reduce((sum, i) => sum + (i.deficit || 0), 0)
+    const succeeded = intents.value.filter(i => i.macroTaskId === m.id && i.purchaseGroupId === pgId && i.succeeded).length
+    const failed = intents.value.filter(i => i.macroTaskId === m.id && i.purchaseGroupId === pgId && i.terminal && !i.succeeded).length
+    const total = pgIntents.length + succeeded + failed
+    return { running, deficit, succeeded, failed, total, intents: pgIntents }
+}
+
 
 async function startAllMacros() {
     if (!group.value) return
@@ -366,6 +377,63 @@ async function stopAllMacros() {
     dispatchingAll.value = false
 }
 
+async function forceStopAllMacros() {
+    if (!group.value) return
+    dispatchingAll.value = true
+    try {
+        await ForceStopTaskGroup(group.value.id)
+        await loadAll(group.value.id); messages.add({ text: t('taskGroup.allForceStopped'), color: 'info' })
+    }
+    catch (e: any) { messages.add({ text: t('taskGroup.forceStopFailed', { error: String(e) }), color: 'error' }) }
+    dispatchingAll.value = false
+}
+
+async function forceRestartAllMacros() {
+    if (!group.value) return
+    workerList.value = ((await Snapshot()).workers || []) as any[]
+    if (workerList.value.length === 0) {
+        messages.add({ text: t('taskGroup.noWorkersAvailable'), color: 'warning' })
+        return
+    }
+    selectedWorkerIds.value = workerList.value.filter(w => w.healthy).map(w => w.id)
+    showWorkerSelectDialog.value = false
+    dispatchingAll.value = true
+    try {
+        await ForceRestartTaskGroup(group.value.id, JSON.stringify(selectedWorkerIds.value))
+        await loadAll(group.value.id); messages.add({ text: t('taskGroup.allForceRestarted'), color: 'success' })
+    }
+    catch (e: any) { messages.add({ text: t('taskGroup.forceRestartFailed', { error: String(e) }), color: 'error' }) }
+    dispatchingAll.value = false
+}
+
+async function restartSingleMacro(macroID: string) {
+    dispatching.value[macroID] = true
+    try {
+        await RestartMacro(macroID)
+        await loadAll(group.value.id); messages.add({ text: t('taskGroup.macroRestarted'), color: 'success' })
+    }
+    catch (e: any) { messages.add({ text: t('taskGroup.macroRestartFailed', { error: String(e) }), color: 'error' }) }
+    dispatching.value[macroID] = false
+}
+
+async function stopSingleIntent(intentID: string) {
+    try {
+        await StopIntent(intentID)
+        await loadAll(group.value.id, true)
+    }
+    catch (e: any) { messages.add({ text: t('taskGroup.stopIntentFailed', { error: String(e) }), color: 'error' }) }
+}
+
+async function startSinglePurchaseGroup(macroID: string, pgID: string) {
+    dispatching.value[pgID] = true
+    try {
+        await StartPurchaseGroup(macroID, pgID)
+        await loadAll(group.value.id); messages.add({ text: t('taskGroup.pgStarted'), color: 'success' })
+    }
+    catch (e: any) { messages.add({ text: t('taskGroup.pgStartFailed', { error: String(e) }), color: 'error' }) }
+    dispatching.value[pgID] = false
+}
+
 const dispatchableMacros = computed(() => macros.value.filter(m => m.purchaseGroups && m.purchaseGroups.length > 0))
 const anyRunning = computed(() => dispatchableMacros.value.some(m => hasIntent(m)))
 const groupStats = computed(() => {
@@ -377,6 +445,20 @@ const groupStats = computed(() => {
         succeeded: intents.value.filter(i => i.succeeded).length,
         failed: intents.value.filter(i => i.terminal && !i.succeeded).length,
     }
+})
+
+/** All purchase groups across all macros with per-PG stats */
+const allPurchaseGroups = computed(() => {
+    const result: Array<{ macro: MacroSummary; pg: any; stats: ReturnType<typeof pgStats> }> = []
+    for (const m of macros.value) {
+        for (const pg of (m.purchaseGroups || [])) {
+            const stats = pgStats(m, pg.id)
+            if (stats.total > 0) {
+                result.push({ macro: m, pg, stats })
+            }
+        }
+    }
+    return result
 })
 </script>
 
@@ -410,10 +492,45 @@ const groupStats = computed(() => {
                             @click="startAllMacros">
                             {{ t('taskGroup.startAll') }}
                         </v-btn>
-                        <v-btn v-else prepend-icon="mdi-stop-circle-outline" color="error" variant="tonal" size="small"
-                            :loading="dispatchingAll" @click="stopAllMacros">
-                            {{ t('taskGroup.stopAll') }}
+                        <template v-else>
+                            <v-btn prepend-icon="mdi-stop-circle-outline" color="error" variant="tonal" size="small"
+                                :loading="dispatchingAll" @click="stopAllMacros">
+                                {{ t('taskGroup.stopAll') }}
+                            </v-btn>
+                            <v-btn prepend-icon="mdi-alert-octagon" color="deep-orange" variant="tonal" size="small"
+                                :loading="dispatchingAll" @click="forceStopAllMacros" class="ml-1">
+                                {{ t('taskGroup.forceStopAll') }}
+                            </v-btn>
+                        </template>
+                        <v-btn prepend-icon="mdi-refresh" color="warning" variant="tonal" size="small"
+                            :loading="dispatchingAll" @click="forceRestartAllMacros" class="ml-1">
+                            {{ t('taskGroup.forceRestartAll') }}
                         </v-btn>
+                    </div>
+                </v-card-text>
+            </v-card>
+
+            <!-- Purchase Group Status -->
+            <v-card v-if="allPurchaseGroups.length > 0" class="mb-4" elevation="2">
+                <v-card-title class="text-subtitle-1 py-2 px-4">{{ t('taskGroup.purchaseGroups') }} ({{
+                    allPurchaseGroups.length
+                    }})</v-card-title>
+                <v-card-text class="py-1 px-4">
+                    <div v-for="row in allPurchaseGroups" :key="row.pg.id"
+                        style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0">
+                        <span class="text-caption text-medium-emphasis" style="min-width:80px">{{ row.macro.skuName ||
+                            row.macro.skuId }}</span>
+                        <v-chip v-for="b in (row.pg.buyers || [])" :key="b.logicalId" size="x-small" variant="tonal">{{
+                            buyerByLogicalId(b.logicalId)?.name || b.name || b.logicalId }}</v-chip>
+                        <v-spacer />
+                        <v-chip v-if="row.stats.succeeded > 0" size="x-small" variant="tonal" color="success">{{
+                            t('taskGroup.succeeded', { count: row.stats.succeeded }) }}</v-chip>
+                        <v-chip v-if="row.stats.running > 0" size="x-small" variant="tonal" color="info">{{
+                            t('taskGroup.running', { count: row.stats.running }) }}</v-chip>
+                        <v-chip v-if="row.stats.deficit > 0" size="x-small" variant="tonal" color="warning">{{
+                            t('taskGroup.queued', { count: row.stats.deficit }) }}</v-chip>
+                        <v-chip v-if="row.stats.failed > 0" size="x-small" variant="tonal" color="error">{{
+                            t('taskGroup.failed', { count: row.stats.failed }) }}</v-chip>
                     </div>
                 </v-card-text>
             </v-card>
@@ -585,6 +702,9 @@ const groupStats = computed(() => {
                                     </div>
                                 </div>
                                 <template v-slot:actions>
+                                    <v-btn v-if="hasIntent(m)" icon="mdi-refresh" size="medium" variant="text"
+                                        color="warning" :loading="dispatching[m.id]"
+                                        @click.stop="restartSingleMacro(m.id)" />
                                     <v-btn icon="mdi-delete" size="medium" variant="text" color="error"
                                         :loading="deletingMacro[m.id]" @click.stop="removeMacro(m)" />
                                 </template>
@@ -629,6 +749,9 @@ const groupStats = computed(() => {
                                                     {{ i.activeCount }}/{{ i.weight }}
                                                     <span v-if="i.deficit > 0" class="ml-1">(-{{ i.deficit }})</span>
                                                 </v-chip>
+                                                <v-btn v-if="i.activeCount > 0" icon="mdi-stop" size="x-small"
+                                                    variant="text" color="error" class="ml-1"
+                                                    @click.stop="stopSingleIntent(i.id)" />
                                             </template>
                                         </v-list-item>
                                     </v-list>
@@ -642,24 +765,36 @@ const groupStats = computed(() => {
                                             <template v-for="(pg, pgIdx) in (m.purchaseGroups || [])" :key="pg.id">
                                                 <v-list-item class="px-2">
                                                     <template #title>
-                                                        <v-chip v-for="b in (pg.buyers || [])" :key="b.logicalId"
-                                                            size="small" variant="tonal" class="mr-1">{{
-                                                                buyerByLogicalId(b.logicalId)?.name || b.name || b.logicalId
-                                                            }}</v-chip>
-                                                        <v-chip v-if="pg.allowSplit" color="primary" size="x-small"
-                                                            variant="outlined" class="ml-1">{{
-                                                                t('taskGroup.pgAllowSplit') }}</v-chip>
-                                                        <v-chip v-if="(pg.weight || 1) !== 1" size="x-small"
-                                                            variant="outlined" class="ml-1" color="info">
-                                                            ×{{ pg.weight || 1 }}
-                                                        </v-chip>
-                                                        <v-chip v-if="(pg.priority || 0) !== 0" size="x-small"
-                                                            variant="outlined" class="ml-1"
-                                                            :color="(pg.priority || 0) > 0 ? 'success' : 'warning'">
-                                                            P{{ pg.priority || 0 }}
-                                                        </v-chip>
+                                                        <div
+                                                            style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">
+                                                            <v-chip v-for="b in (pg.buyers || [])" :key="b.logicalId"
+                                                                size="small" variant="tonal" class="mr-1">{{
+                                                                    buyerByLogicalId(b.logicalId)?.name || b.name ||
+                                                                    b.logicalId
+                                                                }}</v-chip>
+                                                            <v-chip v-if="pg.allowSplit" color="primary" size="x-small"
+                                                                variant="outlined" class="ml-1">{{
+                                                                    t('taskGroup.pgAllowSplit') }}</v-chip>
+                                                            <v-chip v-if="(pg.weight || 1) !== 1" size="x-small"
+                                                                variant="outlined" class="ml-1" color="info">
+                                                                ×{{ pg.weight || 1 }}
+                                                            </v-chip>
+                                                            <v-chip v-if="(pg.priority || 0) !== 0" size="x-small"
+                                                                variant="outlined" class="ml-1"
+                                                                :color="(pg.priority || 0) > 0 ? 'success' : 'warning'">
+                                                                P{{ pg.priority || 0 }}
+                                                            </v-chip>
+                                                        </div>
                                                     </template>
                                                     <template #append>
+                                                        <v-tooltip :text="t('taskGroup.pgStart')" location="top">
+                                                            <template #activator="{ props: tipProps }">
+                                                                <v-btn icon="mdi-play" size="x-small" variant="text"
+                                                                    color="success" class="mr-1" v-bind="tipProps"
+                                                                    :loading="dispatching[pg.id]"
+                                                                    @click.stop="startSinglePurchaseGroup(m.id, pg.id)" />
+                                                            </template>
+                                                        </v-tooltip>
                                                         <v-tooltip :text="t('taskGroup.pgEdit')" location="top">
                                                             <template #activator="{ props: tipProps }">
                                                                 <v-btn icon="mdi-pencil" size="x-small" variant="text"
