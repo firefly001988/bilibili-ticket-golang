@@ -48,7 +48,7 @@ type Config struct {
 
 func (c *Config) Normalize() error {
 	if c.Listen == "" {
-		c.Listen = "127.0.0.1:18080"
+		c.Listen = "127.0.0.1:37900"
 	}
 	if c.DataDir == "" {
 		c.DataDir = "data/worker"

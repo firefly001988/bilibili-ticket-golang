@@ -395,7 +395,7 @@ type GenerateRemoteWorkerConfigResponse struct {
 //
 // Parameters:
 //   - workerID: unique identifier for the worker (e.g. "home-server")
-//   - listen: address the worker will listen on (e.g. "0.0.0.0:18080")
+//   - listen: address the worker will listen on (e.g. "0.0.0.0:37900")
 //   - hosts: comma-separated list of DNS names / IPs for the server TLS cert
 //     (e.g. "myworker.example.com,192.168.1.100")
 func (s *ClusterService) GenerateRemoteWorkerConfig(workerID, listen, hosts string) (GenerateRemoteWorkerConfigResponse, error) {
@@ -406,7 +406,7 @@ func (s *ClusterService) GenerateRemoteWorkerConfig(workerID, listen, hosts stri
 		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("'local' is a reserved name; please choose a different worker ID")
 	}
 	if listen == "" {
-		listen = "0.0.0.0:18080"
+		listen = "0.0.0.0:37900"
 	}
 	hostList := strings.Split(hosts, ",")
 	filtered := hostList[:0]
@@ -491,7 +491,7 @@ func (s *ClusterService) GenerateRemoteWorkerConfig(workerID, listen, hosts stri
 // overrideAddress, when non-empty, overrides the dial address (rc.Listen)
 // embedded in the encoded config.  This allows the employer to specify the
 // real reachable IP:port of the worker, which may differ from the listen
-// address the worker was configured with (e.g. 0.0.0.0:18080 vs the actual
+// address the worker was configured with (e.g. 0.0.0.0:37900 vs the actual
 // public IP).
 func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string, overrideAddress string) error {
 	rc, err := clusterworker.DecodeRemoteWorkerConfig(encodedConfig)

@@ -112,7 +112,7 @@ func (m *LocalWorkerManager) RemoveWorker(workerID string) error {
 	return m.StopWorker(workerID)
 }
 
-// Start starts the primary "local" worker on 127.0.0.1:18080.
+// Start starts the primary "local" worker on 127.0.0.1:37900.
 func (m *LocalWorkerManager) Start(ctx context.Context, client *WorkerClient, opts LocalWorkerOptions) (domain.WorkerNode, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -126,7 +126,7 @@ func (m *LocalWorkerManager) Start(ctx context.Context, client *WorkerClient, op
 	if slot, exists := m.slots["local"]; exists && slot != nil && slot.server != nil {
 		return slot.node, nil
 	}
-	return m.startLocked(ctx, "local", "Local Worker", "127.0.0.1:18080", "data/local-worker")
+	return m.startLocked(ctx, "local", "Local Worker", "127.0.0.1:37900", "data/local-worker")
 }
 
 // Stop stops all local workers.
