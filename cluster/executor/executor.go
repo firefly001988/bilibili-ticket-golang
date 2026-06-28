@@ -81,10 +81,11 @@ func (realClock) Sleep(ctx context.Context, d time.Duration) error {
 }
 
 type Engine struct {
-	Backend    Backend
-	Classifier Classifier
-	Clock      Clock
-	Observe    func(Event)
+	Backend          Backend
+	Classifier       Classifier
+	Clock            Clock
+	Observe          func(Event)
+	GetRetryInterval func() int64 // optional: dynamic retry interval (ms), checked each loop iteration
 }
 
 type Event struct {
@@ -129,16 +130,34 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 		return finish(domain.AttemptFailed, domain.FailureDeadline, "deadline elapsed", false)
 	}
 	if spec.StartMode == domain.StartScheduled && spec.StartAt.After(now()) {
+		// Apply start delay: shift the scheduled time earlier by StartDelayMS.
+		adjustedStart := spec.StartAt
+		if spec.StartDelayMS > 0 {
+			adjustedStart = adjustedStart.Add(-time.Duration(spec.StartDelayMS) * time.Millisecond)
+			if adjustedStart.Before(now()) {
+				adjustedStart = now()
+			}
+		}
 		emit("scheduled", "waiting until scheduled start", 0, false)
-		if err := e.Clock.Sleep(ctx, spec.StartAt.Sub(now())); err != nil {
+		if err := e.Clock.Sleep(ctx, adjustedStart.Sub(now())); err != nil {
 			return finish(domain.AttemptStopped, domain.FailureStopped, err.Error(), false)
 		}
 	}
-	interval := time.Duration(spec.IntervalMS) * time.Millisecond
-	if interval <= 0 {
-		interval = 500 * time.Millisecond
-	}
+
 	for {
+		// Resolve the retry interval dynamically — if the caller provided
+		// a GetRetryInterval hook, it is checked on every loop iteration
+		// so that global config changes take effect for running tasks.
+		interval := time.Duration(spec.IntervalMS) * time.Millisecond
+		if e.GetRetryInterval != nil {
+			if dyn := e.GetRetryInterval(); dyn > 0 {
+				interval = time.Duration(dyn) * time.Millisecond
+			}
+		}
+		if interval <= 0 {
+			interval = 500 * time.Millisecond
+		}
+
 		if err := ctx.Err(); err != nil {
 			return finish(domain.AttemptStopped, domain.FailureStopped, err.Error(), false)
 		}

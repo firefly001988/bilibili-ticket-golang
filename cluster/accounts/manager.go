@@ -195,7 +195,7 @@ func logicalBuyerID(buyer domain.Buyer) string {
 // EnsureBuyer never mutates a Bilibili account without explicit confirmation.
 func (m *Manager) EnsureBuyer(ctx context.Context, accountID string, buyer domain.Buyer, confirmed bool) (domain.AccountBuyerMapping, error) {
 	if buyer.LogicalID == "" {
-		return domain.AccountBuyerMapping{}, errors.New("logical buyer id is required")
+		buyer.LogicalID = logicalBuyerID(buyer)
 	}
 	if mapping, err := m.repository.BuyerMapping(ctx, accountID, buyer.LogicalID); err == nil {
 		return mapping, nil

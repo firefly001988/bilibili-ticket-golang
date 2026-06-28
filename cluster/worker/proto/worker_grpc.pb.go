@@ -26,6 +26,7 @@ const (
 	WorkerService_Stop_FullMethodName      = "/worker.WorkerService/Stop"
 	WorkerService_Ack_FullMethodName       = "/worker.WorkerService/Ack"
 	WorkerService_Heartbeat_FullMethodName = "/worker.WorkerService/Heartbeat"
+	WorkerService_Configure_FullMethodName = "/worker.WorkerService/Configure"
 )
 
 // WorkerServiceClient is the client API for WorkerService service.
@@ -56,6 +57,11 @@ type WorkerServiceClient interface {
 	// back. Either side treats silence longer than the heartbeat interval
 	// as a dead connection, triggering a reconnect.
 	Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HeartbeatMsg, HeartbeatMsg], error)
+	// Configure pushes global settings (retry interval, start delay) from
+	// the employer to the worker. The worker applies these immediately to
+	// all future tasks. The employer calls this after a successful Health
+	// handshake and whenever the user changes settings.
+	Configure(ctx context.Context, in *ConfigureRequest, opts ...grpc.CallOption) (*ConfigureResponse, error)
 }
 
 type workerServiceClient struct {
@@ -139,6 +145,16 @@ func (c *workerServiceClient) Heartbeat(ctx context.Context, opts ...grpc.CallOp
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type WorkerService_HeartbeatClient = grpc.BidiStreamingClient[HeartbeatMsg, HeartbeatMsg]
 
+func (c *workerServiceClient) Configure(ctx context.Context, in *ConfigureRequest, opts ...grpc.CallOption) (*ConfigureResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfigureResponse)
+	err := c.cc.Invoke(ctx, WorkerService_Configure_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkerServiceServer is the server API for WorkerService service.
 // All implementations must embed UnimplementedWorkerServiceServer
 // for forward compatibility.
@@ -167,6 +183,11 @@ type WorkerServiceServer interface {
 	// back. Either side treats silence longer than the heartbeat interval
 	// as a dead connection, triggering a reconnect.
 	Heartbeat(grpc.BidiStreamingServer[HeartbeatMsg, HeartbeatMsg]) error
+	// Configure pushes global settings (retry interval, start delay) from
+	// the employer to the worker. The worker applies these immediately to
+	// all future tasks. The employer calls this after a successful Health
+	// handshake and whenever the user changes settings.
+	Configure(context.Context, *ConfigureRequest) (*ConfigureResponse, error)
 	mustEmbedUnimplementedWorkerServiceServer()
 }
 
@@ -197,6 +218,9 @@ func (UnimplementedWorkerServiceServer) Ack(context.Context, *AckRequest) (*AckR
 }
 func (UnimplementedWorkerServiceServer) Heartbeat(grpc.BidiStreamingServer[HeartbeatMsg, HeartbeatMsg]) error {
 	return status.Error(codes.Unimplemented, "method Heartbeat not implemented")
+}
+func (UnimplementedWorkerServiceServer) Configure(context.Context, *ConfigureRequest) (*ConfigureResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Configure not implemented")
 }
 func (UnimplementedWorkerServiceServer) mustEmbedUnimplementedWorkerServiceServer() {}
 func (UnimplementedWorkerServiceServer) testEmbeddedByValue()                       {}
@@ -334,6 +358,24 @@ func _WorkerService_Heartbeat_Handler(srv interface{}, stream grpc.ServerStream)
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type WorkerService_HeartbeatServer = grpc.BidiStreamingServer[HeartbeatMsg, HeartbeatMsg]
 
+func _WorkerService_Configure_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfigureRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).Configure(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_Configure_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).Configure(ctx, req.(*ConfigureRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkerService_ServiceDesc is the grpc.ServiceDesc for WorkerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -364,6 +406,10 @@ var WorkerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Ack",
 			Handler:    _WorkerService_Ack_Handler,
+		},
+		{
+			MethodName: "Configure",
+			Handler:    _WorkerService_Configure_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

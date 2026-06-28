@@ -122,12 +122,23 @@ type Server struct {
 	active            string
 	now               func() time.Time
 	completedNotifier func(t *task) // called when a task completes to push result over heartbeat
+	grpcServer        *grpc.Server  // set by ServeOn/ListenAndServe; nil until serving
+
+	// Global configuration pushed by the employer via Configure RPC.
+	globalConfig   GlobalConfig
+	globalConfigMu sync.RWMutex
 
 	// Cached clock offsets (computed once, reported in Health).
 	biliOffset   time.Duration
 	ntpOffset    time.Duration
 	offsetsReady bool
 	offsetsMu    sync.Mutex
+}
+
+// GlobalConfig holds runtime configuration pushed by the employer.
+type GlobalConfig struct {
+	RetryIntervalMs int64 `json:"retryIntervalMs"`
+	StartDelayMs    int64 `json:"startDelayMs"`
 }
 
 func NewServer(config Config, factory BackendFactory) (*Server, error) {
@@ -157,6 +168,24 @@ func NewGRPCService(s *Server) pb.WorkerServiceServer {
 	return &workerService{server: s}
 }
 
+// Stop immediately terminates the gRPC server and all active connections.
+// Safe to call multiple times; no-op if not serving.
+func (s *Server) Stop() {
+	s.mu.Lock()
+	gs := s.grpcServer
+	s.grpcServer = nil
+	// Cancel the currently active task if any.
+	if s.active != "" {
+		if t := s.tasks[s.active]; t != nil && t.cancel != nil {
+			t.cancel()
+		}
+	}
+	s.mu.Unlock()
+	if gs != nil {
+		gs.Stop()
+	}
+}
+
 func (s *Server) ListenAndServe() error {
 	tlsCfg, err := NewServerTLSConfig(s.config.CACertPEM, s.config.ServerCertPEM, s.config.ServerKeyPEM)
 	if err != nil {
@@ -168,6 +197,9 @@ func (s *Server) ListenAndServe() error {
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsCfg)))
 	pb.RegisterWorkerServiceServer(grpcServer, &workerService{server: s})
+	s.mu.Lock()
+	s.grpcServer = grpcServer
+	s.mu.Unlock()
 	return grpcServer.Serve(lis)
 }
 
@@ -180,6 +212,9 @@ func (s *Server) ServeOn(lis net.Listener) error {
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsCfg)))
 	pb.RegisterWorkerServiceServer(grpcServer, &workerService{server: s})
+	s.mu.Lock()
+	s.grpcServer = grpcServer
+	s.mu.Unlock()
 	return grpcServer.Serve(lis)
 }
 
@@ -371,6 +406,26 @@ func (ws *workerService) Ack(_ context.Context, req *pb.AckRequest) (*pb.AckResp
 	return &pb.AckResponse{}, nil
 }
 
+// =============================================================================
+// Configure – receive global settings from the employer
+// =============================================================================
+
+func (ws *workerService) Configure(_ context.Context, req *pb.ConfigureRequest) (*pb.ConfigureResponse, error) {
+	s := ws.server
+	cfg := req.GetConfig()
+	if cfg == nil {
+		return nil, status.Error(codes.InvalidArgument, "config is required")
+	}
+	s.globalConfigMu.Lock()
+	s.globalConfig = GlobalConfig{
+		RetryIntervalMs: cfg.RetryIntervalMs,
+		StartDelayMs:    cfg.StartDelayMs,
+	}
+	s.globalConfigMu.Unlock()
+	log.Printf("[worker] global config updated: retryInterval=%dms startDelay=%dms", cfg.RetryIntervalMs, cfg.StartDelayMs)
+	return &pb.ConfigureResponse{}, nil
+}
+
 // Heartbeat
 // =============================================================================
 
@@ -450,14 +505,15 @@ func specFromProto(p *pb.ExecutionSpec) (domain.ExecutionSpec, error) {
 		return domain.ExecutionSpec{}, errors.New("nil ExecutionSpec")
 	}
 	s := domain.ExecutionSpec{
-		AttemptID:   p.AttemptId,
-		IntentID:    p.IntentId,
-		ProjectID:   p.ProjectId,
-		ScreenID:    p.ScreenId,
-		SKUID:       p.SkuId,
-		StartMode:   startModeFromProto(p.StartMode),
-		IntervalMS:  p.IntervalMs,
-		Credentials: credentialsFromProto(p.Credentials),
+		AttemptID:    p.AttemptId,
+		IntentID:     p.IntentId,
+		ProjectID:    p.ProjectId,
+		ScreenID:     p.ScreenId,
+		SKUID:        p.SkuId,
+		StartMode:    startModeFromProto(p.StartMode),
+		IntervalMS:   p.IntervalMs,
+		StartDelayMS: p.StartDelayMs,
+		Credentials:  credentialsFromProto(p.Credentials),
 	}
 	if p.StartAt != nil {
 		s.StartAt = p.StartAt.AsTime()
@@ -645,6 +701,17 @@ func logEntryToProto(e LogEntry) *pb.LogEntry {
 }
 
 func (s *Server) run(ctx context.Context, t *task) {
+	// Apply global configuration overrides from the employer.
+	s.globalConfigMu.RLock()
+	gcfg := s.globalConfig
+	s.globalConfigMu.RUnlock()
+	if gcfg.RetryIntervalMs > 0 {
+		t.spec.IntervalMS = gcfg.RetryIntervalMs
+	}
+	if gcfg.StartDelayMs > 0 {
+		t.spec.StartDelayMS = gcfg.StartDelayMs
+	}
+
 	backend, err := s.factory(t.spec)
 	if err != nil {
 		s.complete(t, domain.ExecutionResult{AttemptID: t.spec.AttemptID, IntentID: t.spec.IntentID, State: domain.AttemptFailed, Reason: domain.FailureInternal, Message: err.Error(), FinishedAt: s.now()})
@@ -664,9 +731,22 @@ func (s *Server) run(ctx context.Context, t *task) {
 			_ = WriteRedactedLog(s.config.DataDir, "clock calibration failed: "+err.Error())
 		}
 	}
-	result := (executor.Engine{Backend: backend, Clock: executionClock, Observe: func(event executor.Event) {
-		s.logTask(t, event.Stage, event.Message, event.Code, event.Retryable)
-	}}).Run(ctx, t.spec)
+	result := (executor.Engine{
+		Backend: backend,
+		Clock:   executionClock,
+		Observe: func(event executor.Event) {
+			s.logTask(t, event.Stage, event.Message, event.Code, event.Retryable)
+		},
+		// Dynamic retry interval — reads the global config pushed by the
+		// employer via Configure RPC, so changes take effect immediately
+		// for running tasks without needing to restart.
+		GetRetryInterval: func() int64 {
+			s.globalConfigMu.RLock()
+			ms := s.globalConfig.RetryIntervalMs
+			s.globalConfigMu.RUnlock()
+			return ms
+		},
+	}).Run(ctx, t.spec)
 	if result.Success {
 		if err := s.store.Append(result); err != nil {
 			result.Success, result.State, result.Reason, result.Message = false, domain.AttemptFailed, domain.FailureInternal, "persist success: "+err.Error()

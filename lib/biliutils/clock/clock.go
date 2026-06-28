@@ -15,12 +15,35 @@ import (
 // moment it produced the response, and the request's elapsed time is
 // subtracted from the local send-time to estimate that same moment locally.
 func GetBilibiliClockOffset() (time.Duration, error) {
+	offset, err := getBilibiliClockOffsetNew()
+	if err == nil {
+		return offset, nil
+	}
+	return getBilibiliClockOffsetOld()
+}
+
+func getBilibiliClockOffsetNew() (time.Duration, error) {
+	now := time.Now()
+	res, err := req.R().EnableTrace().Get("https://show.bilibili.com/api/activity/index/home/timestamp")
+	if err != nil {
+		return 0, err
+	}
+	var r api.MainApiDataRoot[int64]
+	if err = res.Unmarshal(&r); err != nil {
+		return 0, err
+	}
+	t := res.TraceInfo()
+	offset := time.UnixMilli(r.Data).Sub(now) + t.ResponseTime
+	return offset, nil
+}
+
+func getBilibiliClockOffsetOld() (time.Duration, error) {
 	now := time.Now()
 	res, err := req.R().EnableTrace().Get("https://api.live.bilibili.com/xlive/open-interface/v1/rtc/getTimestamp")
 	if err != nil {
 		return 0, err
 	}
-	var r api.MainApiDataRoot[api.RTCTimestamp]
+	var r api.ShowApiDataRoot[api.RTCTimestamp]
 	if err = res.Unmarshal(&r); err != nil {
 		return 0, err
 	}

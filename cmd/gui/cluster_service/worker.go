@@ -200,17 +200,29 @@ func (s *ClusterService) AddLocalWorker(id, name, listen string) error {
 }
 
 // StartLocalWorker starts (or restarts) an existing local worker by ID.
+// If the worker was stopped with an older version that removed the slot,
+// this falls back to AddWorker using the node data stored in the repository.
 func (s *ClusterService) StartLocalWorker(workerID string) error {
 	ctx := context.Background()
 	pluginName := ""
 	if _, statErr := os.Stat("plugins/captcha-plugin"); statErr == nil {
 		pluginName = "captcha-plugin"
 	}
-	node, err := s.local.StartWorker(ctx, s.client, workerID, employer.LocalWorkerOptions{
+	opts := employer.LocalWorkerOptions{
 		PluginDir:     "plugins",
 		CaptchaPlugin: pluginName,
 		Version:       global.GitCommit,
-	})
+	}
+	node, err := s.local.StartWorker(ctx, s.client, workerID, opts)
+	if err != nil && strings.Contains(err.Error(), "not added yet") {
+		// The slot was destroyed by an older StopWorker version, or the
+		// app was restarted after a stop.  Recover from the repository.
+		repoNode, repoErr := s.repository.Worker(ctx, workerID)
+		if repoErr != nil {
+			return fmt.Errorf("worker %q not found in repository: %w", workerID, repoErr)
+		}
+		node, err = s.local.AddWorker(ctx, s.client, workerID, repoNode.Name, repoNode.Address, opts)
+	}
 	if err != nil {
 		return err
 	}
@@ -229,21 +241,17 @@ func (s *ClusterService) StartLocalWorker(workerID string) error {
 	return s.refreshResources(ctx)
 }
 
-// StopLocalWorker stops a local in-process worker.
+// StopLocalWorker stops a local in-process worker without removing it from
+// the repository. The worker stays enabled so the frontend shows it as
+// "offline" with a start button. The gRPC client connection is closed
+// immediately so IsHealthy returns false right away.
 func (s *ClusterService) StopLocalWorker(workerID string) error {
 	if err := s.local.StopWorker(workerID); err != nil {
 		return err
 	}
-	// Mark the worker as disabled in the repository so the dispatcher
-	// stops assigning work to it.
-	node, err := s.repository.Worker(context.Background(), workerID)
-	if err != nil {
-		return err
-	}
-	node.Enabled = false
-	if err := s.repository.PutWorker(context.Background(), node); err != nil {
-		return err
-	}
+	// Tear down the gRPC client connection immediately so the frontend sees
+	// the worker as offline without waiting for the heartbeat timeout (15 s).
+	s.client.CloseConnection(workerID)
 	return s.refreshResources(context.Background())
 }
 

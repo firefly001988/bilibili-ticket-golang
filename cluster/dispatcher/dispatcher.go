@@ -70,6 +70,8 @@ type Dispatcher struct {
 	stoppedPhases       map[domain.Phase]bool
 	workerReservations  map[string]string // workerID → taskGroupID
 	activeTaskGroup     string            // current active task group ID (only one at a time)
+	retryIntervalMs     int64             // global retry interval (0 = use default 500ms)
+	startDelayMs        int64             // global start delay (0 = no early start)
 }
 
 func (d *Dispatcher) SetSuccessHandler(handler func(domain.LogicalOrderIntent, domain.ExecutionResult)) {
@@ -80,6 +82,15 @@ func (d *Dispatcher) SetSuccessHandler(handler func(domain.LogicalOrderIntent, d
 
 func New(client WorkerClient, repository Repository, resolver MappingResolver) *Dispatcher {
 	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), workerCooldown: make(map[string]time.Time), stoppedPhases: make(map[domain.Phase]bool), workerReservations: make(map[string]string), now: time.Now}
+}
+
+// SetGlobalConfig updates the dispatcher's runtime configuration. Values
+// of 0 mean "use the built-in default".
+func (d *Dispatcher) SetGlobalConfig(retryIntervalMs, startDelayMs int64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.retryIntervalMs = retryIntervalMs
+	d.startDelayMs = startDelayMs
 }
 
 func (d *Dispatcher) SetResources(accounts []domain.Account, workers []domain.WorkerNode) {
@@ -880,7 +891,11 @@ func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account dom
 	if plan.Macro.StartAt.After(d.now()) {
 		mode = domain.StartScheduled
 	}
-	spec := domain.ExecutionSpec{AttemptID: id, IntentID: plan.Intent.ID, ProjectID: plan.Macro.ProjectID, ScreenID: plan.Macro.ScreenID, SKUID: plan.Macro.SKUID, Buyers: buyers, StartMode: mode, StartAt: plan.Macro.StartAt, Deadline: plan.Macro.Deadline, IntervalMS: 500, Credentials: account.Credentials}
+	intervalMS := d.retryIntervalMs
+	if intervalMS <= 0 {
+		intervalMS = 500
+	}
+	spec := domain.ExecutionSpec{AttemptID: id, IntentID: plan.Intent.ID, ProjectID: plan.Macro.ProjectID, ScreenID: plan.Macro.ScreenID, SKUID: plan.Macro.SKUID, Buyers: buyers, StartMode: mode, StartAt: plan.Macro.StartAt, Deadline: plan.Macro.Deadline, IntervalMS: intervalMS, StartDelayMS: d.startDelayMs, Credentials: account.Credentials}
 	now := d.now()
 	value := domain.ExecutionAttempt{ID: id, IntentID: plan.Intent.ID, SpecHash: spec.Hash(), AccountID: account.ID, WorkerID: worker.ID, State: domain.AttemptWaiting, CreatedAt: now, UpdatedAt: now}
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)

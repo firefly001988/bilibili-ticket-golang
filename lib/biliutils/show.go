@@ -299,20 +299,11 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 				if ci.Id == b.ID && !seen[ci.Id] {
 					seen[ci.Id] = true
 					buyerInfoList = append(buyerInfoList, map[string]any{
-						"id":                  ci.Id,
-						"uid":                 ci.Uid,
-						"accountId":           ci.AccountId,
-						"name":                ci.Name,
-						"tel":                 ci.Tel,
-						"account_channel":     ci.AccountChannel,
-						"personal_id":         ci.PersonalId,
-						"id_card_front":       ci.IdCardFront,
-						"id_card_back":        ci.IdCardBack,
-						"is_default":          ci.IsDefault,
-						"id_type":             ci.IdType,
-						"verify_status":       ci.VerifyStatus,
-						"isBuyerInfoVerified": ci.IsBuyerInfoVerified,
-						"isBuyerValid":        ci.IsBuyerValid,
+						"id":          ci.Id,
+						"name":        ci.Name,
+						"tel":         ci.Tel,
+						"personal_id": ci.PersonalId,
+						"id_type":     ci.IdType,
 					})
 					break
 				}
@@ -351,7 +342,7 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 
 	resp, err := c.client.R().
 		SetContext(ctx).
-		SetHeader("X-Risk-Header", fmt.Sprintf("platform/h5 uid/%s deviceId/%s", c.getUID(), c.GetInfocUUID())).
+		SetHeader("X-Risk-Header", fmt.Sprintf("platform/h5 uid/%s channel/1 deviceId/%s", c.getUID(), c.GetInfocUUID())).
 		SetBodyJsonMarshal(form).Post("https://show.bilibili.com/api/ticket/order/createV2?project_id=" + projectID + "&ptoken=" + tokens.PToken)
 	if err != nil {
 		return err, -1, "", api.TicketOrderStruct{}

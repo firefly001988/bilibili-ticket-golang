@@ -134,4 +134,5 @@ type ClusterService struct {
 	cancel        context.CancelFunc
 	notify        func(string)
 	wailsApp      *application.App
+	globalCfg     globalConfig // pushed to all workers via Configure RPC
 }

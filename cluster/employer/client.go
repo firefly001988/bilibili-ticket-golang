@@ -110,6 +110,21 @@ func (c *WorkerClient) Disconnect(workerID string) {
 	c.disconnected[workerID] = true
 }
 
+// CloseConnection closes the gRPC connection to a worker without marking it
+// as disconnected and without removing the TLS configuration.  The next call
+// to getClient will transparently re-dial.  This is used when a local worker
+// is stopped programmatically (the listener is already shut down) so that
+// IsHealthy returns false immediately instead of waiting for the heartbeat
+// timeout.
+func (c *WorkerClient) CloseConnection(workerID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if wc, ok := c.workers[workerID]; ok {
+		c.closeWorkerConnLocked(wc)
+		delete(c.workers, workerID)
+	}
+}
+
 func (c *WorkerClient) closeWorkerConnLocked(wc *workerConn) {
 	if wc.hbCancel != nil {
 		wc.hbCancel()
@@ -357,6 +372,21 @@ func (c *WorkerClient) Ack(ctx context.Context, node domain.WorkerNode, attemptI
 	return nil
 }
 
+// Configure pushes global settings (retry interval, start delay) to a worker.
+func (c *WorkerClient) Configure(ctx context.Context, node domain.WorkerNode, retryIntervalMs, startDelayMs int64) error {
+	cli, err := c.getClient(node)
+	if err != nil {
+		return err
+	}
+	_, err = cli.Configure(ctx, &pb.ConfigureRequest{
+		Config: &pb.GlobalConfig{
+			RetryIntervalMs: retryIntervalMs,
+			StartDelayMs:    startDelayMs,
+		},
+	})
+	return err
+}
+
 func (c *WorkerClient) Health(ctx context.Context, node domain.WorkerNode) (map[string]any, error) {
 	version := global.GitCommit
 	if version == "Development" {
@@ -444,13 +474,14 @@ func (c *WorkerClient) health(ctx context.Context, node domain.WorkerNode, emplo
 
 func specToProto(s domain.ExecutionSpec) *pb.ExecutionSpec {
 	p := &pb.ExecutionSpec{
-		AttemptId:  s.AttemptID,
-		IntentId:   s.IntentID,
-		ProjectId:  s.ProjectID,
-		ScreenId:   s.ScreenID,
-		SkuId:      s.SKUID,
-		StartMode:  startModeToProto(s.StartMode),
-		IntervalMs: s.IntervalMS,
+		AttemptId:    s.AttemptID,
+		IntentId:     s.IntentID,
+		ProjectId:    s.ProjectID,
+		ScreenId:     s.ScreenID,
+		SkuId:        s.SKUID,
+		StartMode:    startModeToProto(s.StartMode),
+		IntervalMs:   s.IntervalMS,
+		StartDelayMs: s.StartDelayMS,
 		Credentials: &pb.Credentials{
 			Cookies:       s.Credentials.Cookies,
 			RefreshToken:  s.Credentials.RefreshToken,

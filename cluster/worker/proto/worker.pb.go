@@ -463,7 +463,8 @@ type ExecutionSpec struct {
 	StartAt       *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=start_at,json=startAt,proto3" json:"start_at,omitempty"`
 	Deadline      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=deadline,proto3" json:"deadline,omitempty"`
 	IntervalMs    int64                  `protobuf:"varint,10,opt,name=interval_ms,json=intervalMs,proto3" json:"interval_ms,omitempty"`
-	Credentials   *Credentials           `protobuf:"bytes,11,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	StartDelayMs  int64                  `protobuf:"varint,11,opt,name=start_delay_ms,json=startDelayMs,proto3" json:"start_delay_ms,omitempty"`
+	Credentials   *Credentials           `protobuf:"bytes,12,opt,name=credentials,proto3" json:"credentials,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -564,6 +565,13 @@ func (x *ExecutionSpec) GetDeadline() *timestamppb.Timestamp {
 func (x *ExecutionSpec) GetIntervalMs() int64 {
 	if x != nil {
 		return x.IntervalMs
+	}
+	return 0
+}
+
+func (x *ExecutionSpec) GetStartDelayMs() int64 {
+	if x != nil {
+		return x.StartDelayMs
 	}
 	return 0
 }
@@ -1570,6 +1578,143 @@ func (x *HeartbeatMsg) GetCompletedTask() *ExecutionResult {
 	return nil
 }
 
+type GlobalConfig struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Global retry interval in milliseconds. When set (>0), overrides the
+	// per-spec interval_ms in ExecutionSpec. Workers use this value for the
+	// delay between consecutive purchase attempts.
+	RetryIntervalMs int64 `protobuf:"varint,1,opt,name=retry_interval_ms,json=retryIntervalMs,proto3" json:"retry_interval_ms,omitempty"`
+	// Global start delay in milliseconds. Workers subtract this from the
+	// scheduled start time to account for clock drift and network latency.
+	StartDelayMs  int64 `protobuf:"varint,2,opt,name=start_delay_ms,json=startDelayMs,proto3" json:"start_delay_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GlobalConfig) Reset() {
+	*x = GlobalConfig{}
+	mi := &file_worker_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GlobalConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GlobalConfig) ProtoMessage() {}
+
+func (x *GlobalConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GlobalConfig.ProtoReflect.Descriptor instead.
+func (*GlobalConfig) Descriptor() ([]byte, []int) {
+	return file_worker_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GlobalConfig) GetRetryIntervalMs() int64 {
+	if x != nil {
+		return x.RetryIntervalMs
+	}
+	return 0
+}
+
+func (x *GlobalConfig) GetStartDelayMs() int64 {
+	if x != nil {
+		return x.StartDelayMs
+	}
+	return 0
+}
+
+type ConfigureRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Config        *GlobalConfig          `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigureRequest) Reset() {
+	*x = ConfigureRequest{}
+	mi := &file_worker_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigureRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigureRequest) ProtoMessage() {}
+
+func (x *ConfigureRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigureRequest.ProtoReflect.Descriptor instead.
+func (*ConfigureRequest) Descriptor() ([]byte, []int) {
+	return file_worker_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ConfigureRequest) GetConfig() *GlobalConfig {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
+type ConfigureResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigureResponse) Reset() {
+	*x = ConfigureResponse{}
+	mi := &file_worker_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigureResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigureResponse) ProtoMessage() {}
+
+func (x *ConfigureResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigureResponse.ProtoReflect.Descriptor instead.
+func (*ConfigureResponse) Descriptor() ([]byte, []int) {
+	return file_worker_proto_rawDescGZIP(), []int{22}
+}
+
 var File_worker_proto protoreflect.FileDescriptor
 
 const file_worker_proto_rawDesc = "" +
@@ -1601,7 +1746,7 @@ const file_worker_proto_rawDesc = "" +
 	"\x04path\x18\x04 \x01(\tR\x04path\x12\x16\n" +
 	"\x06secure\x18\x05 \x01(\bR\x06secure\x12\x1b\n" +
 	"\thttp_only\x18\x06 \x01(\bR\bhttpOnly\x12\x18\n" +
-	"\aexpires\x18\a \x01(\x03R\aexpires\"\xbe\x03\n" +
+	"\aexpires\x18\a \x01(\x03R\aexpires\"\xe4\x03\n" +
 	"\rExecutionSpec\x12\x1d\n" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12\x1b\n" +
@@ -1617,8 +1762,9 @@ const file_worker_proto_rawDesc = "" +
 	"\bdeadline\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\bdeadline\x12\x1f\n" +
 	"\vinterval_ms\x18\n" +
 	" \x01(\x03R\n" +
-	"intervalMs\x125\n" +
-	"\vcredentials\x18\v \x01(\v2\x13.worker.CredentialsR\vcredentials\"\xc8\x04\n" +
+	"intervalMs\x12$\n" +
+	"\x0estart_delay_ms\x18\v \x01(\x03R\fstartDelayMs\x125\n" +
+	"\vcredentials\x18\f \x01(\v2\x13.worker.CredentialsR\vcredentials\"\xc8\x04\n" +
 	"\x0fExecutionResult\x12\x1d\n" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12\x1b\n" +
@@ -1700,7 +1846,13 @@ const file_worker_proto_rawDesc = "" +
 	"\x11active_attempt_id\x18\x02 \x01(\tR\x0factiveAttemptId\x12\x1a\n" +
 	"\bsequence\x18\x03 \x01(\x03R\bsequence\x12.\n" +
 	"\x04time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12>\n" +
-	"\x0ecompleted_task\x18\x05 \x01(\v2\x17.worker.ExecutionResultR\rcompletedTask*\xa2\x01\n" +
+	"\x0ecompleted_task\x18\x05 \x01(\v2\x17.worker.ExecutionResultR\rcompletedTask\"`\n" +
+	"\fGlobalConfig\x12*\n" +
+	"\x11retry_interval_ms\x18\x01 \x01(\x03R\x0fretryIntervalMs\x12$\n" +
+	"\x0estart_delay_ms\x18\x02 \x01(\x03R\fstartDelayMs\"@\n" +
+	"\x10ConfigureRequest\x12,\n" +
+	"\x06config\x18\x01 \x01(\v2\x14.worker.GlobalConfigR\x06config\"\x13\n" +
+	"\x11ConfigureResponse*\xa2\x01\n" +
 	"\fAttemptState\x12\x12\n" +
 	"\x0eATTEMPT_QUEUED\x10\x00\x12\x13\n" +
 	"\x0fATTEMPT_WAITING\x10\x01\x12\x13\n" +
@@ -1722,7 +1874,7 @@ const file_worker_proto_rawDesc = "" +
 	"\x14FAILURE_ACCOUNT_RISK\x10\x06\x12\x17\n" +
 	"\x13FAILURE_WORKER_LOST\x10\a\x12\x19\n" +
 	"\x15FAILURE_UNRECOVERABLE\x10\b\x12\x14\n" +
-	"\x10FAILURE_INTERNAL\x10\t2\x8d\x03\n" +
+	"\x10FAILURE_INTERNAL\x10\t2\xcf\x03\n" +
 	"\rWorkerService\x127\n" +
 	"\x06Health\x12\x15.worker.HealthRequest\x1a\x16.worker.HealthResponse\x127\n" +
 	"\x06Submit\x12\x15.worker.SubmitRequest\x1a\x16.worker.SubmitResponse\x127\n" +
@@ -1730,7 +1882,8 @@ const file_worker_proto_rawDesc = "" +
 	"\x04Logs\x12\x13.worker.LogsRequest\x1a\x14.worker.LogsResponse\x121\n" +
 	"\x04Stop\x12\x13.worker.StopRequest\x1a\x14.worker.StopResponse\x12.\n" +
 	"\x03Ack\x12\x12.worker.AckRequest\x1a\x13.worker.AckResponse\x12;\n" +
-	"\tHeartbeat\x12\x14.worker.HeartbeatMsg\x1a\x14.worker.HeartbeatMsg(\x010\x01B-Z+bilibili-ticket-golang/cluster/worker/protob\x06proto3"
+	"\tHeartbeat\x12\x14.worker.HeartbeatMsg\x1a\x14.worker.HeartbeatMsg(\x010\x01\x12@\n" +
+	"\tConfigure\x12\x18.worker.ConfigureRequest\x1a\x19.worker.ConfigureResponseB-Z+bilibili-ticket-golang/cluster/worker/protob\x06proto3"
 
 var (
 	file_worker_proto_rawDescOnce sync.Once
@@ -1745,7 +1898,7 @@ func file_worker_proto_rawDescGZIP() []byte {
 }
 
 var file_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_worker_proto_goTypes = []any{
 	(AttemptState)(0),             // 0: worker.AttemptState
 	(StartMode)(0),                // 1: worker.StartMode
@@ -1770,52 +1923,58 @@ var file_worker_proto_goTypes = []any{
 	(*AckRequest)(nil),            // 20: worker.AckRequest
 	(*AckResponse)(nil),           // 21: worker.AckResponse
 	(*HeartbeatMsg)(nil),          // 22: worker.HeartbeatMsg
-	nil,                           // 23: worker.Credentials.CookiesEntry
-	(*timestamppb.Timestamp)(nil), // 24: google.protobuf.Timestamp
+	(*GlobalConfig)(nil),          // 23: worker.GlobalConfig
+	(*ConfigureRequest)(nil),      // 24: worker.ConfigureRequest
+	(*ConfigureResponse)(nil),     // 25: worker.ConfigureResponse
+	nil,                           // 26: worker.Credentials.CookiesEntry
+	(*timestamppb.Timestamp)(nil), // 27: google.protobuf.Timestamp
 }
 var file_worker_proto_depIdxs = []int32{
-	23, // 0: worker.Credentials.cookies:type_name -> worker.Credentials.CookiesEntry
+	26, // 0: worker.Credentials.cookies:type_name -> worker.Credentials.CookiesEntry
 	5,  // 1: worker.Credentials.cookie_jar:type_name -> worker.HTTPCookie
 	3,  // 2: worker.ExecutionSpec.buyers:type_name -> worker.Buyer
 	1,  // 3: worker.ExecutionSpec.start_mode:type_name -> worker.StartMode
-	24, // 4: worker.ExecutionSpec.start_at:type_name -> google.protobuf.Timestamp
-	24, // 5: worker.ExecutionSpec.deadline:type_name -> google.protobuf.Timestamp
+	27, // 4: worker.ExecutionSpec.start_at:type_name -> google.protobuf.Timestamp
+	27, // 5: worker.ExecutionSpec.deadline:type_name -> google.protobuf.Timestamp
 	4,  // 6: worker.ExecutionSpec.credentials:type_name -> worker.Credentials
 	0,  // 7: worker.ExecutionResult.state:type_name -> worker.AttemptState
 	2,  // 8: worker.ExecutionResult.reason:type_name -> worker.FailureReason
 	4,  // 9: worker.ExecutionResult.credentials:type_name -> worker.Credentials
-	24, // 10: worker.ExecutionResult.started_at:type_name -> google.protobuf.Timestamp
-	24, // 11: worker.ExecutionResult.finished_at:type_name -> google.protobuf.Timestamp
-	24, // 12: worker.LogEntry.time:type_name -> google.protobuf.Timestamp
+	27, // 10: worker.ExecutionResult.started_at:type_name -> google.protobuf.Timestamp
+	27, // 11: worker.ExecutionResult.finished_at:type_name -> google.protobuf.Timestamp
+	27, // 12: worker.LogEntry.time:type_name -> google.protobuf.Timestamp
 	0,  // 13: worker.TaskStatus.state:type_name -> worker.AttemptState
-	24, // 14: worker.TaskStatus.lease_until:type_name -> google.protobuf.Timestamp
+	27, // 14: worker.TaskStatus.lease_until:type_name -> google.protobuf.Timestamp
 	7,  // 15: worker.TaskStatus.result:type_name -> worker.ExecutionResult
 	6,  // 16: worker.SubmitRequest.spec:type_name -> worker.ExecutionSpec
 	9,  // 17: worker.SubmitResponse.status:type_name -> worker.TaskStatus
 	9,  // 18: worker.StatusResponse.status:type_name -> worker.TaskStatus
 	8,  // 19: worker.LogsResponse.entries:type_name -> worker.LogEntry
 	9,  // 20: worker.StopResponse.status:type_name -> worker.TaskStatus
-	24, // 21: worker.HeartbeatMsg.time:type_name -> google.protobuf.Timestamp
+	27, // 21: worker.HeartbeatMsg.time:type_name -> google.protobuf.Timestamp
 	7,  // 22: worker.HeartbeatMsg.completed_task:type_name -> worker.ExecutionResult
-	10, // 23: worker.WorkerService.Health:input_type -> worker.HealthRequest
-	12, // 24: worker.WorkerService.Submit:input_type -> worker.SubmitRequest
-	14, // 25: worker.WorkerService.Status:input_type -> worker.StatusRequest
-	16, // 26: worker.WorkerService.Logs:input_type -> worker.LogsRequest
-	18, // 27: worker.WorkerService.Stop:input_type -> worker.StopRequest
-	20, // 28: worker.WorkerService.Ack:input_type -> worker.AckRequest
-	22, // 29: worker.WorkerService.Heartbeat:input_type -> worker.HeartbeatMsg
-	11, // 30: worker.WorkerService.Health:output_type -> worker.HealthResponse
-	13, // 31: worker.WorkerService.Submit:output_type -> worker.SubmitResponse
-	15, // 32: worker.WorkerService.Status:output_type -> worker.StatusResponse
-	17, // 33: worker.WorkerService.Logs:output_type -> worker.LogsResponse
-	19, // 34: worker.WorkerService.Stop:output_type -> worker.StopResponse
-	21, // 35: worker.WorkerService.Ack:output_type -> worker.AckResponse
-	22, // 36: worker.WorkerService.Heartbeat:output_type -> worker.HeartbeatMsg
-	30, // [30:37] is the sub-list for method output_type
-	23, // [23:30] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	23, // 23: worker.ConfigureRequest.config:type_name -> worker.GlobalConfig
+	10, // 24: worker.WorkerService.Health:input_type -> worker.HealthRequest
+	12, // 25: worker.WorkerService.Submit:input_type -> worker.SubmitRequest
+	14, // 26: worker.WorkerService.Status:input_type -> worker.StatusRequest
+	16, // 27: worker.WorkerService.Logs:input_type -> worker.LogsRequest
+	18, // 28: worker.WorkerService.Stop:input_type -> worker.StopRequest
+	20, // 29: worker.WorkerService.Ack:input_type -> worker.AckRequest
+	22, // 30: worker.WorkerService.Heartbeat:input_type -> worker.HeartbeatMsg
+	24, // 31: worker.WorkerService.Configure:input_type -> worker.ConfigureRequest
+	11, // 32: worker.WorkerService.Health:output_type -> worker.HealthResponse
+	13, // 33: worker.WorkerService.Submit:output_type -> worker.SubmitResponse
+	15, // 34: worker.WorkerService.Status:output_type -> worker.StatusResponse
+	17, // 35: worker.WorkerService.Logs:output_type -> worker.LogsResponse
+	19, // 36: worker.WorkerService.Stop:output_type -> worker.StopResponse
+	21, // 37: worker.WorkerService.Ack:output_type -> worker.AckResponse
+	22, // 38: worker.WorkerService.Heartbeat:output_type -> worker.HeartbeatMsg
+	25, // 39: worker.WorkerService.Configure:output_type -> worker.ConfigureResponse
+	32, // [32:40] is the sub-list for method output_type
+	24, // [24:32] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_worker_proto_init() }
@@ -1829,7 +1988,7 @@ func file_worker_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_worker_proto_rawDesc), len(file_worker_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   21,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

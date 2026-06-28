@@ -63,6 +63,10 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 			workerID, result.AttemptID, result.Success, result.OrderID, result.PaymentURL)
 		service.dispatcher.ProcessCompletedTask(workerID, result)
 	})
+
+	// Restore persisted global configuration.
+	service.LoadGlobalConfig(context.Background())
+
 	return service
 }
 

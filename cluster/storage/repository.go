@@ -740,6 +740,42 @@ func (r *Repository) ListIntents(ctx context.Context) ([]domain.LogicalOrderInte
 	return result, rows.Err()
 }
 
+// PutGlobalConfig stores the global configuration as a JSON blob in the
+// schema_meta table. This is used by the cluster service to persist
+// retry interval and start delay across restarts.
+func (r *Repository) PutGlobalConfig(ctx context.Context, retryIntervalMs, startDelayMs int64) error {
+	cfg := struct {
+		RetryIntervalMs int64 `json:"retryIntervalMs"`
+		StartDelayMs    int64 `json:"startDelayMs"`
+	}{retryIntervalMs, startDelayMs}
+	b, err := marshal(cfg)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO schema_meta(key,value) VALUES('global_config',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, string(b))
+	return err
+}
+
+// GlobalConfig returns the stored global configuration. When no config
+// has been saved yet, both returned values are 0.
+func (r *Repository) GlobalConfig(ctx context.Context) (retryIntervalMs int64, startDelayMs int64, err error) {
+	var raw string
+	if err := r.db.QueryRowContext(ctx, `SELECT value FROM schema_meta WHERE key='global_config'`).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, 0, nil
+		}
+		return 0, 0, err
+	}
+	var cfg struct {
+		RetryIntervalMs int64 `json:"retryIntervalMs"`
+		StartDelayMs    int64 `json:"startDelayMs"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return 0, 0, err
+	}
+	return cfg.RetryIntervalMs, cfg.StartDelayMs, nil
+}
+
 func (r *Repository) HasMigration(ctx context.Context, name string) (bool, error) {
 	var n int
 	err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM migration_versions WHERE name=?`, name).Scan(&n)

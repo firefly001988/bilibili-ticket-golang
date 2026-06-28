@@ -80,7 +80,8 @@ message ExecutionSpec {
   google.protobuf.Timestamp start_at = 8;
   google.protobuf.Timestamp deadline = 9;
   int64 interval_ms = 10;
-  Credentials credentials = 11;
+  int64 start_delay_ms = 11;
+  Credentials credentials = 12;
 }
 
 message ExecutionResult {
@@ -205,6 +206,26 @@ message HeartbeatMsg {
 }
 
 // =============================================================================
+// Global configuration – pushed by the employer to all workers
+// =============================================================================
+
+message GlobalConfig {
+  // Global retry interval in milliseconds. When set (>0), overrides the
+  // per-spec interval_ms in ExecutionSpec. Workers use this value for the
+  // delay between consecutive purchase attempts.
+  int64 retry_interval_ms = 1;
+  // Global start delay in milliseconds. Workers subtract this from the
+  // scheduled start time to account for clock drift and network latency.
+  int64 start_delay_ms = 2;
+}
+
+message ConfigureRequest {
+  GlobalConfig config = 1;
+}
+
+message ConfigureResponse {}
+
+// =============================================================================
 // WorkerService
 // =============================================================================
 
@@ -239,4 +260,10 @@ service WorkerService {
   // back. Either side treats silence longer than the heartbeat interval
   // as a dead connection, triggering a reconnect.
   rpc Heartbeat(stream HeartbeatMsg) returns (stream HeartbeatMsg);
+
+  // Configure pushes global settings (retry interval, start delay) from
+  // the employer to the worker. The worker applies these immediately to
+  // all future tasks. The employer calls this after a successful Health
+  // handshake and whenever the user changes settings.
+  rpc Configure(ConfigureRequest) returns (ConfigureResponse);
 }

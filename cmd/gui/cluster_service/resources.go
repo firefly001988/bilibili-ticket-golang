@@ -66,6 +66,8 @@ func (s *ClusterService) refreshResources(ctx context.Context) error {
 				}
 			}
 			log.Printf("[cluster] worker %s connected (version=%s, plugin=%s)", node.ID, info["version"], info["pluginVersion"])
+			// Push the current global config to the newly connected worker.
+			s.pushGlobalConfigToWorker(ctx, node)
 			if s.client.IsHealthy(node.ID) {
 				s.dispatcher.MarkWorkerHealthy(node.ID)
 			}

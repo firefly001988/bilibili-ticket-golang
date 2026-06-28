@@ -296,7 +296,7 @@ async function doReconnect(w: WorkerSummary) {
     connecting.value[w.id] = false
 }
 
-// ── Local worker toggle ──────────────────────────────────────
+// ── Local worker start/stop ─────────────────────────────────
 async function toggleLocalWorker(w: WorkerSummary) {
     connecting.value[w.id] = true
     try {
@@ -453,13 +453,13 @@ async function doForceReconnect(w: WorkerSummary) {
                     <tr @click="toggleExpand(w.id)" style="cursor:pointer">
                         <td class="text-center">
                             <v-icon size="small">{{ expandedWorkers.has(w.id) ? 'mdi-chevron-down' : 'mdi-chevron-right'
-                            }}</v-icon>
+                                }}</v-icon>
                         </td>
                         <td style="max-width:200px">
                             <div class="d-flex align-center text-truncate" style="min-width:0">
                                 <v-icon start size="small" class="mr-1 flex-shrink-0">mdi-server-network</v-icon>
                                 <span class="text-truncate font-weight-bold" style="min-width:0">{{ w.name || w.id
-                                }}</span>
+                                    }}</span>
                                 <v-chip v-if="isLocalWorker(w)" size="x-small" color="info" variant="tonal"
                                     class="ml-1 flex-shrink-0">
                                     {{ t('worker.localLabel') }}
@@ -480,7 +480,7 @@ async function doForceReconnect(w: WorkerSummary) {
                             </v-chip>
                             <v-chip v-else :color="w.healthy ? 'success' : 'error'" size="small" variant="tonal">
                                 <v-icon start size="x-small">{{ w.healthy ? 'mdi-check-circle' : 'mdi-close-circle'
-                                }}</v-icon>
+                                    }}</v-icon>
                                 {{ w.healthy ? t('worker.online') : t('worker.offline') }}
                             </v-chip>
                             <v-chip v-if="w.activeAttemptId" size="x-small" color="orange" variant="tonal" class="ml-1">
@@ -506,7 +506,7 @@ async function doForceReconnect(w: WorkerSummary) {
                                     <v-list-item density="compact" disabled>
                                         <div style="font-size:0.8rem;line-height:1.4">
                                             <div class="text-caption text-medium-emphasis">{{ t('worker.workerVersion')
-                                            }}</div>
+                                                }}</div>
                                             <div class="text-warning font-weight-bold">{{ w.version || '—' }}</div>
                                         </div>
                                     </v-list-item>
@@ -518,7 +518,7 @@ async function doForceReconnect(w: WorkerSummary) {
                                         </template>
                                         <template #title>
                                             <span class="text-error font-weight-bold">{{ t('worker.forceReconnectTitle')
-                                                }}</span>
+                                            }}</span>
                                         </template>
                                     </v-list-item>
                                 </v-list>
@@ -526,7 +526,7 @@ async function doForceReconnect(w: WorkerSummary) {
                         </td>
                         <td class="text-no-wrap" style="white-space:nowrap" @click.stop>
                             <div style="display:flex;gap:4px">
-                                <!-- Local workers: toggle on/off -->
+                                <!-- Local workers: start/stop + delete -->
                                 <template v-if="isLocalWorker(w)">
                                     <v-btn v-if="w.healthy" icon="mdi-stop-circle-outline" size="small" variant="text"
                                         color="warning" :loading="connecting[w.id]" :title="t('worker.localStop')"
@@ -604,7 +604,7 @@ async function doForceReconnect(w: WorkerSummary) {
                                 <v-col cols="12">
                                     <v-divider class="my-1" />
                                     <div class="text-caption text-medium-emphasis mt-1">{{ t('worker.clockOffsetTitle')
-                                        }}</div>
+                                    }}</div>
                                 </v-col>
                                 <v-col cols="6" md="3">
                                     <div class="text-caption text-medium-emphasis">Bilibili API</div>
@@ -644,7 +644,7 @@ async function doForceReconnect(w: WorkerSummary) {
                                     <v-col cols="6" md="3">
                                         <div class="text-caption text-medium-emphasis">总冷却时长</div>
                                         <div class="text-body-2">{{ Math.round((w.cooldown.totalDurationMs || 0) / 1000)
-                                        }}s</div>
+                                            }}s</div>
                                     </v-col>
                                     <v-col cols="6" md="3">
                                         <div class="text-caption text-medium-emphasis">剩余</div>

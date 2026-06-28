@@ -92,7 +92,10 @@ func (m *LocalWorkerManager) StartWorker(ctx context.Context, client *WorkerClie
 	return m.startLocked(ctx, workerID, slot.node.Name, slot.node.Address, slot.dataDir)
 }
 
-// StopWorker stops a specific local worker by closing its listener.
+// StopWorker stops a specific local worker by stopping its gRPC server
+// (which terminates all active streams including heartbeats) and closing
+// the listener.  The slot is preserved so StartWorker can read the saved
+// node name, address and data directory for restart.
 func (m *LocalWorkerManager) StopWorker(workerID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -100,10 +103,20 @@ func (m *LocalWorkerManager) StopWorker(workerID string) error {
 		return nil
 	}
 	slot := m.slots[workerID]
-	if slot != nil && slot.listener != nil {
-		slot.listener.Close()
+	if slot != nil {
+		// Stop the gRPC server first — this immediately terminates all
+		// active connections, including the heartbeat stream.  Closing the
+		// listener alone only prevents new connections; existing streams
+		// survive until the client side times out.
+		if slot.server != nil {
+			slot.server.Stop()
+			slot.server = nil
+		}
+		if slot.listener != nil {
+			slot.listener.Close()
+			slot.listener = nil
+		}
 	}
-	m.slots[workerID] = nil
 	return nil
 }
 
