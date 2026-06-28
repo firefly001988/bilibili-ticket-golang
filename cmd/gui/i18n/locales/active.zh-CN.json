@@ -1,126 +1,48 @@
 {
-    "chain.next_failed": {
-        "other": "链式切换失败，无法自动启动下一个商品: {{.Error}}"
-    },
-    "stat.waiting": {
-        "other": "等待中"
-    },
-    "stat.pending": {
-        "other": "执行中"
-    },
-    "stat.success": {
-        "other": "已成功"
-    },
-    "stat.failed": {
-        "other": "已失败"
-    },
-    "stat.error": {
-        "other": "错误"
-    },
-    "stat.unknown": {
-        "other": "未知"
-    },
-    "task.interval_updated": {
-        "other": "更新请求间隔: {{.Old}} → {{.New}}"
-    },
-    "task.delay_updated": {
-        "other": "更新启动延迟: {{.Old}} → {{.New}}"
-    },
-    "task.started": {
-        "other": "任务开始 — 项目:{{.Project}} 场次:{{.Screen}} 票种:{{.Sku}} 购票人:{{.Buyer}}"
-    },
-    "task.project_info": {
-        "other": "项目信息: {{.Name}} (热门={{.Hot}}, 实名={{.RealName}})"
-    },
-    "task.rate_limited": {
-        "other": "请求被限流 (412)，等待 5 分钟后重试"
-    },
-    "task.flow_control": {
-        "other": "请求被流控"
-    },
-    "task.using_ctoken": {
-        "other": "使用 CToken 生成器 (热门项目)"
-    },
-    "task.using_normal_token": {
-        "other": "使用普通 Token 生成器"
-    },
-    "task.target_sku": {
-        "other": "目标票种: {{.Name}} — {{.Desc}} (¥{{.Price}})"
-    },
-    "task.token_obtained": {
-        "other": "下单 Token 已获取"
-    },
-    "task.start_delay": {
-        "other": "启动延时 {{.Delay}}..."
-    },
-    "task.cancelled_during_delay": {
-        "other": "任务在启动延时期间被取消"
-    },
-    "task.buyer_ordinary": {
-        "other": "购票人(普通): {{.Name}} {{.Tel}}"
-    },
-    "task.buyer_realname": {
-        "other": "购票人(实名): {{.Name}} (ID:{{.ID}})"
-    },
-    "task.buyer_not_matched": {
-        "other": "未匹配到实名购票人 ID:{{.ID}}"
-    },
-    "task.entering_submit_loop": {
-        "other": "进入提交循环..."
-    },
-    "task.cancelled": {
-        "other": "任务被取消"
-    },
-    "task.token_refresh_failed": {
-        "other": "刷新 Token 失败: {{.Error}}"
-    },
-    "task.submit_failed": {
-        "other": "提交订单失败: {{.Error}}"
-    },
-    "task.price_changed": {
-        "other": "价格变更: ¥{{.Old}} → ¥{{.New}}"
-    },
-    "task.not_sellable": {
-        "other": "不可售 — {{.Msg}} ({{.Code}})"
-    },
-    "task.too_frequent": {
-        "other": "请求过于频繁 — {{.Msg}} ({{.Code}})"
-    },
-    "task.order_status_check_failed": {
-        "other": "订单状态检查失败: {{.Error}}"
-    },
-    "task.out_of_stock": {
-        "other": "库存不足"
-    },
-    "task.elbow_failed": {
-        "other": "肘击失败"
-    },
-    "task.notify_success": {
-        "other": "抢票成功！\n项目：{{.Project}}\n场次：{{.Screen}}\n票种：{{.Sku}}\n购票人：{{.Buyer}}\n购票用户：{{.User}}({{.UID}})"
-    },
-    "task.error.fetch_project": {
-        "other": "获取项目信息失败: {{.Error}}"
-    },
-    "task.error.fetch_sku_list": {
-        "other": "获取票种列表失败: {{.Error}}"
-    },
-    "task.error.sku_not_found": {
-        "other": "未找到目标票种 (SKU:{{.SkuID}} Screen:{{.ScreenID}})"
-    },
-    "task.error.get_token": {
-        "other": "获取下单 Token 失败: {{.Error}}"
-    },
-    "task.error.fetch_buyer": {
-        "other": "获取实名信息失败: {{.Error}}"
-    },
-    "bws.interval_updated": {
-        "other": "更新请求间隔: {{.Old}} → {{.New}}"
+    "bws.about_to_start": {
+        "other": "即将开始抢票，进入待抢状态..."
     },
     "bws.delay_updated": {
         "other": "更新启动延迟: {{.Old}} → {{.New}}"
     },
-    "bws.waiting_target": {
-        "other": "等待开抢时间 — 目标时间: {{.Target}} (延迟: {{.Delay}}ms)"
+    "bws.enter_loop": {
+        "other": "进入抢票循环 — 活动ID:{{.ActivityID}} 票号:{{.TicketNo}} 请求间隔:{{.Interval}}"
+    },
+    "bws.error.duplicate": {
+        "other": "重复BWS活动: 相同的活动+日期已存在"
+    },
+    "bws.interval_updated": {
+        "other": "更新请求间隔: {{.Old}} → {{.New}}"
+    },
+    "bws.network_error": {
+        "other": "网络错误: {{.Error}}"
+    },
+    "bws.status_full": {
+        "other": "预约已满或已预约: {{.Msg}}"
+    },
+    "bws.status_network_error": {
+        "other": "网络错误，继续重试"
+    },
+    "bws.status_not_open": {
+        "other": "尚未开放，等待预约开始"
+    },
+    "bws.status_rate_limit": {
+        "other": "请求频率太快"
+    },
+    "bws.status_risk_control": {
+        "other": "风控触发，等待 {{.Wait}} 秒后重试..."
+    },
+    "bws.status_throttled": {
+        "other": "限流，等待 {{.Wait}} 秒后重试..."
+    },
+    "bws.success": {
+        "other": "预约成功！"
+    },
+    "bws.success_notify": {
+        "other": "BWS预约成功！\n活动：{{.Activity}}\n日期：{{.Date}}"
+    },
+    "bws.task_started": {
+        "other": "BWS任务开始 — 活动:{{.Activity}} (ID:{{.ActivityID}}) 日期:{{.Date}} 票号:{{.TicketNo}}"
     },
     "bws.time_reached_delayed": {
         "other": "开票时间已到，延迟 {{.Delay}}ms 后开始抢票..."
@@ -131,26 +53,14 @@
     "bws.time_reached_start": {
         "other": "开票时间已到，开始抢票..."
     },
+    "bws.unknown_response": {
+        "other": "[{{.Code}}] 未知响应: {{.Msg}}"
+    },
     "bws.waiting_status": {
         "other": "等待开票 — 活动:{{.Activity}} | 剩余: {{.Remaining}}秒 (延迟: {{.Delay}}ms)"
     },
-    "bws.about_to_start": {
-        "other": "即将开始抢票，进入待抢状态..."
-    },
-    "bws.enter_loop": {
-        "other": "进入抢票循环 — 活动ID:{{.ActivityID}} 票号:{{.TicketNo}} 请求间隔:{{.Interval}}"
-    },
-    "bws.network_error": {
-        "other": "网络错误: {{.Error}}"
-    },
-    "bws.success": {
-        "other": "预约成功！"
-    },
-    "ticket.error.duplicate": {
-        "other": "重复票据: 相同的购票人+项目+场次+票种已存在"
-    },
-    "bws.error.duplicate": {
-        "other": "重复BWS活动: 相同的活动+日期已存在"
+    "bws.waiting_target": {
+        "other": "等待开抢时间 — 目标时间: {{.Target}} (延迟: {{.Delay}}ms)"
     },
     "notify.error.create": {
         "other": "创建通知渠道失败: {{.Error}}"
@@ -158,29 +68,14 @@
     "notify.error.index_not_found": {
         "other": "通知渠道索引 {{.Index}} 不存在"
     },
-    "notify.error.update": {
-        "other": "更新通知渠道失败: {{.Error}}"
-    },
     "notify.error.test_failed": {
         "other": "测试消息发送失败：请检查通知渠道配置是否正确: {{.Error}}"
     },
-    "notify.field.endpoint": {
-        "other": "服务器地址"
+    "notify.error.update": {
+        "other": "更新通知渠道失败: {{.Error}}"
     },
-    "notify.field.token_placeholder_gotify": {
-        "other": "输入应用 Token"
-    },
-    "notify.field.token_placeholder_pushplus": {
-        "other": "输入 PushPlus Token"
-    },
-    "notify.field.token_placeholder_bark": {
-        "other": "输入 Bark Token"
-    },
-    "notify.field.topic_placeholder_ntfy": {
-        "other": "输入 ntfy Topic 名称"
-    },
-    "notify.field.token_placeholder_ntfy": {
-        "other": "输入 Access Token"
+    "notify.field.auth_basic": {
+        "other": "用户名+密码 (Basic Auth)"
     },
     "notify.field.auth_method": {
         "other": "认证方式"
@@ -188,82 +83,85 @@
     "notify.field.auth_none": {
         "other": "无认证"
     },
-    "notify.field.auth_basic": {
-        "other": "用户名+密码 (Basic Auth)"
-    },
-    "notify.field.username": {
-        "other": "用户名"
+    "notify.field.endpoint": {
+        "other": "服务器地址"
     },
     "notify.field.password": {
         "other": "密码"
     },
+    "notify.field.password_placeholder_ntfy": {
+        "other": "输入 ntfy 密码"
+    },
+    "notify.field.token_placeholder_bark": {
+        "other": "输入 Bark Token"
+    },
+    "notify.field.token_placeholder_gotify": {
+        "other": "输入应用 Token"
+    },
+    "notify.field.token_placeholder_ntfy": {
+        "other": "输入 Access Token"
+    },
+    "notify.field.token_placeholder_pushplus": {
+        "other": "输入 PushPlus Token"
+    },
+    "notify.field.topic_placeholder_ntfy": {
+        "other": "输入 ntfy Topic 名称"
+    },
+    "notify.field.username": {
+        "other": "用户名"
+    },
     "notify.field.username_placeholder_ntfy": {
         "other": "输入 ntfy 用户名"
     },
-    "notify.field.password_placeholder_ntfy": {
-        "other": "输入 ntfy 密码"
+    "payQR.defaultTitle": {
+        "other": "支付二维码"
     },
     "plugin.geetest_desc": {
         "other": "极验验证码自动识别插件"
     },
-    "plugin.test.captcha_failed": {
-        "other": "获取验证码失败: {{.Error}}"
-    },
-    "plugin.test.parse_failed": {
-        "other": "解析验证码响应失败: {{.Error}}\nResp: {{.Resp}}"
-    },
     "plugin.test.api_error": {
         "other": "获取验证码返回错误: {{.Resp}}"
+    },
+    "plugin.test.captcha_failed": {
+        "other": "获取验证码失败: {{.Error}}"
     },
     "plugin.test.failed": {
         "other": "测试失败 (耗时 {{.Elapsed}}):\n{{.Error}}"
     },
+    "plugin.test.parse_failed": {
+        "other": "解析验证码响应失败: {{.Error}}\nResp: {{.Resp}}"
+    },
     "plugin.test.success": {
         "other": "测试成功 (耗时 {{.Elapsed}})"
     },
-    "task.token_refreshed": {
-        "other": "Token 已刷新"
+    "stat.error": {
+        "other": "错误"
     },
-    "task.success": {
-        "other": "🎉 抢票成功！订单号: {{.OrderID}}"
+    "stat.failed": {
+        "other": "已失败"
     },
-    "task.token_maybe_expired": {
-        "other": "Token 可能失效 — {{.Msg}} ({{.Code}})，下次提交将刷新 Token"
+    "stat.pending": {
+        "other": "执行中"
     },
-    "task.debug_submit": {
-        "other": "#{{.Count}}: {{.Msg}} ({{.Code}})"
+    "stat.success": {
+        "other": "已成功"
     },
-    "bws.success_notify": {
-        "other": "BWS预约成功！\n活动：{{.Activity}}\n日期：{{.Date}}"
+    "stat.unknown": {
+        "other": "未知"
     },
-    "bws.status_not_open": {
-        "other": "尚未开放，等待预约开始"
+    "stat.waiting": {
+        "other": "等待中"
     },
-    "bws.status_rate_limit": {
-        "other": "请求频率太快"
+    "task.error.fetch_buyer": {
+        "other": "获取实名信息失败: {{.Error}}"
     },
-    "bws.status_network_error": {
-        "other": "网络错误，继续重试"
+    "task.flow_control": {
+        "other": "请求被流控"
     },
-    "bws.status_risk_control": {
-        "other": "风控触发，等待 {{.Wait}} 秒后重试..."
+    "task.rate_limited": {
+        "other": "请求被限流 (412)"
     },
-    "bws.status_throttled": {
-        "other": "限流，等待 {{.Wait}} 秒后重试..."
-    },
-    "bws.status_full": {
-        "other": "预约已满或已预约: {{.Msg}}"
-    },
-    "bws.task_started": {
-        "other": "BWS任务开始 — 活动:{{.Activity}} (ID:{{.ActivityID}}) 日期:{{.Date}} 票号:{{.TicketNo}}"
-    },
-    "bws.unknown_response": {
-        "other": "[{{.Code}}] 未知响应: {{.Msg}}"
-    },
-    "payQR.defaultTitle": {
-        "other": "支付二维码"
-    },
-    "payQR.defaultTitle": {
-        "other": "支付二维码"
+    "ticket.error.duplicate": {
+        "other": "重复票据: 相同的购票人+项目+场次+票种已存在"
     }
 }

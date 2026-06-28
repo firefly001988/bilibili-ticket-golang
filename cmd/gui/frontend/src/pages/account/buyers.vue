@@ -8,7 +8,7 @@ import {
     SyncAllAccountBuyers,
     SyncBuyerToAccount,
     SyncBuyerToAllAccounts,
-} from '../../../bindings/bilibili-ticket-golang/cmd/gui/clusterservice'
+} from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t } = useI18n()
 const messages = useMessagesStore()
@@ -505,7 +505,7 @@ const filterAccountItems = computed(() => {
         <v-dialog v-model="showSyncDialog" max-width="420">
             <v-card class="pa-4">
                 <v-card-title>{{ t('buyer.syncToTitle', { name: syncBuyer?.name || syncBuyer?.logicalId })
-                    }}</v-card-title>
+                }}</v-card-title>
                 <v-card-text>
                     <p class="text-body-2 text-medium-emphasis mb-3">
                         {{ t('buyer.syncToHint') }}

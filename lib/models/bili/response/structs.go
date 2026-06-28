@@ -23,9 +23,9 @@ type TicketSkuScreenID struct {
 	Name      string        `json:"name"`
 	Desc      string        `json:"desc"`
 	Price     int           `json:"price"`
+	EventTime time.Time     `json:"eventTime"` // 当场次活动开始时间，取自 screenList.start_time
 	Flags     SaleFlagInfo  `json:"flags"`
 	SaleStat  SaleTimeRange `json:"saleStat"`
-	EventTime time.Time     `json:"eventTime"`
 	BuyLimit  int           `json:"buyLimit"`
 }
 

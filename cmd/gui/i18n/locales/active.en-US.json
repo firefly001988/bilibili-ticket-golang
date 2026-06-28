@@ -1,141 +1,48 @@
 {
-    "chain.next_failed": {
-        "other": "Chain switch failed, could not auto-start the next ticket: {{.Error}}"
-    },
-    "stat.waiting": {
-        "other": "Waiting"
-    },
-    "stat.pending": {
-        "other": "Running"
-    },
-    "stat.success": {
-        "other": "Success"
-    },
-    "stat.failed": {
-        "other": "Failed"
-    },
-    "stat.error": {
-        "other": "Error"
-    },
-    "stat.unknown": {
-        "other": "Unknown"
-    },
-    "task.interval_updated": {
-        "other": "Updated interval: {{.Old}} → {{.New}}"
-    },
-    "task.delay_updated": {
-        "other": "Updated start delay: {{.Old}} → {{.New}}"
-    },
-    "task.started": {
-        "other": "Task started — Project:{{.Project}} Screen:{{.Screen}} SKU:{{.Sku}} Buyer:{{.Buyer}}"
-    },
-    "task.project_info": {
-        "other": "Project info: {{.Name}} (Hot={{.Hot}}, RealName={{.RealName}})"
-    },
-    "task.rate_limited": {
-        "other": "Rate limited (412), waiting 5 minutes before retry"
-    },
-    "task.flow_control": {
-        "other": "Flow control."
-    },
-    "task.using_ctoken": {
-        "other": "Using CToken generator (hot project)"
-    },
-    "task.using_normal_token": {
-        "other": "Using normal token generator"
-    },
-    "task.target_sku": {
-        "other": "Target SKU: {{.Name}} — {{.Desc}} (¥{{.Price}})"
-    },
-    "task.token_obtained": {
-        "other": "Order token obtained"
-    },
-    "task.start_delay": {
-        "other": "Start delay {{.Delay}}..."
-    },
-    "task.cancelled_during_delay": {
-        "other": "Task cancelled during start delay"
-    },
-    "task.buyer_ordinary": {
-        "other": "Buyer (ordinary): {{.Name}} {{.Tel}}"
-    },
-    "task.buyer_realname": {
-        "other": "Buyer (real-name): {{.Name}} (ID:{{.ID}})"
-    },
-    "task.buyer_not_matched": {
-        "other": "Real-name buyer ID:{{.ID}} not matched"
-    },
-    "task.entering_submit_loop": {
-        "other": "Entering submit loop..."
-    },
-    "task.cancelled": {
-        "other": "Task cancelled"
-    },
-    "task.token_refresh_failed": {
-        "other": "Token refresh failed: {{.Error}}"
-    },
-    "task.token_refreshed": {
-        "other": "Token refreshed"
-    },
-    "task.submit_failed": {
-        "other": "Submit order failed: {{.Error}}"
-    },
-    "task.price_changed": {
-        "other": "Price changed: ¥{{.Old}} → ¥{{.New}}"
-    },
-    "task.not_sellable": {
-        "other": "Not for sale — {{.Msg}} ({{.Code}})"
-    },
-    "task.too_frequent": {
-        "other": "Too many requests — {{.Msg}} ({{.Code}})"
-    },
-    "task.order_status_check_failed": {
-        "other": "Order status check failed: {{.Error}}"
-    },
-    "task.out_of_stock": {
-        "other": "Out of stock"
-    },
-    "task.elbow_failed": {
-        "other": "Elbow failed"
-    },
-    "task.success": {
-        "other": "🎉 Ticket grabbed! Order ID: {{.OrderID}}"
-    },
-    "task.notify_success": {
-        "other": "Ticket grabbed!\nProject: {{.Project}}\nScreen: {{.Screen}}\nSKU: {{.Sku}}\nBuyer: {{.Buyer}}\nUser: {{.User}}({{.UID}})"
-    },
-    "task.error.fetch_project": {
-        "other": "Failed to fetch project info: {{.Error}}"
-    },
-    "task.error.fetch_sku_list": {
-        "other": "Failed to fetch SKU list: {{.Error}}"
-    },
-    "task.error.sku_not_found": {
-        "other": "Target SKU not found (SKU:{{.SkuID}} Screen:{{.ScreenID}})"
-    },
-    "task.error.get_token": {
-        "other": "Failed to obtain order token: {{.Error}}"
-    },
-    "task.error.fetch_buyer": {
-        "other": "Failed to fetch buyer info: {{.Error}}"
-    },
-    "task.token_maybe_expired": {
-        "other": "Token may be expired — {{.Msg}} ({{.Code}}), will refresh on next attempt"
-    },
-    "task.debug_submit": {
-        "other": "#{{.Count}}: {{.Msg}} ({{.Code}})"
-    },
-    "ticket.error.duplicate": {
-        "other": "Duplicate ticket: same buyer+project+screen+sku already exists"
-    },
-    "bws.interval_updated": {
-        "other": "Updated interval: {{.Old}} → {{.New}}"
+    "bws.about_to_start": {
+        "other": "About to start, entering standby..."
     },
     "bws.delay_updated": {
         "other": "Updated start delay: {{.Old}} → {{.New}}"
     },
-    "bws.waiting_target": {
-        "other": "Waiting for sale time — Target: {{.Target}} (Delay: {{.Delay}}ms)"
+    "bws.enter_loop": {
+        "other": "Entering reservation loop — ActivityID:{{.ActivityID}} TicketNo:{{.TicketNo}} Interval:{{.Interval}}"
+    },
+    "bws.error.duplicate": {
+        "other": "Duplicate BWS activity: same activity+date already exists"
+    },
+    "bws.interval_updated": {
+        "other": "Updated interval: {{.Old}} → {{.New}}"
+    },
+    "bws.network_error": {
+        "other": "Network error: {{.Error}}"
+    },
+    "bws.status_full": {
+        "other": "Reservation full or already reserved: {{.Msg}}"
+    },
+    "bws.status_network_error": {
+        "other": "Network error, retrying"
+    },
+    "bws.status_not_open": {
+        "other": "Not yet open, waiting for reservation start"
+    },
+    "bws.status_rate_limit": {
+        "other": "Request rate too fast"
+    },
+    "bws.status_risk_control": {
+        "other": "Risk control triggered, waiting {{.Wait}}s before retry..."
+    },
+    "bws.status_throttled": {
+        "other": "Rate limited, waiting {{.Wait}}s before retry..."
+    },
+    "bws.success": {
+        "other": "Reservation successful!"
+    },
+    "bws.success_notify": {
+        "other": "BWS Reservation Successful!\nActivity: {{.Activity}}\nDate: {{.Date}}"
+    },
+    "bws.task_started": {
+        "other": "BWS task started — Activity:{{.Activity}} (ID:{{.ActivityID}}) Date:{{.Date}} TicketNo:{{.TicketNo}}"
     },
     "bws.time_reached_delayed": {
         "other": "Sale time reached, waiting {{.Delay}}ms before starting..."
@@ -146,50 +53,14 @@
     "bws.time_reached_start": {
         "other": "Sale time reached, starting reservation..."
     },
+    "bws.unknown_response": {
+        "other": "[{{.Code}}] Unknown response: {{.Msg}}"
+    },
     "bws.waiting_status": {
         "other": "Waiting — Activity:{{.Activity}} | Remaining: {{.Remaining}}s (Delay: {{.Delay}}ms)"
     },
-    "bws.about_to_start": {
-        "other": "About to start, entering standby..."
-    },
-    "bws.enter_loop": {
-        "other": "Entering reservation loop — ActivityID:{{.ActivityID}} TicketNo:{{.TicketNo}} Interval:{{.Interval}}"
-    },
-    "bws.network_error": {
-        "other": "Network error: {{.Error}}"
-    },
-    "bws.success": {
-        "other": "Reservation successful!"
-    },
-    "bws.success_notify": {
-        "other": "BWS Reservation Successful!\nActivity: {{.Activity}}\nDate: {{.Date}}"
-    },
-    "bws.error.duplicate": {
-        "other": "Duplicate BWS activity: same activity+date already exists"
-    },
-    "bws.status_not_open": {
-        "other": "Not yet open, waiting for reservation start"
-    },
-    "bws.status_rate_limit": {
-        "other": "Request rate too fast"
-    },
-    "bws.status_network_error": {
-        "other": "Network error, retrying"
-    },
-    "bws.status_risk_control": {
-        "other": "Risk control triggered, waiting {{.Wait}}s before retry..."
-    },
-    "bws.status_throttled": {
-        "other": "Rate limited, waiting {{.Wait}}s before retry..."
-    },
-    "bws.status_full": {
-        "other": "Reservation full or already reserved: {{.Msg}}"
-    },
-    "bws.task_started": {
-        "other": "BWS task started — Activity:{{.Activity}} (ID:{{.ActivityID}}) Date:{{.Date}} TicketNo:{{.TicketNo}}"
-    },
-    "bws.unknown_response": {
-        "other": "[{{.Code}}] Unknown response: {{.Msg}}"
+    "bws.waiting_target": {
+        "other": "Waiting for sale time — Target: {{.Target}} (Delay: {{.Delay}}ms)"
     },
     "notify.error.create": {
         "other": "Failed to create notify channel: {{.Error}}"
@@ -197,29 +68,14 @@
     "notify.error.index_not_found": {
         "other": "Notify channel index {{.Index}} not found"
     },
-    "notify.error.update": {
-        "other": "Failed to update notify channel: {{.Error}}"
-    },
     "notify.error.test_failed": {
         "other": "Test message send failed, check channel config: {{.Error}}"
     },
-    "notify.field.endpoint": {
-        "other": "Server Address"
+    "notify.error.update": {
+        "other": "Failed to update notify channel: {{.Error}}"
     },
-    "notify.field.token_placeholder_gotify": {
-        "other": "Enter App Token"
-    },
-    "notify.field.token_placeholder_pushplus": {
-        "other": "Enter PushPlus Token"
-    },
-    "notify.field.token_placeholder_bark": {
-        "other": "Enter Bark Token"
-    },
-    "notify.field.topic_placeholder_ntfy": {
-        "other": "Enter ntfy Topic Name"
-    },
-    "notify.field.token_placeholder_ntfy": {
-        "other": "Enter Access Token"
+    "notify.field.auth_basic": {
+        "other": "Username + Password (Basic Auth)"
     },
     "notify.field.auth_method": {
         "other": "Authentication Method"
@@ -227,40 +83,85 @@
     "notify.field.auth_none": {
         "other": "No Authentication"
     },
-    "notify.field.auth_basic": {
-        "other": "Username + Password (Basic Auth)"
-    },
-    "notify.field.username": {
-        "other": "Username"
+    "notify.field.endpoint": {
+        "other": "Server Address"
     },
     "notify.field.password": {
         "other": "Password"
     },
+    "notify.field.password_placeholder_ntfy": {
+        "other": "Enter ntfy password"
+    },
+    "notify.field.token_placeholder_bark": {
+        "other": "Enter Bark Token"
+    },
+    "notify.field.token_placeholder_gotify": {
+        "other": "Enter App Token"
+    },
+    "notify.field.token_placeholder_ntfy": {
+        "other": "Enter Access Token"
+    },
+    "notify.field.token_placeholder_pushplus": {
+        "other": "Enter PushPlus Token"
+    },
+    "notify.field.topic_placeholder_ntfy": {
+        "other": "Enter ntfy Topic Name"
+    },
+    "notify.field.username": {
+        "other": "Username"
+    },
     "notify.field.username_placeholder_ntfy": {
         "other": "Enter ntfy username"
     },
-    "notify.field.password_placeholder_ntfy": {
-        "other": "Enter ntfy password"
+    "payQR.defaultTitle": {
+        "other": "Payment QR Code"
     },
     "plugin.geetest_desc": {
         "other": "Geetest CAPTCHA auto-solve plugin"
     },
-    "plugin.test.captcha_failed": {
-        "other": "Failed to get CAPTCHA: {{.Error}}"
-    },
-    "plugin.test.parse_failed": {
-        "other": "Failed to parse CAPTCHA response: {{.Error}}\nResp: {{.Resp}}"
-    },
     "plugin.test.api_error": {
         "other": "CAPTCHA API returned error: {{.Resp}}"
+    },
+    "plugin.test.captcha_failed": {
+        "other": "Failed to get CAPTCHA: {{.Error}}"
     },
     "plugin.test.failed": {
         "other": "Test failed (elapsed {{.Elapsed}}):\n{{.Error}}"
     },
+    "plugin.test.parse_failed": {
+        "other": "Failed to parse CAPTCHA response: {{.Error}}\nResp: {{.Resp}}"
+    },
     "plugin.test.success": {
         "other": "Test succeeded (elapsed {{.Elapsed}})"
     },
-    "payQR.defaultTitle": {
-        "other": "Payment QR Code"
+    "stat.error": {
+        "other": "Error"
+    },
+    "stat.failed": {
+        "other": "Failed"
+    },
+    "stat.pending": {
+        "other": "Running"
+    },
+    "stat.success": {
+        "other": "Success"
+    },
+    "stat.unknown": {
+        "other": "Unknown"
+    },
+    "stat.waiting": {
+        "other": "Waiting"
+    },
+    "task.error.fetch_buyer": {
+        "other": "Failed to fetch buyer info: {{.Error}}"
+    },
+    "task.flow_control": {
+        "other": "Flow control."
+    },
+    "task.rate_limited": {
+        "other": "Rate limited (412)."
+    },
+    "ticket.error.duplicate": {
+        "other": "Duplicate ticket: same buyer+project+screen+sku already exists"
     }
 }

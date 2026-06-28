@@ -8,7 +8,7 @@ import {
     PollAccountLogin,
     DeleteAccount,
     ImportAccount,
-} from '../../../bindings/bilibili-ticket-golang/cmd/gui/clusterservice'
+} from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t } = useI18n()
 const messages = useMessagesStore()
@@ -20,6 +20,7 @@ interface AccountSummary {
     enabled: boolean
     vipStatus: number
     cooldownUntil?: string
+    cooldownReason?: string
     credentialVersion: number
 }
 
@@ -45,22 +46,46 @@ const showDeleteDialog = ref(false)
 const deleteTarget = ref<AccountSummary | null>(null)
 const deleting = ref(false)
 
+// ── Cooldown countdown timers ──────────────────────────────────
+const cooldownTimers = ref<Record<string, number>>({})
+let cooldownInterval: ReturnType<typeof setInterval> | null = null
+
+function updateCooldownTimers() {
+    const now = Date.now()
+    const updated: Record<string, number> = {}
+    for (const acc of accounts.value) {
+        if (acc.cooldownUntil) {
+            const end = new Date(acc.cooldownUntil).getTime()
+            const remaining = Math.max(0, Math.floor((end - now) / 1000))
+            if (remaining > 0) {
+                updated[acc.id] = remaining
+            }
+        }
+    }
+    cooldownTimers.value = updated
+}
+
 // ── Data loading ──────────────────────────────────────────────
 async function load() {
     loading.value = true
     try {
         const snap = await Snapshot()
         accounts.value = (snap.accounts || []) as AccountSummary[]
+        updateCooldownTimers()
     } catch (e: any) {
         messages.add({ text: t('account.loadFailed', { error: String(e) }), color: 'error' })
     }
     loading.value = false
 }
 
-onMounted(load)
+onMounted(() => {
+    load()
+    cooldownInterval = setInterval(updateCooldownTimers, 1000)
+})
 
 onUnmounted(() => {
     if (loginTimer) clearInterval(loginTimer)
+    if (cooldownInterval) clearInterval(cooldownInterval)
 })
 
 // ── QR Login ──────────────────────────────────────────────────
@@ -233,9 +258,23 @@ const loginQRCodeUrl = computed(() => {
                             prepend-icon="mdi-crown">
                             {{ t('account.vip') }}
                         </v-chip>
-                        <v-chip v-if="acc.cooldownUntil" color="warning" size="small" variant="tonal" class="ml-1">
-                            {{ t('account.cooldown') }}
-                        </v-chip>
+                        <v-tooltip v-if="acc.cooldownUntil" location="bottom">
+                            <template #activator="{ props }">
+                                <v-chip v-bind="props" color="warning" size="small" variant="tonal" class="ml-1">
+                                    <v-icon start size="x-small">mdi-timer-sand</v-icon>
+                                    {{ t('account.cooldown') }}
+                                    <span v-if="cooldownTimers[acc.id]" class="ml-1">({{ t('account.cooldownRemaining',
+                                        { sec: cooldownTimers[acc.id] }) }})</span>
+                                </v-chip>
+                            </template>
+                            <div class="text-caption">
+                                <div v-if="acc.cooldownReason">{{ acc.cooldownReason }}</div>
+                                <div>{{ t('account.cooldownDetail', {
+                                    time: new
+                                        Date(acc.cooldownUntil!).toLocaleTimeString()
+                                }) }}</div>
+                            </div>
+                        </v-tooltip>
                     </td>
                     <td>
                         <div style="display:flex;gap:4px">

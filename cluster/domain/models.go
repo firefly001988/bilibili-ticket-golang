@@ -122,7 +122,7 @@ func (m MacroTask) EffectiveCapacity() int {
 }
 
 func (m MacroTask) Dispatchable() bool {
-	return m.EventDayConfirmed && !m.NeedsReview && m.ProjectID > 0 && m.ScreenID > 0 && m.SKUID > 0
+	return !m.NeedsReview && m.ProjectID > 0 && m.ScreenID > 0 && m.SKUID > 0
 }
 
 type PurchaseGroup struct {
@@ -155,8 +155,8 @@ func NewIntent(id string, macro MacroTask, phase Phase, buyers []Buyer, now time
 	if len(buyers) == 0 || len(buyers) > macro.EffectiveCapacity() {
 		return LogicalOrderIntent{}, fmt.Errorf("buyer count %d exceeds capacity %d", len(buyers), macro.EffectiveCapacity())
 	}
-	if !macro.EventDayConfirmed || macro.EventDay == "" {
-		return LogicalOrderIntent{}, fmt.Errorf("event day is not confirmed")
+	if macro.EventDay == "" {
+		return LogicalOrderIntent{}, fmt.Errorf("event day is empty")
 	}
 	ordered := append([]Buyer(nil), buyers...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].LogicalID < ordered[j].LogicalID })

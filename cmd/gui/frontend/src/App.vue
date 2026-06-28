@@ -8,7 +8,7 @@ import {
   Snapshot,
   SaveTaskGroup,
   DeleteTaskGroup,
-} from '../bindings/bilibili-ticket-golang/cmd/gui/clusterservice'
+} from '../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t, locale } = useI18n()
 const messages = useMessagesStore();

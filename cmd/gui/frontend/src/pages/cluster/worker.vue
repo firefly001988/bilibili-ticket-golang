@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
 import {
@@ -13,12 +13,21 @@ import {
     StopLocalWorker,
     AddLocalWorker,
     GenerateRemoteWorkerConfig,
-} from '../../../bindings/bilibili-ticket-golang/cmd/gui/clusterservice'
+} from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t } = useI18n()
 const messages = useMessagesStore()
 
 // ── Types ─────────────────────────────────────────────────────
+interface WorkerCooldownInfo {
+    cooledDown: boolean
+    cooldownEnd?: string
+    startedAt?: string
+    reason?: string
+    remainingMs: number
+    totalDurationMs: number
+}
+
 interface WorkerSummary {
     id: string
     name: string
@@ -28,11 +37,22 @@ interface WorkerSummary {
     healthy: boolean
     activeAttemptId?: string
     version?: string
+    cooldown?: WorkerCooldownInfo
+    lastHeartbeatAt?: string
+    lastHeartbeatLatencyMs: number
+}
+
+interface SnapshotExt {
+    workers: WorkerSummary[]
+    bilibiliOffsetMs: number
+    ntpOffsetMs: number
 }
 
 // ── State ─────────────────────────────────────────────────────
 const workers = ref<WorkerSummary[]>([])
 const loading = ref(true)
+const bilibiliOffsetMs = ref(0)
+const ntpOffsetMs = ref(0)
 
 // Import dialog
 const showImportDialog = ref(false)
@@ -72,19 +92,58 @@ const showConfigAddConfirm = ref(false)
 // Connecting state
 const connecting = ref<Record<string, boolean>>({})
 
+// Expandable worker detail rows
+const expandedWorkers = ref<Set<string>>(new Set())
+
+function toggleExpand(workerId: string) {
+    if (expandedWorkers.value.has(workerId)) {
+        expandedWorkers.value.delete(workerId)
+    } else {
+        expandedWorkers.value.add(workerId)
+    }
+}
+
+// ── Cooldown countdown timers (per worker, in seconds) ───────────
+const cooldownTimers = ref<Record<string, number>>({})
+let cooldownInterval: ReturnType<typeof setInterval> | null = null
+
+function updateCooldownTimers() {
+    const now = Date.now()
+    const updated: Record<string, number> = {}
+    for (const w of workers.value) {
+        if (w.cooldown?.cooledDown && w.cooldown.cooldownEnd) {
+            const end = new Date(w.cooldown.cooldownEnd).getTime()
+            const remaining = Math.max(0, Math.floor((end - now) / 1000))
+            if (remaining > 0) {
+                updated[w.id] = remaining
+            }
+        }
+    }
+    cooldownTimers.value = updated
+}
+
 // ── Data loading ──────────────────────────────────────────────
 async function load() {
     loading.value = true
     try {
-        const snap = await Snapshot()
-        workers.value = (snap.workers || []) as WorkerSummary[]
+        const snap = await Snapshot() as SnapshotExt
+        workers.value = snap.workers || []
+        bilibiliOffsetMs.value = snap.bilibiliOffsetMs || 0
+        ntpOffsetMs.value = snap.ntpOffsetMs || 0
+        updateCooldownTimers()
     } catch (e: any) {
         messages.add({ text: t('worker.loadFailed', { error: String(e) }), color: 'error' })
     }
     loading.value = false
 }
 
-onMounted(load)
+onMounted(() => {
+    load()
+    cooldownInterval = setInterval(updateCooldownTimers, 1000)
+})
+onUnmounted(() => {
+    if (cooldownInterval) clearInterval(cooldownInterval)
+})
 
 // ── Import ────────────────────────────────────────────────────
 async function doImport() {
@@ -311,75 +370,169 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
         <v-table v-else>
             <thead>
                 <tr>
+                    <th style="width:28px"></th>
                     <th class="text-no-wrap">{{ t('worker.colName') }}</th>
-                    <th class="text-no-wrap">{{ t('worker.colId') }}</th>
                     <th class="text-no-wrap">{{ t('worker.colAddress') }}</th>
                     <th class="text-no-wrap" style="width:1%;white-space:nowrap">{{ t('worker.colStatus') }}</th>
                     <th class="text-no-wrap" style="width:1%;white-space:nowrap">{{ t('worker.colActions') }}</th>
                 </tr>
             </thead>
             <tbody>
-                <tr v-for="w in workers" :key="w.id">
-                    <td style="max-width:200px">
-                        <div class="d-flex align-center text-truncate" style="min-width:0">
-                            <v-icon start size="small" class="mr-1 flex-shrink-0">mdi-server-network</v-icon>
-                            <span class="text-truncate font-weight-bold" style="min-width:0">{{ w.name || w.id }}</span>
-                            <v-chip v-if="isLocalWorker(w)" size="x-small" color="info" variant="tonal"
-                                class="ml-1 flex-shrink-0">
-                                {{ t('worker.localLabel') }}
-                            </v-chip>
-                            <v-chip v-else size="x-small" color="warning" variant="tonal" class="ml-1 flex-shrink-0">
-                                {{ t('worker.remoteLabel') }}
-                            </v-chip>
-                        </div>
-                    </td>
-                    <td style="max-width:140px">
-                        <span class="text-caption text-truncate d-block">{{ w.id }}</span>
-                    </td>
-                    <td style="max-width:200px">
-                        <span class="text-caption font-monospace text-truncate d-block">{{ w.address }}</span>
-                    </td>
-                    <td class="text-no-wrap" style="white-space:nowrap">
-                        <v-chip :color="w.healthy ? 'success' : 'error'" size="small" variant="tonal">
-                            <v-icon start size="x-small">{{ w.healthy ? 'mdi-check-circle' : 'mdi-close-circle'
+                <template v-for="w in workers" :key="w.id">
+                    <tr @click="toggleExpand(w.id)" style="cursor:pointer">
+                        <td class="text-center">
+                            <v-icon size="small">{{ expandedWorkers.has(w.id) ? 'mdi-chevron-down' : 'mdi-chevron-right'
+                            }}</v-icon>
+                        </td>
+                        <td style="max-width:200px">
+                            <div class="d-flex align-center text-truncate" style="min-width:0">
+                                <v-icon start size="small" class="mr-1 flex-shrink-0">mdi-server-network</v-icon>
+                                <span class="text-truncate font-weight-bold" style="min-width:0">{{ w.name || w.id
+                                }}</span>
+                                <v-chip v-if="isLocalWorker(w)" size="x-small" color="info" variant="tonal"
+                                    class="ml-1 flex-shrink-0">
+                                    {{ t('worker.localLabel') }}
+                                </v-chip>
+                                <v-chip v-else size="x-small" color="warning" variant="tonal"
+                                    class="ml-1 flex-shrink-0">
+                                    {{ t('worker.remoteLabel') }}
+                                </v-chip>
+                            </div>
+                        </td>
+                        <td style="max-width:200px">
+                            <span class="text-caption font-monospace text-truncate d-block">{{ w.address }}</span>
+                        </td>
+                        <td class="text-no-wrap" style="white-space:nowrap">
+                            <v-chip :color="w.healthy ? 'success' : 'error'" size="small" variant="tonal">
+                                <v-icon start size="x-small">{{ w.healthy ? 'mdi-check-circle' : 'mdi-close-circle'
                                 }}</v-icon>
-                            {{ w.healthy ? t('worker.online') : t('worker.offline') }}
-                        </v-chip>
-                        <v-chip v-if="w.activeAttemptId" size="x-small" color="orange" variant="tonal" class="ml-1">
-                            {{ t('worker.busy') }}
-                        </v-chip>
-                        <v-chip v-if="w.version" size="x-small" variant="tonal" class="ml-1">
-                            v{{ w.version }}
-                        </v-chip>
-                    </td>
-                    <td class="text-no-wrap" style="white-space:nowrap">
-                        <div style="display:flex;gap:4px">
-                            <!-- Local workers: toggle on/off -->
-                            <template v-if="isLocalWorker(w)">
-                                <v-btn v-if="w.healthy" icon="mdi-stop-circle-outline" size="small" variant="text"
-                                    color="warning" :loading="connecting[w.id]" :title="t('worker.localStop')"
-                                    @click="toggleLocalWorker(w)" />
-                                <v-btn v-else icon="mdi-play-circle-outline" size="small" variant="text" color="success"
-                                    :loading="connecting[w.id]" :title="t('worker.localStart')"
-                                    @click="toggleLocalWorker(w)" />
-                                <v-btn icon="mdi-delete" size="small" variant="text" color="error"
-                                    @click="promptDelete(w)" />
-                            </template>
-                            <!-- Remote workers -->
-                            <template v-else>
-                                <v-btn v-if="w.healthy" icon="mdi-link-off" size="small" variant="text"
-                                    :loading="connecting[w.id]" :title="t('worker.disconnect')"
-                                    @click="doDisconnect(w)" />
-                                <v-btn v-else icon="mdi-link" size="small" variant="text" :loading="connecting[w.id]"
-                                    :title="t('worker.reconnect')" @click="doReconnect(w)" />
-                                <v-btn icon="mdi-pencil" size="small" variant="text" color="primary"
-                                    :title="t('worker.edit')" @click="openEdit(w)" />
-                                <v-btn icon="mdi-delete" size="small" variant="text" color="error"
-                                    @click="promptDelete(w)" />
-                            </template>
-                        </div>
-                    </td>
-                </tr>
+                                {{ w.healthy ? t('worker.online') : t('worker.offline') }}
+                            </v-chip>
+                            <v-chip v-if="w.activeAttemptId" size="x-small" color="orange" variant="tonal" class="ml-1">
+                                {{ t('worker.busy') }}
+                            </v-chip>
+                        </td>
+                        <td class="text-no-wrap" style="white-space:nowrap" @click.stop>
+                            <div style="display:flex;gap:4px">
+                                <!-- Local workers: toggle on/off -->
+                                <template v-if="isLocalWorker(w)">
+                                    <v-btn v-if="w.healthy" icon="mdi-stop-circle-outline" size="small" variant="text"
+                                        color="warning" :loading="connecting[w.id]" :title="t('worker.localStop')"
+                                        @click="toggleLocalWorker(w)" />
+                                    <v-btn v-else icon="mdi-play-circle-outline" size="small" variant="text"
+                                        color="success" :loading="connecting[w.id]" :title="t('worker.localStart')"
+                                        @click="toggleLocalWorker(w)" />
+                                    <v-btn icon="mdi-delete" size="small" variant="text" color="error"
+                                        @click="promptDelete(w)" />
+                                </template>
+                                <!-- Remote workers -->
+                                <template v-else>
+                                    <v-btn v-if="w.healthy" icon="mdi-link-off" size="small" variant="text"
+                                        :loading="connecting[w.id]" :title="t('worker.disconnect')"
+                                        @click="doDisconnect(w)" />
+                                    <v-btn v-else icon="mdi-link" size="small" variant="text"
+                                        :loading="connecting[w.id]" :title="t('worker.reconnect')"
+                                        @click="doReconnect(w)" />
+                                    <v-btn icon="mdi-pencil" size="small" variant="text" color="primary"
+                                        :title="t('worker.edit')" @click="openEdit(w)" />
+                                    <v-btn icon="mdi-delete" size="small" variant="text" color="error"
+                                        @click="promptDelete(w)" />
+                                </template>
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- Expandable detail row -->
+                    <tr v-if="expandedWorkers.has(w.id)">
+                        <td></td>
+                        <td :colspan="4" class="pa-3" style="background:rgba(var(--v-theme-on-surface),0.02)">
+                            <div class="text-subtitle-2 mb-2">{{ w.name || w.id }}</div>
+                            <v-row dense>
+                                <v-col cols="6" md="3">
+                                    <div class="text-caption text-medium-emphasis">Worker ID</div>
+                                    <div class="text-body-2 font-monospace">{{ w.id }}</div>
+                                </v-col>
+                                <v-col cols="6" md="3">
+                                    <div class="text-caption text-medium-emphasis">{{ t('worker.colAddress') }}</div>
+                                    <div class="text-body-2 font-monospace">{{ w.address }}</div>
+                                </v-col>
+                                <v-col cols="6" md="3">
+                                    <div class="text-caption text-medium-emphasis">类型</div>
+                                    <div class="text-body-2">{{ isLocalWorker(w) ? t('worker.localLabel') :
+                                        t('worker.remoteLabel') }}</div>
+                                </v-col>
+                                <v-col v-if="w.version" cols="6" md="3">
+                                    <div class="text-caption text-medium-emphasis">版本</div>
+                                    <div class="text-body-2">v{{ w.version }}</div>
+                                </v-col>
+                                <v-col v-if="w.activeAttemptId" cols="6" md="3">
+                                    <div class="text-caption text-medium-emphasis">当前任务</div>
+                                    <div class="text-body-2 font-monospace">{{ w.activeAttemptId }}</div>
+                                </v-col>
+                                <!-- Heartbeat & Latency -->
+                                <v-col v-if="w.lastHeartbeatAt" cols="6" md="3">
+                                    <div class="text-caption text-medium-emphasis">最后心跳</div>
+                                    <div class="text-body-2">{{ new Date(w.lastHeartbeatAt).toLocaleTimeString() }}
+                                    </div>
+                                </v-col>
+                                <v-col v-if="w.lastHeartbeatLatencyMs" cols="6" md="3">
+                                    <div class="text-caption text-medium-emphasis">心跳延迟</div>
+                                    <div class="text-body-2">{{ w.lastHeartbeatLatencyMs }}ms</div>
+                                </v-col>
+                                <!-- Global clock offsets -->
+                                <v-col cols="12">
+                                    <v-divider class="my-1" />
+                                    <div class="text-caption text-medium-emphasis mt-1">时钟偏移（Employer）</div>
+                                </v-col>
+                                <v-col cols="6" md="3">
+                                    <div class="text-caption text-medium-emphasis">Bilibili API</div>
+                                    <div class="text-body-2"
+                                        :class="Math.abs(bilibiliOffsetMs) > 1000 ? 'text-red' : 'text-green'">
+                                        {{ bilibiliOffsetMs > 0 ? '+' : '' }}{{ bilibiliOffsetMs }}ms
+                                    </div>
+                                </v-col>
+                                <v-col cols="6" md="3">
+                                    <div class="text-caption text-medium-emphasis">NTP (阿里云)</div>
+                                    <div class="text-body-2"
+                                        :class="Math.abs(ntpOffsetMs) > 1000 ? 'text-red' : 'text-green'">
+                                        {{ ntpOffsetMs > 0 ? '+' : '' }}{{ ntpOffsetMs }}ms
+                                    </div>
+                                </v-col>
+                                <!-- Cooldown detail section -->
+                                <template v-if="w.cooldown?.cooledDown">
+                                    <v-col cols="12">
+                                        <v-divider class="my-1" />
+                                        <div class="text-caption text-warning font-weight-bold mt-1">{{
+                                            t('worker.cooldown') }}</div>
+                                    </v-col>
+                                    <v-col cols="6" md="3">
+                                        <div class="text-caption text-medium-emphasis">原因</div>
+                                        <div class="text-body-2">{{ w.cooldown.reason || '412 限流' }}</div>
+                                    </v-col>
+                                    <v-col cols="6" md="3">
+                                        <div class="text-caption text-medium-emphasis">冷却开始</div>
+                                        <div class="text-body-2">{{ w.cooldown.startedAt ? new
+                                            Date(w.cooldown.startedAt).toLocaleTimeString() : '-' }}</div>
+                                    </v-col>
+                                    <v-col cols="6" md="3">
+                                        <div class="text-caption text-medium-emphasis">冷却结束</div>
+                                        <div class="text-body-2">{{ new
+                                            Date(w.cooldown.cooldownEnd!).toLocaleTimeString() }}</div>
+                                    </v-col>
+                                    <v-col cols="6" md="3">
+                                        <div class="text-caption text-medium-emphasis">总冷却时长</div>
+                                        <div class="text-body-2">{{ Math.round((w.cooldown.totalDurationMs || 0) / 1000)
+                                        }}s</div>
+                                    </v-col>
+                                    <v-col cols="6" md="3">
+                                        <div class="text-caption text-medium-emphasis">剩余</div>
+                                        <div class="text-body-2 text-warning font-weight-bold">{{ cooldownTimers[w.id]
+                                            || 0 }}s</div>
+                                    </v-col>
+                                </template>
+                            </v-row>
+                        </td>
+                    </tr>
+                </template>
             </tbody>
         </v-table>
 

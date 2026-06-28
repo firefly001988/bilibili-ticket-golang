@@ -1,14 +1,14 @@
 <script lang="ts" setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
-import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup, StopTaskGroup, StartTaskGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/clusterservice'
+import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup, StopTaskGroup, StartTaskGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
 
 const route = useRoute(); const { t } = useI18n(); const messages = useMessagesStore()
 
-interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; eventDayConfirmed: boolean; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; phase?: string; purchaseGroups?: any[] }
+interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; phase?: string; purchaseGroups?: any[] }
 interface AttemptBrief { id: string; intentId: string; accountId: string; workerId: string; state: string; orderId?: string }
 interface IntentBrief { id: string; macroTaskId: string; phase: string; weight: number; priority: number; buyerCount: number; succeeded: boolean; terminal: boolean; armed: boolean; activeCount: number; deficit: number; failureReason?: string }
 
@@ -106,12 +106,36 @@ function onStandbyWorkerSelectionChange(vals: string[]) {
     macroStandbyWorkerIds.value = vals.filter(id => !macroPrimaryWorkerIds.value.includes(id))
 }
 
-async function loadAll(id: string) { loading.value = true; group.value = null; macros.value = []; intents.value = []; attempts.value = []; try { const snap = await Snapshot(); group.value = ((snap.taskGroups || []) as any[]).find(g => g.id === id) || null; macros.value = ((snap.macros || []) as MacroSummary[]).filter(m => m.taskGroupId === id); intents.value = ((snap.intents || []) as IntentBrief[]).filter(i => macros.value.some(m => m.id === i.macroTaskId)); attempts.value = ((snap.attempts || []) as AttemptBrief[]); workerList.value = ((snap.workers || []) as any[]); if (allBuyers.value.length === 0) { allBuyers.value = ((snap.buyers || []) as any[]).map((b: any) => ({ logicalId: b.logicalId, name: b.name || '', idCard: b.idCard || '', tel: b.tel || '' })) } } catch { } loading.value = false }
-watch(() => route.params.id, (newId) => { if (newId) loadAll(newId as string) }, { immediate: true })
+async function loadAll(id: string, silent = false) { if (!silent) loading.value = true; if (!silent) { group.value = null; macros.value = []; intents.value = []; attempts.value = [] }; try { const snap = await Snapshot(); group.value = ((snap.taskGroups || []) as any[]).find(g => g.id === id) || null; const allMacros = ((snap.macros || []) as MacroSummary[]).filter(m => m.taskGroupId === id); macros.value = allMacros; intents.value = ((snap.intents || []) as IntentBrief[]).filter(i => allMacros.some(m => m.id === i.macroTaskId)); attempts.value = ((snap.attempts || []) as AttemptBrief[]); if (!silent) { workerList.value = ((snap.workers || []) as any[]) }; if (allBuyers.value.length === 0) { allBuyers.value = ((snap.buyers || []) as any[]).map((b: any) => ({ logicalId: b.logicalId, name: b.name || '', idCard: b.idCard || '', tel: b.tel || '', accounts: b.accounts || [] })) } } catch { } if (!silent) loading.value = false }
+
+// ── Auto-polling ──────────────────────────────────────────────
+let pollTimer: ReturnType<typeof setInterval> | null = null
+const currentGroupId = ref('')
+const POLL_INTERVAL_MS = 5000
+
+function startPolling(groupId: string) {
+    stopPolling()
+    currentGroupId.value = groupId
+    pollTimer = setInterval(() => {
+        if (currentGroupId.value) {
+            loadAll(currentGroupId.value, true)
+        }
+    }, POLL_INTERVAL_MS)
+}
+function stopPolling() {
+    if (pollTimer !== null) {
+        clearInterval(pollTimer)
+        pollTimer = null
+    }
+    currentGroupId.value = ''
+}
+onUnmounted(stopPolling)
+
+watch(() => route.params.id, (newId) => { if (newId) { loadAll(newId as string); startPolling(newId as string) } else { stopPolling() } }, { immediate: true })
 
 async function lookupProject() { const pid = lookupProjectId.value.trim(); if (!pid) { messages.add({ text: t('taskGroup.projectIdRequired'), color: 'warning' }); return } lookupLoading.value = true; projectInfo.value = null; tickets.value = []; selectedScreenId.value = 0; selectedSkuId.value = 0; try { const [info, tks] = await Promise.all([GetProjectInformationNew(pid), GetTicketSkuIDsByProjectIDNew(pid)]); if (!info) messages.add({ text: t('taskGroup.projectNotFound'), color: 'warning' }); else { projectInfo.value = info; tickets.value = tks || [] } } catch (e: any) { messages.add({ text: t('taskGroup.lookupFailed', { error: String(e) }), color: 'error' }) } lookupLoading.value = false }
 
-async function addMacro() { if (!projectInfo.value || !selectedScreenId.value || !selectedSkuId.value || !group.value) return; const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value); addingMacroInfo.value = { projectName: projectInfo.value.ProjectName || '', eventDay: projectInfo.value.StartTime || '', screenName: ticket?.name || '', skuName: ticket?.desc || '', price: ((ticket?.price || 0) / 100), buyLimit: ticket?.buyLimit || 1, saleStart: ticket?.saleStat?.start || '', saleEnd: ticket?.saleStat?.end || '', isRealName: projectInfo.value.IsForceRealName || false }; showAddConfirmDialog.value = true }
+async function addMacro() { if (!projectInfo.value || !selectedScreenId.value || !selectedSkuId.value || !group.value) return; const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value); addingMacroInfo.value = { projectName: projectInfo.value.ProjectName || '', eventDay: ticket?.eventTime || projectInfo.value.StartTime || '', screenName: ticket?.name || '', skuName: ticket?.desc || '', price: ((ticket?.price || 0) / 100), buyLimit: ticket?.buyLimit || 1, saleStart: ticket?.saleStat?.start || '', saleEnd: ticket?.saleStat?.end || '', isRealName: projectInfo.value.IsForceRealName || false }; showAddConfirmDialog.value = true }
 
 async function confirmAddMacro() {
     if (!addingMacroInfo.value || !group.value) return
@@ -119,7 +143,7 @@ async function confirmAddMacro() {
     showAddConfirmDialog.value = false
     const info = addingMacroInfo.value
     const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value)
-    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: projectInfo.value!.IsForceRealName || false, orderCapacity: ticket?.buyLimit || 1, startAt: ticket?.saleStat?.start || '', deadline: ticket?.saleStat?.end || '', primaryWorkerIds: macroPrimaryWorkerIds.value, standbyWorkerIds: macroStandbyWorkerIds.value })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; macroPrimaryWorkerIds.value = []; macroStandbyWorkerIds.value = []; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
+    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: false, orderCapacity: ticket?.buyLimit || 1, startAt: ticket?.saleStat?.start || '', deadline: ticket?.saleStat?.end || '', primaryWorkerIds: macroPrimaryWorkerIds.value, standbyWorkerIds: macroStandbyWorkerIds.value })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; macroPrimaryWorkerIds.value = []; macroStandbyWorkerIds.value = []; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
     addingMacro.value = false
     addingMacroInfo.value = null
 }
@@ -156,7 +180,7 @@ async function savePurchaseGroup(m: MacroSummary) {
 }
 
 function shouldAutoStartAfterPurchaseGroup(m: MacroSummary) {
-    if (!m.eventDayConfirmed || m.needsReview) return false
+    if (m.needsReview) return false
     const startAt = Date.parse(m.startAt || '')
     if (!Number.isFinite(startAt) || Date.now() < startAt) return false
     const deadline = Date.parse(m.deadline || '')
@@ -223,13 +247,80 @@ async function removePurchaseGroup(macroId: string, pgId: string) {
 
 function buyerByLogicalId(id: string) { return allBuyers.value.find(b => b.logicalId === id) }
 
-async function loadBuyersOnce() { if (allBuyers.value.length > 0) return; try { const snap = await Snapshot(); allBuyers.value = ((snap.buyers || []) as any[]).map((b: any) => ({ logicalId: b.logicalId, name: b.name || '', idCard: b.idCard || '', tel: b.tel || '' })) } catch { } }
+async function loadBuyersOnce() { if (allBuyers.value.length > 0) return; try { const snap = await Snapshot(); allBuyers.value = ((snap.buyers || []) as any[]).map((b: any) => ({ logicalId: b.logicalId, name: b.name || '', idCard: b.idCard || '', tel: b.tel || '', accounts: b.accounts || [] })) } catch { } }
 
 function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRandomValues(arr); return prefix + '-' + Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('') }
 
 // ── Dispatch ─────────────────────────────────────────────────
 const hasIntent = (m: MacroSummary) => m.phase === 'punctual' || m.phase === 'reflow'
 const isRunning = (m: MacroSummary) => (dispatching.value[m.id] || hasIntent(m))
+
+// ── Task status helpers ──────────────────────────────────────
+/** Whether the macro's StartAt has passed but it hasn't been dispatched yet */
+const isPendingAutoStart = (m: MacroSummary): boolean => {
+    if (m.needsReview) return false
+    if (hasIntent(m)) return false // already dispatched
+    const startAt = Number.isFinite(Date.parse(m.startAt)) ? new Date(m.startAt).getTime() : 0
+    if (startAt === 0 || Date.now() < startAt) return false
+    const deadline = Number.isFinite(Date.parse(m.deadline)) ? new Date(m.deadline).getTime() : 0
+    if (deadline > 0 && Date.now() > deadline) return false
+    return true
+}
+
+/** Reasons why a macro hasn't auto-started even though StartAt has passed */
+const startBlockers = (m: MacroSummary): string[] => {
+    const blockers: string[] = []
+    if (workerList.value.filter(w => w.healthy).length === 0) {
+        blockers.push(t('taskGroup.blockerNoWorkers'))
+    }
+    // Check if any buyer in purchase groups has been synced to any account
+    const pgs = m.purchaseGroups || []
+    if (pgs.length > 0) {
+        let hasMappedBuyer = false
+        for (const pg of pgs) {
+            for (const b of (pg.buyers || [])) {
+                const found = allBuyers.value.find(x => x.logicalId === b.logicalId)
+                if (found && (found as any).accounts && (found as any).accounts.length > 0) {
+                    hasMappedBuyer = true
+                    break
+                }
+            }
+            if (hasMappedBuyer) break
+        }
+        if (!hasMappedBuyer) {
+            blockers.push(t('taskGroup.blockerNoBuyerMapping'))
+        }
+    }
+    return blockers
+}
+
+/** Human-readable status label for a macro */
+const macroStatusLabel = (m: MacroSummary): string => {
+    if (hasIntent(m)) {
+        if (m.phase === 'reflow') return t('taskGroup.phaseReflow')
+        const ds = dispatchStats(m)
+        if (ds.succeeded > 0) return t('taskGroup.succeeded', { count: ds.succeeded })
+        if (ds.running > 0) return t('taskGroup.running', { count: ds.running })
+        if (ds.deficit > 0) return t('taskGroup.queued', { count: ds.deficit })
+        return t('taskGroup.phaseRunning')
+    }
+    if (isPendingAutoStart(m)) return t('taskGroup.pendingAutoStart')
+    return t('taskGroup.pendingConfig')
+}
+
+/** Color for macro status chip */
+const macroStatusColor = (m: MacroSummary): string => {
+    if (hasIntent(m)) {
+        if (m.phase === 'reflow') return 'warning'
+        const ds = dispatchStats(m)
+        if (ds.succeeded > 0) return 'success'
+        if (ds.running > 0) return 'info'
+        if (ds.deficit > 0) return 'warning'
+        return 'info'
+    }
+    if (isPendingAutoStart(m)) return 'warning'
+    return 'grey'
+}
 
 function dispatchStats(m: MacroSummary) {
     const macroIntents = intents.value.filter(i => i.macroTaskId === m.id && i.armed && !i.terminal && !i.succeeded)
@@ -304,7 +395,7 @@ const groupStats = computed(() => {
                         <span class="text-subtitle-2">{{ t('taskGroup.dispatch') }}</span>
                         <v-chip v-if="groupStats.total > 0" size="small" variant="tonal" color="grey">{{
                             t('taskGroup.intents', { count: groupStats.total })
-                            }}</v-chip>
+                        }}</v-chip>
                         <v-chip v-if="groupStats.deficit > 0" size="small" variant="tonal" color="warning">{{
                             t('taskGroup.queued', { count: groupStats.deficit }) }}</v-chip>
                         <v-chip v-if="groupStats.running > 0" size="small" color="info" variant="tonal">{{
@@ -448,7 +539,7 @@ const groupStats = computed(() => {
             <!-- Macro list -->
             <v-card elevation="2">
                 <v-card-title class="text-subtitle-1">{{ t('taskGroup.macroList') }} ({{ macros.length
-                }})</v-card-title>
+                    }})</v-card-title>
                 <template v-if="macros.length > 0">
                     <v-expansion-panels v-model="expandedMacro" variant="accordion"
                         @update:model-value="onMacroPanelChange">
@@ -464,11 +555,9 @@ const groupStats = computed(() => {
                                                 m.screenId }}</span>
                                         <span class="text-caption text-medium-emphasis text-truncate"
                                             style="min-width:0;flex-shrink:1">{{ m.skuName || m.skuId }}</span>
-                                        <v-chip v-if="hasIntent(m)" size="x-small" variant="tonal"
-                                            :color="m.phase === 'reflow' ? 'warning' : 'info'"
-                                            class="ml-1 flex-shrink-0">
-                                            {{ m.phase === 'reflow' ? t('taskGroup.phaseReflow') :
-                                                t('taskGroup.phaseRunning') }}
+                                        <v-chip v-if="macroStatusLabel(m)" size="x-small" variant="tonal"
+                                            :color="macroStatusColor(m)" class="ml-1 flex-shrink-0">
+                                            {{ macroStatusLabel(m) }}
                                         </v-chip>
                                     </div>
                                     <div class="text-caption text-medium-emphasis text-truncate mt-2">{{
@@ -477,14 +566,21 @@ const groupStats = computed(() => {
                                     <div class="text-caption text-medium-emphasis text-truncate">{{
                                         t('taskGroup.saleTime') }}: {{ m.startAt || '—' }} ~ {{ m.deadline || '—' }}
                                     </div>
+                                    <div v-if="isPendingAutoStart(m) && startBlockers(m).length > 0"
+                                        v-for="blocker in startBlockers(m)" :key="blocker" class="text-caption mt-1"
+                                        style="color:rgb(var(--v-theme-warning))">
+                                        ⚠ {{ blocker }}
+                                    </div>
                                     <div v-if="(m.primaryWorkerIds || []).length > 0 || (m.standbyWorkerIds || []).length > 0"
                                         class="text-caption text-medium-emphasis text-truncate">
                                         {{ t('taskGroup.macroWorkers') }}:
                                         <span v-if="(m.primaryWorkerIds || []).length > 0">
-                                            {{ t('taskGroup.macroPrimaryShort') }} {{ (m.primaryWorkerIds || []).length }}
+                                            {{ t('taskGroup.macroPrimaryShort') }} {{ (m.primaryWorkerIds || []).length
+                                            }}
                                         </span>
                                         <span v-if="(m.standbyWorkerIds || []).length > 0" class="ml-1">
-                                            {{ t('taskGroup.macroStandbyShort') }} {{ (m.standbyWorkerIds || []).length }}
+                                            {{ t('taskGroup.macroStandbyShort') }} {{ (m.standbyWorkerIds || []).length
+                                            }}
                                         </span>
                                     </div>
                                 </div>
@@ -498,7 +594,7 @@ const groupStats = computed(() => {
                                 <v-card v-if="dispatchStats(m).total > 0" variant="outlined" class="mb-3 pa-2">
                                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                                         <span class="text-caption text-medium-emphasis">{{ t('taskGroup.dispatchStatus')
-                                        }}:</span>
+                                            }}:</span>
                                         <v-chip v-if="dispatchStats(m).deficit > 0" size="x-small" variant="tonal"
                                             color="warning">{{
                                                 t('taskGroup.queued', { count: dispatchStats(m).deficit }) }}</v-chip>
@@ -525,7 +621,7 @@ const groupStats = computed(() => {
                                                     i.weight }}</v-chip>
                                                 <v-chip v-if="i.priority !== 0" size="x-small" variant="outlined"
                                                     class="ml-1" :color="i.priority > 0 ? 'success' : 'warning'">P{{
-                                                    i.priority }}</v-chip>
+                                                        i.priority }}</v-chip>
                                             </template>
                                             <template #append>
                                                 <v-chip size="x-small" variant="tonal"
@@ -540,7 +636,7 @@ const groupStats = computed(() => {
                                 <div class="mb-3">
                                     <v-label class="text-caption mb-1">{{ t('taskGroup.purchaseGroups') }} ({{
                                         (m.purchaseGroups || []).length
-                                    }})</v-label>
+                                        }})</v-label>
                                     <v-card v-if="(m.purchaseGroups || []).length > 0" elevation="2" class="mb-2">
                                         <v-list density="compact" class="py-0">
                                             <template v-for="(pg, pgIdx) in (m.purchaseGroups || [])" :key="pg.id">
@@ -630,11 +726,11 @@ const groupStats = computed(() => {
                     </v-expansion-panels>
                 </template>
                 <v-card-text v-else class="text-medium-emphasis text-center py-6">{{ t('taskGroup.emptyMacro')
-                }}</v-card-text>
+                    }}</v-card-text>
             </v-card>
         </div>
         <v-card v-else class="mt-4 pa-6 text-center" variant="outlined"><v-card-text>{{ t('taskGroup.notFound')
-        }}</v-card-text></v-card>
+                }}</v-card-text></v-card>
 
         <!-- ═══ Add Macro Confirmation Dialog ═══ -->
         <v-dialog v-model="showAddConfirmDialog" max-width="460" persistent>
@@ -673,7 +769,7 @@ const groupStats = computed(() => {
                         <div class="info-row" v-if="addingMacroInfo?.isRealName">
                             <span class="info-label"></span>
                             <v-chip color="warning" size="x-small" variant="tonal">{{ t('taskGroup.realName')
-                            }}</v-chip>
+                                }}</v-chip>
                         </div>
                     </v-card>
                     <p class="text-caption text-medium-emphasis">

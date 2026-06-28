@@ -2,6 +2,7 @@ package main
 
 import (
 	clusterstorage "bilibili-ticket-golang/cluster/storage"
+	"bilibili-ticket-golang/cmd/gui/cluster_service"
 	"bilibili-ticket-golang/cmd/gui/i18n"
 	"bilibili-ticket-golang/cmd/gui/store/configuration"
 	"bilibili-ticket-golang/cmd/gui/store/cookiejar"
@@ -139,7 +140,7 @@ func main() {
 	if err = clusterRepository.MigrateLegacy(context.Background(), store); err != nil {
 		panic("Failed to migrate legacy tickets:" + err.Error())
 	}
-	clusterSvc := NewClusterService(clusterRepository)
+	clusterSvc := cluster_service.NewClusterService(clusterRepository)
 
 	// Restore saved locale or leave empty for first-startup detection
 	if store.Locale != "" {

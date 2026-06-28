@@ -167,6 +167,9 @@ func (b *BilibiliBackend) submitSplitOrders(ctx context.Context, spec domain.Exe
 			if len(orderIDs) > 0 {
 				return Outcome{Code: 0, Message: fmt.Sprintf("split into %d orders: %s (stopped: %s)", len(orderIDs), strings.Join(orderIDs, ","), message), OrderID: strings.Join(orderIDs, ","), Err: err}
 			}
+			if code == 429 {
+				return Outcome{Code: code, Message: message, Err: nil}
+			}
 			return Outcome{Code: code, Message: message, Err: err}
 		}
 		if code == 100034 {

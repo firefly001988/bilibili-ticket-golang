@@ -61,6 +61,7 @@ type Dispatcher struct {
 	workerBusy          map[string]string
 	failedWorkers       map[string]time.Time
 	quarantinedAccounts map[string]time.Time
+	workerCooldown      map[string]time.Time // 412 → 5-min cooldown
 	degraded            bool
 	now                 func() time.Time
 	next                uint64
@@ -77,7 +78,7 @@ func (d *Dispatcher) SetSuccessHandler(handler func(domain.LogicalOrderIntent, d
 }
 
 func New(client WorkerClient, repository Repository, resolver MappingResolver) *Dispatcher {
-	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), stoppedPhases: make(map[domain.Phase]bool), workerReservations: make(map[string]string), now: time.Now}
+	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), workerCooldown: make(map[string]time.Time), stoppedPhases: make(map[domain.Phase]bool), workerReservations: make(map[string]string), now: time.Now}
 }
 
 func (d *Dispatcher) SetResources(accounts []domain.Account, workers []domain.WorkerNode) {
@@ -126,9 +127,63 @@ func (d *Dispatcher) MarkWorkerHealthy(workerID string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	delete(d.failedWorkers, workerID)
+	delete(d.workerCooldown, workerID)
 	if len(d.failedWorkers) == 0 {
 		d.degraded = false
 	}
+}
+
+// WorkerCooldownInfo describes why and until when a worker is cooled down.
+type WorkerCooldownInfo struct {
+	CooledDown      bool
+	CooldownEnd     time.Time
+	StartedAt       time.Time
+	Reason          string
+	TotalDurationMs int64 // total duration of the cooldown in milliseconds
+}
+
+// WorkerCooldown returns cooldown info for a worker. When cooled down,
+// Reason describes why and CooldownEnd is when the cooldown expires.
+func (d *Dispatcher) WorkerCooldown(workerID string) WorkerCooldownInfo {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if endAt, ok := d.workerCooldown[workerID]; ok && endAt.After(d.now()) {
+		startedAt := d.failedWorkers[workerID]
+		reason := "412 限流"
+		return WorkerCooldownInfo{
+			CooledDown:      true,
+			CooldownEnd:     endAt,
+			StartedAt:       startedAt,
+			Reason:          reason,
+			TotalDurationMs: endAt.Sub(startedAt).Milliseconds(),
+		}
+	}
+	return WorkerCooldownInfo{}
+}
+
+// HasCooldownWorkersWithDeficit reports whether there is at least one
+// worker under 412 cooldown AND at least one armed intent has a
+// deficit (needs more attempts).  The caller can use this to shorten the
+// Reconcile interval from 15s to 5s for faster worker switching.
+func (d *Dispatcher) HasCooldownWorkersWithDeficit() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.workerCooldown) == 0 {
+		return false
+	}
+	// Check if any armed intent has a deficit
+	for _, plan := range d.plans {
+		if !plan.Intent.Armed || plan.Intent.Succeeded || plan.Intent.Terminal {
+			continue
+		}
+		if d.stoppedPhases[plan.Intent.Phase] {
+			continue
+		}
+		if d.activeCount(plan.Intent.ID) < effectiveWeight(plan.Intent) {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Dispatcher) ActiveAttemptsFor(intentIDs map[string]struct{}) int {
@@ -553,7 +608,17 @@ func (d *Dispatcher) applyFailure(ctx context.Context, current *attempt, result 
 		if d.repository != nil {
 			_ = d.repository.PutAccount(ctx, account, &old)
 		}
-	case domain.FailureHTTP412, domain.FailureCaptcha, domain.FailureWorkerLost:
+	case domain.FailureHTTP412:
+		// 412: quarantine the worker for 5 minutes so Reconcile
+		// can try a different worker if available.  Unlike transport-level
+		// failures this is a recoverable rate-limit; the worker is healthy.
+		d.workerCooldown[current.value.WorkerID] = d.now().Add(5 * time.Minute)
+		d.failedWorkers[current.value.WorkerID] = d.now()
+		d.degraded = true
+	case domain.FailureCaptcha:
+		// Captcha failures are expected and recoverable; do NOT cool down the worker.
+		// The worker remains immediately available for the next attempt.
+	case domain.FailureWorkerLost:
 		d.failedWorkers[current.value.WorkerID] = d.now()
 		d.degraded = true
 	}
@@ -742,7 +807,16 @@ func (d *Dispatcher) workerAvailableForPlan(worker domain.WorkerNode, plan *Inte
 		return false
 	}
 	if _, failed := d.failedWorkers[worker.ID]; failed {
-		return false
+		// Check 5-minute cooldown: if expired, clear the failure and allow.
+		if until, ok := d.workerCooldown[worker.ID]; ok && !until.After(d.now()) {
+			delete(d.failedWorkers, worker.ID)
+			delete(d.workerCooldown, worker.ID)
+			if len(d.failedWorkers) == 0 {
+				d.degraded = false
+			}
+		} else {
+			return false
+		}
 	}
 	if d.activeTaskGroup != "" {
 		if tg, ok := d.workerReservations[worker.ID]; !ok || tg != d.activeTaskGroup {

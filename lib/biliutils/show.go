@@ -76,12 +76,13 @@ func (c *BiliClient) GetTicketSkuIDsByProjectIDNew(projectID string) ([]r.Ticket
 	for _, screen := range apiResp.Data.ScreenList {
 		for _, skuInfo := range screen.TicketList {
 			ticket := r.TicketSkuScreenID{
-				ScreenID: screen.ScreenId,
-				SkuID:    skuInfo.SkuId,
-				Name:     skuInfo.ScreenName,
-				Desc:     skuInfo.Desc,
-				Price:    skuInfo.Price,
-				BuyLimit: skuInfo.StaticLimit.BuyLimit,
+				ScreenID:  screen.ScreenId,
+				SkuID:     skuInfo.SkuId,
+				Name:      skuInfo.ScreenName,
+				Desc:      skuInfo.Desc,
+				Price:     skuInfo.Price,
+				EventTime: time.Unix(screen.StartTime, 0),
+				BuyLimit:  skuInfo.StaticLimit.BuyLimit,
 				Flags: r.SaleFlagInfo{
 					Number:      skuInfo.SaleFlag.Number,
 					DisplayName: skuInfo.SaleFlag.DisplayName,
@@ -144,11 +145,12 @@ func (c *BiliClient) GetTicketSkuIDsByProjectID(projectID string) ([]r.TicketSku
 	for _, screen := range apiResp.Data.ScreenList {
 		for _, skuInfo := range screen.TicketList {
 			ticket := r.TicketSkuScreenID{
-				ScreenID: screen.ScreenId,
-				SkuID:    skuInfo.SkuId,
-				Name:     skuInfo.ScreenName,
-				Desc:     skuInfo.Desc,
-				Price:    skuInfo.Price,
+				ScreenID:  screen.ScreenId,
+				SkuID:     skuInfo.SkuId,
+				Name:      skuInfo.ScreenName,
+				Desc:      skuInfo.Desc,
+				Price:     skuInfo.Price,
+				EventTime: time.Unix(screen.StartTime, 0),
 				Flags: r.SaleFlagInfo{
 					Number:      skuInfo.SaleFlag.Number,
 					DisplayName: skuInfo.SaleFlag.DisplayName,
@@ -372,7 +374,7 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 		var msg = fmt.Sprintf("HTTP error: %d", statusCode)
 		switch statusCode {
 		case 412:
-			msg = i18n.T("task.rate_limit", nil)
+			msg = i18n.T("task.rate_limited", nil)
 		case 429:
 			msg = i18n.T("task.flow_control", nil)
 		}
