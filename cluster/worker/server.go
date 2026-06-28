@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -121,6 +122,12 @@ type Server struct {
 	active            string
 	now               func() time.Time
 	completedNotifier func(t *task) // called when a task completes to push result over heartbeat
+
+	// Cached clock offsets (computed once, reported in Health).
+	biliOffset   time.Duration
+	ntpOffset    time.Duration
+	offsetsReady bool
+	offsetsMu    sync.Mutex
 }
 
 func NewServer(config Config, factory BackendFactory) (*Server, error) {
@@ -189,20 +196,55 @@ type workerService struct {
 // Health
 // =============================================================================
 
-func (ws *workerService) Health(_ context.Context, _ *pb.HealthRequest) (*pb.HealthResponse, error) {
+func (ws *workerService) Health(_ context.Context, req *pb.HealthRequest) (*pb.HealthResponse, error) {
 	s := ws.server
+	employerVer := req.GetEmployerVersion()
+	workerVer := s.config.Version
+	versionOK := employerVer == "" || employerVer == workerVer
+	if employerVer != "" && employerVer != workerVer {
+		log.Printf("[worker] Health version MISMATCH (employer=%q worker=%q)", employerVer, workerVer)
+	} else if employerVer != "" {
+		log.Printf("[worker] Health version OK (both=%q, worker=%s)", employerVer, s.config.WorkerID)
+	} else {
+		log.Printf("[worker] Health version skipped (employer version empty, worker=%s)", s.config.WorkerID)
+	}
+	biliMs, ntpMs := s.clockOffsets()
 	s.mu.Lock()
 	active := s.active
 	s.mu.Unlock()
 	return &pb.HealthResponse{
-		WorkerId:         s.config.WorkerID,
-		Version:          s.config.Version,
-		PluginVersion:    s.config.PluginVersion,
-		AlgorithmVersion: s.config.AlgorithmVersion,
-		CaptchaPlugin:    s.config.CaptchaPlugin,
-		ClockCalibration: s.config.CalibrateClock,
-		ActiveAttemptId:  active,
+		WorkerId:          s.config.WorkerID,
+		Version:           workerVer,
+		PluginVersion:     s.config.PluginVersion,
+		AlgorithmVersion:  s.config.AlgorithmVersion,
+		CaptchaPlugin:     s.config.CaptchaPlugin,
+		ClockCalibration:  s.config.CalibrateClock,
+		ActiveAttemptId:   active,
+		ProtocolVersionOk: versionOK,
+		BilibiliOffsetMs:  biliMs,
+		NtpOffsetMs:       ntpMs,
 	}, nil
+}
+
+// clockOffsets computes (or returns cached) Bilibili API and NTP clock
+// offsets for this worker.  Results are cached permanently after the first
+// successful computation.
+func (s *Server) clockOffsets() (biliMs, ntpMs int64) {
+	s.offsetsMu.Lock()
+	defer s.offsetsMu.Unlock()
+	if s.offsetsReady {
+		return s.biliOffset.Milliseconds(), s.ntpOffset.Milliseconds()
+	}
+	if s.config.CalibrateClock {
+		if off, err := biliclock.GetBilibiliClockOffset(); err == nil {
+			s.biliOffset = off
+		}
+		if off, err := biliclock.GetNTPClockOffset("ntp.aliyun.com"); err == nil {
+			s.ntpOffset = off
+		}
+	}
+	s.offsetsReady = true
+	return s.biliOffset.Milliseconds(), s.ntpOffset.Milliseconds()
 }
 
 // =============================================================================

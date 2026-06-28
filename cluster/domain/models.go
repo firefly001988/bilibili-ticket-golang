@@ -237,13 +237,15 @@ const (
 )
 
 type WorkerNode struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Address       string     `json:"address"`
-	Type          WorkerType `json:"type"`
-	Enabled       bool       `json:"enabled"`
-	TLSServerName string     `json:"tlsServerName,omitempty"`
-	LastSeen      time.Time  `json:"lastSeen,omitempty"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Address          string     `json:"address"`
+	Type             WorkerType `json:"type"`
+	Version          string     `json:"version,omitempty"`
+	Enabled          bool       `json:"enabled"`
+	TLSServerName    string     `json:"tlsServerName,omitempty"`
+	SkipVersionCheck bool       `json:"skipVersionCheck"` // true = bypass protocol version check on every Health call
+	LastSeen         time.Time  `json:"lastSeen,omitempty"`
 }
 
 // WorkerTLSConfig holds the mTLS material for connecting to a worker.

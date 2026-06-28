@@ -15,7 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 type Repository struct {
 	db   *sql.DB
@@ -59,7 +59,7 @@ func (r *Repository) init(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, role TEXT NOT NULL, enabled INTEGER NOT NULL, credential_version INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS logical_buyers (id TEXT PRIMARY KEY, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS account_buyer_mappings (account_id TEXT NOT NULL, logical_buyer_id TEXT NOT NULL, buyer_id INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(account_id, logical_buyer_id), FOREIGN KEY(account_id) REFERENCES accounts(id))`,
-		`CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'remote', role TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL, payload BLOB NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'remote', role TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL, skip_version_check INTEGER NOT NULL DEFAULT 0, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS worker_keys (worker_id TEXT PRIMARY KEY, control_key BLOB NOT NULL, FOREIGN KEY(worker_id) REFERENCES workers(id))`,
 		`CREATE TABLE IF NOT EXISTS leases (id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, account_id TEXT NOT NULL UNIQUE, worker_id TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS buyer_day_occupancy (buyer_id TEXT NOT NULL, event_day TEXT NOT NULL, intent_id TEXT NOT NULL, PRIMARY KEY(buyer_id, event_day))`,
@@ -95,6 +95,13 @@ func (r *Repository) init(ctx context.Context) error {
 	// V2→V3: make role column have a default (already handled by new
 	// CREATE TABLE for fresh DBs; existing DBs keep whatever value is
 	// already there — the column is no longer used in code).
+	// V3→V4: add skip_version_check for workers whose protocol version
+	// mismatch has been manually overridden by the user.
+	if versionErr == nil && currentVersion < 4 {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE workers ADD COLUMN skip_version_check INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO schema_meta(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, fmt.Sprint(schemaVersion)); err != nil {
 		return err
 	}

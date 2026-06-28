@@ -7,7 +7,9 @@ import {
     DeleteWorker,
     DisconnectWorker,
     ReconnectWorker,
+    ForceReconnectWorker,
     AddWorkerFromEncodedConfig,
+    ForceAddWorkerFromEncodedConfig,
     UpdateWorker,
     StartLocalWorker,
     StopLocalWorker,
@@ -37,6 +39,9 @@ interface WorkerSummary {
     healthy: boolean
     activeAttemptId?: string
     version?: string
+    skipVersionCheck?: boolean
+    bilibiliOffsetMs: number
+    ntpOffsetMs: number
     cooldown?: WorkerCooldownInfo
     lastHeartbeatAt?: string
     lastHeartbeatLatencyMs: number
@@ -44,15 +49,13 @@ interface WorkerSummary {
 
 interface SnapshotExt {
     workers: WorkerSummary[]
-    bilibiliOffsetMs: number
-    ntpOffsetMs: number
+    employerVersion: string
 }
 
 // ── State ─────────────────────────────────────────────────────
 const workers = ref<WorkerSummary[]>([])
 const loading = ref(true)
-const bilibiliOffsetMs = ref(0)
-const ntpOffsetMs = ref(0)
+const employerVersion = ref('')
 
 // Import dialog
 const showImportDialog = ref(false)
@@ -88,6 +91,13 @@ const generating = ref(false)
 
 // Quick-add after generating config
 const showConfigAddConfirm = ref(false)
+
+// Version mismatch warning dialog
+const showVersionMismatchDialog = ref(false)
+const versionMismatchError = ref('')
+const versionMismatchEncoded = ref('')
+const versionMismatchAddress = ref('')
+const forceImporting = ref(false)
 
 // Connecting state
 const connecting = ref<Record<string, boolean>>({})
@@ -128,8 +138,7 @@ async function load() {
     try {
         const snap = await Snapshot() as SnapshotExt
         workers.value = snap.workers || []
-        bilibiliOffsetMs.value = snap.bilibiliOffsetMs || 0
-        ntpOffsetMs.value = snap.ntpOffsetMs || 0
+        employerVersion.value = snap.employerVersion || ''
         updateCooldownTimers()
     } catch (e: any) {
         messages.add({ text: t('worker.loadFailed', { error: String(e) }), color: 'error' })
@@ -140,10 +149,26 @@ async function load() {
 onMounted(() => {
     load()
     cooldownInterval = setInterval(updateCooldownTimers, 1000)
+    pollInterval = setInterval(pollLoad, 5000)
 })
 onUnmounted(() => {
     if (cooldownInterval) clearInterval(cooldownInterval)
+    if (pollInterval) clearInterval(pollInterval)
 })
+
+// ── Auto-polling (silent background refresh) ──────────────────
+let pollInterval: ReturnType<typeof setInterval> | null = null
+
+async function pollLoad() {
+    try {
+        const snap = await Snapshot() as SnapshotExt
+        workers.value = snap.workers || []
+        employerVersion.value = snap.employerVersion || ''
+        updateCooldownTimers()
+    } catch {
+        // silent — don't spam snackbar on network errors
+    }
+}
 
 // ── Import ────────────────────────────────────────────────────
 async function doImport() {
@@ -160,9 +185,38 @@ async function doImport() {
         await load()
         messages.add({ text: t('worker.importSuccess'), color: 'success' })
     } catch (e: any) {
-        messages.add({ text: t('worker.importFailed', { error: String(e) }), color: 'error' })
+        const errMsg = String(e)
+        if (errMsg.includes('protocol version mismatch') || errMsg.includes('version mismatch')) {
+            // Show red warning dialog — user can choose to force.
+            versionMismatchError.value = errMsg
+            versionMismatchEncoded.value = importEncodedConfig.value.trim()
+            versionMismatchAddress.value = importOverrideAddress.value.trim()
+            showVersionMismatchDialog.value = true
+        } else if (errMsg.includes('local') && (errMsg.includes('reserved') || errMsg.includes('import'))) {
+            messages.add({ text: t('worker.importLocalRejected'), color: 'error' })
+        } else {
+            messages.add({ text: t('worker.importFailed', { error: errMsg }), color: 'error' })
+        }
     }
     importing.value = false
+}
+
+async function doForceImport() {
+    showVersionMismatchDialog.value = false
+    forceImporting.value = true
+    try {
+        await ForceAddWorkerFromEncodedConfig(versionMismatchEncoded.value, versionMismatchAddress.value)
+        showImportDialog.value = false
+        importEncodedConfig.value = ''
+        importOverrideAddress.value = ''
+        versionMismatchEncoded.value = ''
+        versionMismatchAddress.value = ''
+        await load()
+        messages.add({ text: t('worker.importSuccess'), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('worker.forceImportFailed', { error: String(e) }), color: 'error' })
+    }
+    forceImporting.value = false
 }
 
 // ── Edit ──────────────────────────────────────────────────────
@@ -290,6 +344,9 @@ async function doGenerateConfig() {
     if (!configId.value.trim()) {
         messages.add({ text: t('worker.configIdRequired'), color: 'warning' }); return
     }
+    if (configId.value.trim() === 'local') {
+        messages.add({ text: t('worker.configIdReserved'), color: 'error' }); return
+    }
     generating.value = true
     try {
         const resp = await GenerateRemoteWorkerConfig(
@@ -322,6 +379,20 @@ function confirmAddFromConfig() {
 // ── Computed ──────────────────────────────────────────────────
 
 const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
+const isVersionBlocked = (w: WorkerSummary) => !w.healthy && !!w.version && !w.skipVersionCheck && !isLocalWorker(w)
+
+// ── Force Reconnect (version mismatch bypass) ─────────────────
+async function doForceReconnect(w: WorkerSummary) {
+    connecting.value[w.id] = true
+    try {
+        await ForceReconnectWorker(w.id)
+        await load()
+        messages.add({ text: t('worker.forceReconnectSuccess'), color: 'warning' })
+    } catch (e: any) {
+        messages.add({ text: t('worker.forceReconnectFailed', { error: String(e) }), color: 'error' })
+    }
+    connecting.value[w.id] = false
+}
 </script>
 
 <template>
@@ -382,13 +453,13 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                     <tr @click="toggleExpand(w.id)" style="cursor:pointer">
                         <td class="text-center">
                             <v-icon size="small">{{ expandedWorkers.has(w.id) ? 'mdi-chevron-down' : 'mdi-chevron-right'
-                            }}</v-icon>
+                                }}</v-icon>
                         </td>
                         <td style="max-width:200px">
                             <div class="d-flex align-center text-truncate" style="min-width:0">
                                 <v-icon start size="small" class="mr-1 flex-shrink-0">mdi-server-network</v-icon>
                                 <span class="text-truncate font-weight-bold" style="min-width:0">{{ w.name || w.id
-                                }}</span>
+                                    }}</span>
                                 <v-chip v-if="isLocalWorker(w)" size="x-small" color="info" variant="tonal"
                                     class="ml-1 flex-shrink-0">
                                     {{ t('worker.localLabel') }}
@@ -403,14 +474,55 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                             <span class="text-caption font-monospace text-truncate d-block">{{ w.address }}</span>
                         </td>
                         <td class="text-no-wrap" style="white-space:nowrap">
-                            <v-chip :color="w.healthy ? 'success' : 'error'" size="small" variant="tonal">
+                            <v-chip v-if="w.skipVersionCheck" color="warning" size="small" variant="tonal">
+                                <v-icon start size="x-small">mdi-alert</v-icon>
+                                {{ t('worker.versionIgnored') }}
+                            </v-chip>
+                            <v-chip v-else :color="w.healthy ? 'success' : 'error'" size="small" variant="tonal">
                                 <v-icon start size="x-small">{{ w.healthy ? 'mdi-check-circle' : 'mdi-close-circle'
-                                }}</v-icon>
+                                    }}</v-icon>
                                 {{ w.healthy ? t('worker.online') : t('worker.offline') }}
                             </v-chip>
                             <v-chip v-if="w.activeAttemptId" size="x-small" color="orange" variant="tonal" class="ml-1">
                                 {{ t('worker.busy') }}
                             </v-chip>
+                            <v-menu v-if="isVersionBlocked(w)" location="bottom end">
+                                <template #activator="{ props: menuProps }">
+                                    <v-chip size="x-small" color="error" variant="text" class="ml-1"
+                                        style="cursor:pointer" v-bind="menuProps">
+                                        <v-icon start size="x-small">mdi-chevron-down</v-icon>
+                                        {{ t('worker.versionBlocked') }}
+                                    </v-chip>
+                                </template>
+                                <v-list density="compact" class="pa-2" style="min-width:260px">
+                                    <v-list-item density="compact" disabled>
+                                        <div style="font-size:0.8rem;line-height:1.4">
+                                            <div class="text-caption text-medium-emphasis">{{
+                                                t('worker.employerVersion') }}</div>
+                                            <div class="text-warning font-weight-bold">{{ employerVersion || '—' }}
+                                            </div>
+                                        </div>
+                                    </v-list-item>
+                                    <v-list-item density="compact" disabled>
+                                        <div style="font-size:0.8rem;line-height:1.4">
+                                            <div class="text-caption text-medium-emphasis">{{ t('worker.workerVersion')
+                                                }}</div>
+                                            <div class="text-warning font-weight-bold">{{ w.version || '—' }}</div>
+                                        </div>
+                                    </v-list-item>
+                                    <v-divider class="my-1" />
+                                    <v-list-item @click="doForceReconnect(w)" :title="t('worker.forceReconnectTitle')"
+                                        :subtitle="t('worker.forceReconnectSubtitle')">
+                                        <template #prepend>
+                                            <v-icon color="error">mdi-alert-circle</v-icon>
+                                        </template>
+                                        <template #title>
+                                            <span class="text-error font-weight-bold">{{ t('worker.forceReconnectTitle')
+                                            }}</span>
+                                        </template>
+                                    </v-list-item>
+                                </v-list>
+                            </v-menu>
                         </td>
                         <td class="text-no-wrap" style="white-space:nowrap" @click.stop>
                             <div style="display:flex;gap:4px">
@@ -430,6 +542,8 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                                     <v-btn v-if="w.healthy" icon="mdi-link-off" size="small" variant="text"
                                         :loading="connecting[w.id]" :title="t('worker.disconnect')"
                                         @click="doDisconnect(w)" />
+                                    <v-btn v-else-if="isVersionBlocked(w)" icon="mdi-link-lock" size="small"
+                                        variant="text" color="grey" disabled :title="t('worker.reconnectLocked')" />
                                     <v-btn v-else icon="mdi-link" size="small" variant="text"
                                         :loading="connecting[w.id]" :title="t('worker.reconnect')"
                                         @click="doReconnect(w)" />
@@ -444,8 +558,7 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                     <!-- Expandable detail row -->
                     <tr v-if="expandedWorkers.has(w.id)">
                         <td></td>
-                        <td :colspan="4" class="pa-3" style="background:rgba(var(--v-theme-on-surface),0.02)">
-                            <div class="text-subtitle-2 mb-2">{{ w.name || w.id }}</div>
+                        <td :colspan="4" class="pa-3">
                             <v-row dense>
                                 <v-col cols="6" md="3">
                                     <div class="text-caption text-medium-emphasis">Worker ID</div>
@@ -461,8 +574,11 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                                         t('worker.remoteLabel') }}</div>
                                 </v-col>
                                 <v-col v-if="w.version" cols="6" md="3">
-                                    <div class="text-caption text-medium-emphasis">版本</div>
-                                    <div class="text-body-2">v{{ w.version }}</div>
+                                    <div class="text-caption text-medium-emphasis">{{ t('worker.colVersion') }}</div>
+                                    <div class="text-body-2"
+                                        :class="{ 'text-warning font-weight-bold': w.skipVersionCheck }">
+                                        {{ w.version }}
+                                    </div>
                                 </v-col>
                                 <v-col v-if="w.activeAttemptId" cols="6" md="3">
                                     <div class="text-caption text-medium-emphasis">当前任务</div>
@@ -478,23 +594,30 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                                     <div class="text-caption text-medium-emphasis">心跳延迟</div>
                                     <div class="text-body-2">{{ w.lastHeartbeatLatencyMs }}ms</div>
                                 </v-col>
+                                <v-col v-if="w.skipVersionCheck" cols="12">
+                                    <v-divider class="my-1" />
+                                    <div class="text-caption text-error font-weight-bold mt-1">
+                                        ⛔ {{ t('worker.skipVersionCheckDesc') }}
+                                    </div>
+                                </v-col>
                                 <!-- Global clock offsets -->
                                 <v-col cols="12">
                                     <v-divider class="my-1" />
-                                    <div class="text-caption text-medium-emphasis mt-1">时钟偏移（Employer）</div>
+                                    <div class="text-caption text-medium-emphasis mt-1">{{ t('worker.clockOffsetTitle')
+                                    }}</div>
                                 </v-col>
                                 <v-col cols="6" md="3">
                                     <div class="text-caption text-medium-emphasis">Bilibili API</div>
                                     <div class="text-body-2"
-                                        :class="Math.abs(bilibiliOffsetMs) > 1000 ? 'text-red' : 'text-green'">
-                                        {{ bilibiliOffsetMs > 0 ? '+' : '' }}{{ bilibiliOffsetMs }}ms
+                                        :class="Math.abs(w.bilibiliOffsetMs) > 1000 ? 'text-red' : 'text-green'">
+                                        {{ w.bilibiliOffsetMs > 0 ? '+' : '' }}{{ w.bilibiliOffsetMs }}ms
                                     </div>
                                 </v-col>
                                 <v-col cols="6" md="3">
                                     <div class="text-caption text-medium-emphasis">NTP (阿里云)</div>
                                     <div class="text-body-2"
-                                        :class="Math.abs(ntpOffsetMs) > 1000 ? 'text-red' : 'text-green'">
-                                        {{ ntpOffsetMs > 0 ? '+' : '' }}{{ ntpOffsetMs }}ms
+                                        :class="Math.abs(w.ntpOffsetMs) > 1000 ? 'text-red' : 'text-green'">
+                                        {{ w.ntpOffsetMs > 0 ? '+' : '' }}{{ w.ntpOffsetMs }}ms
                                     </div>
                                 </v-col>
                                 <!-- Cooldown detail section -->
@@ -521,7 +644,7 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                                     <v-col cols="6" md="3">
                                         <div class="text-caption text-medium-emphasis">总冷却时长</div>
                                         <div class="text-body-2">{{ Math.round((w.cooldown.totalDurationMs || 0) / 1000)
-                                        }}s</div>
+                                            }}s</div>
                                     </v-col>
                                     <v-col cols="6" md="3">
                                         <div class="text-caption text-medium-emphasis">剩余</div>
@@ -557,6 +680,41 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
                     <v-btn color="primary" :loading="importing" :disabled="!importEncodedConfig.trim()"
                         @click="doImport">
                         {{ t('worker.importBtn') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <!-- ═══ Version Mismatch Warning Dialog ═══ -->
+        <v-dialog v-model="showVersionMismatchDialog" max-width="520" persistent>
+            <v-card class="pa-4">
+                <v-card-title class="text-error" style="font-weight:700">
+                    <v-icon start color="error">mdi-alert-circle</v-icon>
+                    {{ t('worker.versionMismatchTitle') }}
+                </v-card-title>
+                <v-card-text>
+                    <v-alert type="error" variant="tonal" class="mb-3">
+                        <p class="text-body-2 mb-1">
+                            {{ t('worker.versionMismatchWarning') }}
+                        </p>
+                        <p class="text-caption text-medium-emphasis mb-0"
+                            style="white-space:pre-wrap;word-break:break-all">
+                            {{ versionMismatchError }}
+                        </p>
+                    </v-alert>
+                    <p class="text-body-2 text-error font-weight-bold">
+                        {{ t('worker.versionMismatchRisk') }}
+                    </p>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showVersionMismatchDialog = false;
+                    versionMismatchEncoded = '';
+                    versionMismatchAddress = ''">
+                        {{ t('common.cancel') }}
+                    </v-btn>
+                    <v-btn color="error" variant="flat" :loading="forceImporting" @click="doForceImport">
+                        {{ t('worker.forceConnectBtn') }}
                     </v-btn>
                 </v-card-actions>
             </v-card>

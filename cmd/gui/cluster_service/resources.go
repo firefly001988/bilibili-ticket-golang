@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
+	"bilibili-ticket-golang/lib/global"
 )
 
 // refreshResources reloads accounts and workers from the repository,
@@ -52,6 +53,17 @@ func (s *ClusterService) refreshResources(ctx context.Context) error {
 				log.Printf("[cluster] health check failed for worker %s (%s): %v", node.ID, node.Address, err)
 				dispatchWorkers[i].Enabled = false
 				return
+			}
+			// If this worker previously had SkipVersionCheck set and now
+			// Health passed with a real version match, the versions have
+			// converged — clear the flag so the next divergence requires
+			// manual acknowledgment again.
+			if node.SkipVersionCheck && info != nil {
+				if ok, _ := info["protocolVersionOk"].(bool); ok && global.GitCommit != "Development" {
+					log.Printf("[cluster] versions converged for worker %s — clearing SkipVersionCheck", node.ID)
+					node.SkipVersionCheck = false
+					_ = s.repository.PutWorker(ctx, node)
+				}
 			}
 			log.Printf("[cluster] worker %s connected (version=%s, plugin=%s)", node.ID, info["version"], info["pluginVersion"])
 			if s.client.IsHealthy(node.ID) {

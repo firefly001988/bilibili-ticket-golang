@@ -14,15 +14,19 @@ import (
 	"bilibili-ticket-golang/cluster/executor"
 	"bilibili-ticket-golang/cluster/worker"
 	biliclock "bilibili-ticket-golang/lib/biliutils/clock"
+	"bilibili-ticket-golang/lib/global"
 	"bilibili-ticket-golang/lib/plugins"
 	"bilibili-ticket-golang/lib/plugins/captcha"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal("usage: ticket-worker <run|serve|import>")
+		fatal("usage: ticket-worker <run|serve|import|version>")
 	}
 	switch os.Args[1] {
+	case "version":
+		fmt.Printf("ticket-worker  commit=%s  built=%s\n", global.GitCommit, global.BuildTime)
+		os.Exit(0)
 	case "run":
 		run(os.Args[2:])
 	case "serve":
@@ -35,6 +39,7 @@ func main() {
 }
 
 func serve(args []string) {
+	fmt.Printf("ticket-worker serve  commit=%s  built=%s\n", global.GitCommit, global.BuildTime)
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	path := fs.String("config", "", "worker config JSON")
 	_ = fs.Parse(args)
@@ -50,6 +55,11 @@ func serve(args []string) {
 		fatal("decode config: %v", err)
 	}
 	config.CalibrateClock = true
+	// Override version with the actual binary commit — the value in the
+	// config file was set by the employer at generation time and may be
+	// stale.  The version check in the Health handler compares this
+	// against the employer's own commit on every request.
+	config.Version = global.GitCommit
 	factory, cleanup, err := workerFactory(&config)
 	if err != nil {
 		fatal("initialize captcha plugin: %v", err)
@@ -123,6 +133,7 @@ func workerFactory(config *worker.Config) (worker.BackendFactory, func(), error)
 }
 
 func run(args []string) {
+	fmt.Printf("ticket-worker run  commit=%s  built=%s\n", global.GitCommit, global.BuildTime)
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	path := fs.String("task", "", "execution task JSON")
 	pluginDir := fs.String("plugin-dir", "plugins", "captcha plugin directory")

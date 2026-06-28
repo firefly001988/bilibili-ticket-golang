@@ -17,15 +17,14 @@ import (
 
 // ClusterSnapshot is the full state snapshot sent to the frontend.
 type ClusterSnapshot struct {
-	TaskGroups       []domain.TaskGroup  `json:"taskGroups"`
-	Accounts         []AccountSummary    `json:"accounts"`
-	Buyers           []BuyerWithAccounts `json:"buyers"`
-	Workers          []WorkerSummary     `json:"workers"`
-	Macros           []MacroSummary      `json:"macros"`
-	Intents          []IntentSummary     `json:"intents"`
-	Attempts         []AttemptSummary    `json:"attempts"`
-	BilibiliOffsetMs int64               `json:"bilibiliOffsetMs"` // employer clock offset to Bilibili API (ms)
-	NtpOffsetMs      int64               `json:"ntpOffsetMs"`      // employer clock offset to NTP (ms)
+	TaskGroups      []domain.TaskGroup  `json:"taskGroups"`
+	Accounts        []AccountSummary    `json:"accounts"`
+	Buyers          []BuyerWithAccounts `json:"buyers"`
+	Workers         []WorkerSummary     `json:"workers"`
+	Macros          []MacroSummary      `json:"macros"`
+	Intents         []IntentSummary     `json:"intents"`
+	Attempts        []AttemptSummary    `json:"attempts"`
+	EmployerVersion string              `json:"employerVersion"` // employer build version (git commit hash)
 }
 
 // BuyerAccountBadge represents an account that owns a particular buyer.
@@ -71,8 +70,11 @@ type WorkerSummary struct {
 	Type                 domain.WorkerType  `json:"type"`
 	Enabled              bool               `json:"enabled"`
 	Healthy              bool               `json:"healthy"`
+	SkipVersionCheck     bool               `json:"skipVersionCheck"`
 	ActiveAttemptID      string             `json:"activeAttemptId,omitempty"`
 	Version              string             `json:"version,omitempty"`
+	BilibiliOffsetMs     int64              `json:"bilibiliOffsetMs"` // worker clock offset to Bilibili API (ms)
+	NtpOffsetMs          int64              `json:"ntpOffsetMs"`      // worker clock offset to NTP (ms)
 	Cooldown             WorkerCooldownInfo `json:"cooldown,omitempty"`
 	LastHeartbeatAt      *time.Time         `json:"lastHeartbeatAt,omitempty"`
 	LastHeartbeatLatency int64              `json:"lastHeartbeatLatencyMs"` // ms since last heartbeat

@@ -13,6 +13,7 @@ import (
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/worker"
 	pb "bilibili-ticket-golang/cluster/worker/proto"
+	"bilibili-ticket-golang/lib/global"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -146,14 +147,22 @@ func (c *WorkerClient) getClientLocked(node domain.WorkerNode) (pb.WorkerService
 	wc := &workerConn{
 		conn:          conn,
 		client:        cli,
-		lastHeartbeat: time.Now(),
+		lastHeartbeat: time.Time{}, // unproven until first successful Health
 	}
 	c.workers[node.ID] = wc
-	delete(c.disconnected, node.ID) // reconnected — clear manual disconnect
-
-	// Start heartbeat stream.
-	c.startHeartbeat(node, wc)
+	delete(c.disconnected, node.ID)
+	// Heartbeat is deferred — startHeartbeat is called by health()
+	// only after the version check passes.
 	return cli, nil
+}
+
+// ensureHeartbeat starts the heartbeat stream for a worker that has
+// already passed the protocol version check.  Idempotent.
+func (c *WorkerClient) ensureHeartbeat(node domain.WorkerNode, wc *workerConn) {
+	if wc.hbCancel != nil {
+		return // already running
+	}
+	c.startHeartbeat(node, wc)
 }
 
 func (c *WorkerClient) startHeartbeat(node domain.WorkerNode, wc *workerConn) {
@@ -349,27 +358,84 @@ func (c *WorkerClient) Ack(ctx context.Context, node domain.WorkerNode, attemptI
 }
 
 func (c *WorkerClient) Health(ctx context.Context, node domain.WorkerNode) (map[string]any, error) {
+	version := global.GitCommit
+	if version == "Development" {
+		version = ""
+	}
+	info, versOK, err := c.health(ctx, node, version)
+	if err != nil {
+		return info, err
+	}
+	if !versOK {
+		// If the user previously forced the connection, don't return an
+		// error — the caller can still inspect protocolVersionOk to
+		// decide whether to auto-clear SkipVersionCheck.
+		if node.SkipVersionCheck {
+			return info, nil
+		}
+		return info, fmt.Errorf("protocol version mismatch: employer %q != worker %q", version, info["version"])
+	}
+	return info, nil
+}
+
+// HealthForce bypasses the protocol version check.  Use only when the
+// user has explicitly acknowledged the risk of version mismatch.
+func (c *WorkerClient) HealthForce(ctx context.Context, node domain.WorkerNode) (map[string]any, error) {
+	info, _, err := c.health(ctx, node, "")
+	return info, err
+}
+
+// health performs the Health RPC and returns the response map plus a
+// bool indicating whether the protocol version check passed.  The caller
+// always receives the full HealthResponse map regardless of the version
+// result — the bool is the only signal of mismatch.  This ensures every
+// caller (snapshot.go, AddWorkerFromEncodedConfig, etc.) gets the
+// worker's real version for display.
+func (c *WorkerClient) health(ctx context.Context, node domain.WorkerNode, employerVersion string) (map[string]any, bool, error) {
 	cli, err := c.getClient(node)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	resp, err := cli.Health(ctx, &pb.HealthRequest{})
+	if employerVersion != "" {
+		log.Printf("[worker-client] Health for %s: sending employer version %q", node.ID, employerVersion)
+	}
+	resp, err := cli.Health(ctx, &pb.HealthRequest{EmployerVersion: employerVersion})
 	if err != nil {
-		return nil, err
+		log.Printf("[worker-client] Health for %s failed: %v", node.ID, err)
+		return nil, false, err
 	}
-	// Successful Health unary RPC proves the worker is reachable.
-	if wc, ok := c.workers[node.ID]; ok {
+	info := map[string]any{
+		"workerId":          resp.WorkerId,
+		"version":           resp.Version,
+		"pluginVersion":     resp.PluginVersion,
+		"algorithmVersion":  resp.AlgorithmVersion,
+		"captchaPlugin":     resp.CaptchaPlugin,
+		"clockCalibration":  resp.ClockCalibration,
+		"activeAttemptId":   resp.ActiveAttemptId,
+		"protocolVersionOk": resp.ProtocolVersionOk,
+		"bilibiliOffsetMs":  resp.BilibiliOffsetMs,
+		"ntpOffsetMs":       resp.NtpOffsetMs,
+	}
+	versionOK := resp.ProtocolVersionOk
+	if !versionOK {
+		log.Printf("[worker-client] version mismatch with %s: employer=%q worker=%q", node.ID, employerVersion, resp.Version)
+		c.mu.Lock()
+		if wc, ok := c.workers[node.ID]; ok {
+			c.closeWorkerConnLocked(wc)
+			delete(c.workers, node.ID)
+		}
+		c.mu.Unlock()
+		return info, false, nil
+	}
+	// Version check passed — start heartbeat.
+	c.mu.Lock()
+	wc, ok := c.workers[node.ID]
+	c.mu.Unlock()
+	if ok {
 		wc.markAlive()
+		c.ensureHeartbeat(node, wc)
 	}
-	return map[string]any{
-		"workerId":         resp.WorkerId,
-		"version":          resp.Version,
-		"pluginVersion":    resp.PluginVersion,
-		"algorithmVersion": resp.AlgorithmVersion,
-		"captchaPlugin":    resp.CaptchaPlugin,
-		"clockCalibration": resp.ClockCalibration,
-		"activeAttemptId":  resp.ActiveAttemptId,
-	}, nil
+	return info, true, nil
 }
 
 // =========================================================================

@@ -28,6 +28,7 @@ func (s *ClusterService) AddWorker(document string) error {
 		ClientCert    string `json:"clientCert"`
 		ClientKey     string `json:"clientKey"`
 		TLSServerName string `json:"tlsServerName"`
+		Force         bool   `json:"force"`
 	}
 	if err := json.Unmarshal([]byte(document), &input); err != nil {
 		return err
@@ -58,10 +59,16 @@ func (s *ClusterService) AddWorker(document string) error {
 	// immediately instead of waiting for the async health check.
 	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := s.client.Health(healthCtx, node); err != nil {
+	var healthErr error
+	if input.Force {
+		_, healthErr = s.client.HealthForce(healthCtx, node)
+	} else {
+		_, healthErr = s.client.Health(healthCtx, node)
+	}
+	if healthErr != nil {
 		s.client.RemoveTLS(node.ID)
-		log.Printf("[cluster] health check for new worker %s (%s): %v", node.ID, node.Address, err)
-		return fmt.Errorf("worker unreachable: %w", err)
+		log.Printf("[cluster] health check for new worker %s (%s): %v", node.ID, node.Address, healthErr)
+		return fmt.Errorf("worker unreachable: %w", healthErr)
 	}
 
 	if err := s.repository.PutWorker(ctx, node); err != nil {
@@ -338,6 +345,40 @@ func (s *ClusterService) ReconnectWorker(workerID string) error {
 	return fmt.Errorf("reconnect failed after %d attempts: %w", maxRetries, lastErr)
 }
 
+// ForceReconnectWorker bypasses the protocol version check, reconnects
+// the worker, and persists SkipVersionCheck=true so future Health calls
+// also skip the check.
+func (s *ClusterService) ForceReconnectWorker(workerID string) error {
+	if workerID == "local" {
+		return fmt.Errorf("the local worker is auto-managed")
+	}
+	ctx := context.Background()
+	node, err := s.repository.Worker(ctx, workerID)
+	if err != nil {
+		return fmt.Errorf("worker %s not found: %w", workerID, err)
+	}
+	s.client.Disconnect(workerID)
+
+	node.SkipVersionCheck = true
+	node.Version = node.Version // keep existing
+	if err := s.repository.PutWorker(ctx, node); err != nil {
+		return err
+	}
+
+	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	info, err := s.client.HealthForce(healthCtx, node)
+	if err != nil {
+		return fmt.Errorf("force reconnect failed: %w", err)
+	}
+	// Update the worker's version to the real one reported by the worker.
+	if v, ok := info["version"].(string); ok && v != "" {
+		node.Version = v
+		_ = s.repository.PutWorker(ctx, node)
+	}
+	return s.refreshResources(ctx)
+}
+
 // GenerateRemoteWorkerConfigResponse is returned by GenerateRemoteWorkerConfig.
 type GenerateRemoteWorkerConfigResponse struct {
 	EncodedConfig string `json:"encodedConfig"` // Base4096 string for the worker
@@ -360,6 +401,9 @@ type GenerateRemoteWorkerConfigResponse struct {
 func (s *ClusterService) GenerateRemoteWorkerConfig(workerID, listen, hosts string) (GenerateRemoteWorkerConfigResponse, error) {
 	if workerID == "" {
 		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("workerId is required")
+	}
+	if workerID == "local" {
+		return GenerateRemoteWorkerConfigResponse{}, fmt.Errorf("'local' is a reserved name; please choose a different worker ID")
 	}
 	if listen == "" {
 		listen = "0.0.0.0:18080"
@@ -404,6 +448,7 @@ func (s *ClusterService) GenerateRemoteWorkerConfig(workerID, listen, hosts stri
 			DataDir:         "data/worker",
 			PollIntervalSec: 15,
 			CalibrateClock:  true,
+			Version:         global.GitCommit,
 		},
 	)
 	if err != nil {
@@ -508,6 +553,7 @@ func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string, overri
 		ID:            rc.WorkerID,
 		Address:       address,
 		Type:          domain.WorkerTypeRemote,
+		Version:       rc.Version,
 		Enabled:       true,
 		TLSServerName: tlsConfig.ServerName,
 	}
@@ -523,14 +569,108 @@ func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string, overri
 
 	// Synchronously dial the imported worker so connection errors surface
 	// immediately instead of waiting for the async health check.
-	// The worker is persisted regardless — it may be offline at import time.
+	// Protocol version mismatches are returned to the caller so the
+	// frontend can offer a "force connect" option.
 	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := s.client.Health(healthCtx, node); err != nil {
+		if strings.Contains(err.Error(), "version mismatch") || strings.Contains(err.Error(), "protocol version mismatch") {
+			// Version mismatch — rollback: remove the worker row and TLS so
+			// the caller can decide to retry with ForceAdd.
+			_ = s.repository.DeleteWorker(ctx, node.ID)
+			s.client.RemoveTLS(node.ID)
+			return err
+		}
 		log.Printf("[cluster] health check for imported worker %s (%s): %v", node.ID, node.Address, err)
-		// Return success — the worker row is saved and will be retried later.
+		// Other errors — the worker row is saved and will be retried later.
 	} else {
 		log.Printf("[cluster] worker %s connected (%s)", node.ID, node.Address)
+	}
+	return nil
+}
+
+// ForceAddWorkerFromEncodedConfig is identical to AddWorkerFromEncodedConfig
+// except it bypasses the protocol version check by calling HealthForce.
+// Use only when the user has explicitly acknowledged the version mismatch.
+func (s *ClusterService) ForceAddWorkerFromEncodedConfig(encodedConfig string, overrideAddress string) error {
+	rc, err := clusterworker.DecodeRemoteWorkerConfig(encodedConfig)
+	if err != nil {
+		return fmt.Errorf("decode worker config: %w", err)
+	}
+	if rc.WorkerID == "" || rc.Listen == "" {
+		return fmt.Errorf("worker config missing required fields (workerId, listen)")
+	}
+	if rc.WorkerID == "local" {
+		return fmt.Errorf("cannot import the local worker")
+	}
+	ctx := context.Background()
+
+	// Determine the dial address.  Prefer the override supplied by the
+	// employer (the real IP:port of the employee's machine); fall back to
+	// the listen address embedded in the config.
+	address := rc.Listen
+	if overrideAddress != "" {
+		if !strings.Contains(overrideAddress, ":") {
+			if _, port, portErr := net.SplitHostPort(rc.Listen); portErr == nil {
+				overrideAddress = net.JoinHostPort(overrideAddress, port)
+			}
+		}
+		address = overrideAddress
+	}
+
+	// Build TLS config.
+	var tlsConfig domain.WorkerTLSConfig
+	if rc.EmployerCertPEM != "" && rc.EmployerKeyPEM != "" {
+		tlsConfig = domain.WorkerTLSConfig{
+			CACertPEM:     []byte(rc.CACertPEM),
+			ClientCertPEM: []byte(rc.EmployerCertPEM),
+			ClientKeyPEM:  []byte(rc.EmployerKeyPEM),
+		}
+	} else {
+		stored, tlsErr := s.repository.WorkerTLS(ctx, rc.WorkerID)
+		if tlsErr != nil {
+			return fmt.Errorf("no TLS credentials found for worker %q — the encoded config is too old (missing employer fields); run 'Generate Remote Worker Config' first to create a new config, or add the worker manually with CA/client cert/key", rc.WorkerID)
+		}
+		tlsConfig = stored
+	}
+
+	if tlsConfig.ServerName == "" {
+		tlsConfig.ServerName = rc.WorkerID
+	}
+
+	if err := s.client.SetTLSFromConfig(rc.WorkerID, tlsConfig); err != nil {
+		return fmt.Errorf("apply TLS config: %w", err)
+	}
+
+	node := domain.WorkerNode{
+		ID:               rc.WorkerID,
+		Address:          address,
+		Type:             domain.WorkerTypeRemote,
+		Version:          rc.Version,
+		Enabled:          true,
+		SkipVersionCheck: true, // user explicitly acknowledged version mismatch
+		TLSServerName:    tlsConfig.ServerName,
+	}
+	if err := s.repository.PutWorker(ctx, node); err != nil {
+		return err
+	}
+	if err := s.repository.PutWorkerTLS(ctx, rc.WorkerID, tlsConfig); err != nil {
+		return err
+	}
+	if err := s.refreshResources(ctx); err != nil {
+		return err
+	}
+
+	// Force health check — bypass version check.
+	healthCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := s.client.HealthForce(healthCtx, node); err != nil {
+		log.Printf("[cluster] health check (force) for imported worker %s (%s): %v", node.ID, node.Address, err)
+		// Note: even if the health check fails, the worker is persisted
+		// with SkipVersionCheck=true — next time refreshResources calls
+		// Health(), it will automatically skip the version check.
+	} else {
+		log.Printf("[cluster] worker %s connected via force (%s, skipVersionCheck=true)", node.ID, node.Address)
 	}
 	return nil
 }

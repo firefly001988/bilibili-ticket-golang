@@ -126,7 +126,14 @@ message TaskStatus {
 // RPC request / response messages
 // =============================================================================
 
-message HealthRequest {}
+message HealthRequest {
+  // The employer's build version (git commit hash).  The worker always
+  // returns its own version in HealthResponse; the employer side is
+  // responsible for comparing them and rejecting the connection when
+  // they differ.  An empty employer_version bypasses the check on both
+  // sides (development builds and explicitly forced connections).
+  string employer_version = 1;
+}
 
 message HealthResponse {
   string worker_id = 1;
@@ -136,6 +143,15 @@ message HealthResponse {
   string captcha_plugin = 5;
   bool clock_calibration = 6;
   string active_attempt_id = 7;
+  // protocol_version_ok is false when the employer_version from the
+  // request differs from the worker's own version.  The employer uses
+  // this to trigger the version-mismatch UI flow instead of having to
+  // parse a gRPC error message.
+  bool protocol_version_ok = 8;
+  // Clock offsets measured by this worker (milliseconds).
+  // Positive means local clock is behind the server.
+  int64 bilibili_offset_ms = 9;
+  int64 ntp_offset_ms = 10;
 }
 
 message SubmitRequest {

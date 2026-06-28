@@ -121,6 +121,7 @@ func (s *ClusterService) openPayQRWindow(intent domain.LogicalOrderIntent, resul
 // account credentials, starts local workers, recovers in-flight attempts,
 // and launches the background reconciliation loop.
 func (s *ClusterService) Start(parent context.Context) error {
+	log.Printf("[cluster] starting cluster service (employer commit=%s)", global.GitCommit)
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
 	accountsList, err := s.repository.ListAccounts(ctx)

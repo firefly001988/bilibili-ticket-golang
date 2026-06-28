@@ -2,11 +2,12 @@ package cluster_service
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
-	biliclock "bilibili-ticket-golang/lib/biliutils/clock"
+	"bilibili-ticket-golang/lib/global"
 )
 
 // Snapshot returns a complete ClusterSnapshot for the frontend.
@@ -62,15 +63,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		}
 		buyersWithAccounts[i] = BuyerWithAccounts{Buyer: b, Accounts: accs}
 	}
-	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyersWithAccounts}
-
-	// Compute clock offsets (best-effort, non-blocking).
-	if s.catalog != nil {
-		result.BilibiliOffsetMs = s.catalog.GetClockOffset().Milliseconds()
-	}
-	if off, err := biliclock.GetNTPClockOffset("ntp.aliyun.com"); err == nil {
-		result.NtpOffsetMs = off.Milliseconds()
-	}
+	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyersWithAccounts, EmployerVersion: global.GitCommit}
 
 	for _, account := range accountList {
 		summary := AccountSummary{ID: account.ID, Name: account.Name, Enabled: account.Enabled, VipStatus: account.VipStatus, CredentialVersion: account.Credentials.Version}
@@ -84,7 +77,15 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		result.Accounts = append(result.Accounts, summary)
 	}
 	for _, node := range workerList {
-		summary := WorkerSummary{ID: node.ID, Name: node.Name, Address: node.Address, Type: node.Type, Enabled: node.Enabled}
+		summary := WorkerSummary{
+			ID:               node.ID,
+			Name:             node.Name,
+			Address:          node.Address,
+			Type:             node.Type,
+			Version:          node.Version,
+			Enabled:          node.Enabled,
+			SkipVersionCheck: node.SkipVersionCheck,
+		}
 		summary.Healthy = s.client.IsHealthy(node.ID)
 
 		// Last heartbeat info
@@ -108,15 +109,34 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 				summary.Cooldown = cooldown
 			}
 		}
-		if summary.Healthy {
-			// Fetch additional metadata via gRPC Health call (best-effort).
+		// Fetch live metadata via Health RPC.  The worker always returns
+		// its real version and clock offsets in the response map.
+		if node.Type == domain.WorkerTypeRemote {
 			healthCtx, healthCancel := context.WithTimeout(ctx, 800*time.Millisecond)
 			health, healthErr := s.client.Health(healthCtx, node)
 			healthCancel()
-			if healthErr == nil {
+			if health != nil {
 				summary.ActiveAttemptID, _ = health["activeAttemptId"].(string)
-				summary.Version, _ = health["version"].(string)
+				if v, ok := health["version"].(string); ok && v != "" {
+					summary.Version = v
+				}
+				if v, ok := health["bilibiliOffsetMs"].(int64); ok {
+					summary.BilibiliOffsetMs = v
+				}
+				if v, ok := health["ntpOffsetMs"].(int64); ok {
+					summary.NtpOffsetMs = v
+				}
 			}
+			// If Health succeeded (versions match) and this worker was
+			// previously forced, auto-clear SkipVersionCheck so the next
+			// divergence requires manual approval again.
+			if healthErr == nil && summary.SkipVersionCheck && global.GitCommit != "Development" {
+				log.Printf("[cluster] versions converged for worker %s — clearing SkipVersionCheck", node.ID)
+				node.SkipVersionCheck = false
+				summary.SkipVersionCheck = false
+				_ = s.repository.PutWorker(ctx, node)
+			}
+			_ = healthErr
 		}
 		result.Workers = append(result.Workers, summary)
 	}
