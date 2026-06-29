@@ -107,7 +107,13 @@ const saving = ref(false)
 // Delete dialog
 const showDeleteDialog = ref(false)
 const deleteTarget = ref<WorkerSummary | null>(null)
+const deleteTargets = ref<WorkerSummary[]>([])
 const deleting = ref(false)
+
+// Batch selection/actions
+const selectedWorkerIds = ref<Set<string>>(new Set())
+const batchWorking = ref(false)
+const batchAction = ref<'disconnect' | 'reconnect' | 'delete' | null>(null)
 
 // Add local worker dialog
 const showAddLocalDialog = ref(false)
@@ -193,6 +199,7 @@ async function load() {
         const snap = await Snapshot() as SnapshotExt
         workers.value = snap.workers || []
         employerVersion.value = snap.employerVersion || ''
+        pruneWorkerSelection()
         updateCooldownTimers()
     } catch (e: any) {
         messages.add({ text: t('worker.loadFailed', { error: String(e) }), color: 'error' })
@@ -219,6 +226,7 @@ async function pollLoad() {
         const snap = await Snapshot() as SnapshotExt
         workers.value = snap.workers || []
         employerVersion.value = snap.employerVersion || ''
+        pruneWorkerSelection()
         updateCooldownTimers()
     } catch {
         // silent — don't spam snackbar on network errors
@@ -307,22 +315,49 @@ async function saveEdit() {
 
 // ── Delete ────────────────────────────────────────────────────
 async function confirmDelete() {
-    if (!deleteTarget.value) return
+    const targets = deleteTargets.value.length > 0 ? deleteTargets.value : (deleteTarget.value ? [deleteTarget.value] : [])
+    if (targets.length === 0) return
     deleting.value = true
+    if (targets.length > 1) batchAction.value = 'delete'
+    const failed: string[] = []
+    const succeeded: WorkerSummary[] = []
     try {
-        await DeleteWorker(deleteTarget.value.id)
+        for (const target of targets) {
+            try {
+                await DeleteWorker(target.id)
+                succeeded.push(target)
+            } catch (e: any) {
+                failed.push(`${target.name || target.id}: ${String(e)}`)
+            }
+        }
         showDeleteDialog.value = false
         deleteTarget.value = null
+        deleteTargets.value = []
+        selectedWorkerIds.value = new Set([...selectedWorkerIds.value].filter(id => !succeeded.some(target => target.id === id)))
         await load()
-        messages.add({ text: t('worker.deleteSuccess'), color: 'success' })
+        if (failed.length > 0) {
+            messages.add({ text: t('worker.batchFailed', { failed: failed.join('; ') }), color: 'error' })
+        } else {
+            messages.add({ text: targets.length > 1 ? t('worker.batchDeleteSuccess', { count: targets.length }) : t('worker.deleteSuccess'), color: 'success' })
+        }
     } catch (e: any) {
         messages.add({ text: t('worker.deleteFailed', { error: String(e) }), color: 'error' })
     }
     deleting.value = false
+    batchAction.value = null
 }
 
 function promptDelete(w: WorkerSummary) {
     deleteTarget.value = w
+    deleteTargets.value = []
+    showDeleteDialog.value = true
+}
+
+function promptBatchDelete() {
+    const targets = batchDeleteTargets.value
+    if (targets.length === 0) return
+    deleteTarget.value = null
+    deleteTargets.value = targets
     showDeleteDialog.value = true
 }
 
@@ -349,6 +384,41 @@ async function doReconnect(w: WorkerSummary) {
         messages.add({ text: t('worker.reconnectFailed', { error: String(e) }), color: 'error' })
     }
     connecting.value[w.id] = false
+}
+
+async function runBatchAction(action: 'disconnect' | 'reconnect') {
+    const targets = action === 'disconnect' ? batchDisconnectTargets.value : batchReconnectTargets.value
+    if (targets.length === 0) return
+    batchWorking.value = true
+    batchAction.value = action
+    const failed: string[] = []
+    for (const target of targets) {
+        connecting.value[target.id] = true
+        try {
+            if (action === 'disconnect') {
+                await DisconnectWorker(target.id)
+            } else {
+                await ReconnectWorker(target.id)
+            }
+        } catch (e: any) {
+            failed.push(`${target.name || target.id}: ${String(e)}`)
+        } finally {
+            connecting.value[target.id] = false
+        }
+    }
+    await load()
+    batchWorking.value = false
+    batchAction.value = null
+    if (failed.length > 0) {
+        messages.add({ text: t('worker.batchFailed', { failed: failed.join('; ') }), color: 'error' })
+        return
+    }
+    messages.add({
+        text: action === 'disconnect'
+            ? t('worker.batchDisconnectSuccess', { count: targets.length })
+            : t('worker.batchReconnectSuccess', { count: targets.length }),
+        color: 'success',
+    })
 }
 
 // ── Local worker start/stop ─────────────────────────────────
@@ -437,6 +507,45 @@ const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
 const isPrimaryLocal = (w: WorkerSummary) => w.id === 'local'
 const isVersionBlocked = (w: WorkerSummary) => w.versionBlocked === true
 const isReachable = (w: WorkerSummary) => w.healthy || w.versionBlocked === true
+const canDeleteWorker = (w: WorkerSummary) => !isPrimaryLocal(w)
+const canBatchDisconnectWorker = (w: WorkerSummary) => !isLocalWorker(w) && w.healthy
+const canBatchReconnectWorker = (w: WorkerSummary) => !isLocalWorker(w) && !w.healthy && !isVersionBlocked(w)
+
+const selectedWorkers = computed(() => workers.value.filter(w => selectedWorkerIds.value.has(w.id)))
+const batchDisconnectTargets = computed(() => selectedWorkers.value.filter(canBatchDisconnectWorker))
+const batchReconnectTargets = computed(() => selectedWorkers.value.filter(canBatchReconnectWorker))
+const batchDeleteTargets = computed(() => selectedWorkers.value.filter(canDeleteWorker))
+const allWorkerRowsSelected = computed(() => workers.value.length > 0 && workers.value.every(w => selectedWorkerIds.value.has(w.id)))
+const someWorkerRowsSelected = computed(() => selectedWorkerIds.value.size > 0 && !allWorkerRowsSelected.value)
+
+function pruneWorkerSelection() {
+    const validIDs = new Set(workers.value.map(w => w.id))
+    selectedWorkerIds.value = new Set([...selectedWorkerIds.value].filter(id => validIDs.has(id)))
+}
+
+function isWorkerSelected(workerID: string) {
+    return selectedWorkerIds.value.has(workerID)
+}
+
+function toggleWorkerSelection(workerID: string, value?: boolean) {
+    const next = new Set(selectedWorkerIds.value)
+    const checked = value ?? !next.has(workerID)
+    if (checked) {
+        next.add(workerID)
+    } else {
+        next.delete(workerID)
+    }
+    selectedWorkerIds.value = next
+}
+
+function toggleAllWorkers(value?: boolean) {
+    const checked = value ?? !allWorkerRowsSelected.value
+    selectedWorkerIds.value = checked ? new Set(workers.value.map(w => w.id)) : new Set()
+}
+
+function clearWorkerSelection() {
+    selectedWorkerIds.value = new Set()
+}
 
 // ── Force Reconnect (version mismatch bypass) ─────────────────
 async function doForceReconnect(w: WorkerSummary) {
@@ -519,6 +628,7 @@ const deployDownloadUrlLabel = computed(() => deployPackageType.value === 'targz
 const deployDownloadUrlPlaceholder = computed(() => deployPackageType.value === 'targz'
     ? 'https://example.com/ticket-worker-linux-amd64.tar.gz'
     : 'https://example.com/ticket-worker-linux-amd64')
+const deployJobFinished = computed(() => !!deployJob.value && ['succeeded', 'failed', 'partial_failed', 'cancelled'].includes(deployJob.value.status))
 
 function heartbeatColor(ms: number) {
     if (ms <= 2000) return 'success'
@@ -674,6 +784,33 @@ async function cancelBatchDeploy() {
 
         <v-divider class="mt-2 mb-4" thickness="3" />
 
+        <v-card v-if="!loading && workers.length > 0 && selectedWorkerIds.size > 0" class="mb-3 pa-3" variant="tonal">
+            <div class="d-flex align-center flex-wrap" style="gap:8px">
+                <span class="text-body-2">{{ t('worker.batchSelected', { count: selectedWorkerIds.size }) }}</span>
+                <v-spacer />
+                <v-btn size="small" prepend-icon="mdi-link-off" variant="tonal"
+                    :disabled="batchDisconnectTargets.length === 0 || batchWorking"
+                    :loading="batchAction === 'disconnect'"
+                    @click="runBatchAction('disconnect')">
+                    {{ t('worker.batchDisconnect', { count: batchDisconnectTargets.length }) }}
+                </v-btn>
+                <v-btn size="small" prepend-icon="mdi-link" variant="tonal" color="success"
+                    :disabled="batchReconnectTargets.length === 0 || batchWorking"
+                    :loading="batchAction === 'reconnect'"
+                    @click="runBatchAction('reconnect')">
+                    {{ t('worker.batchReconnect', { count: batchReconnectTargets.length }) }}
+                </v-btn>
+                <v-btn size="small" prepend-icon="mdi-delete" variant="tonal" color="error"
+                    :disabled="batchDeleteTargets.length === 0 || batchWorking"
+                    @click="promptBatchDelete">
+                    {{ t('worker.batchDelete', { count: batchDeleteTargets.length }) }}
+                </v-btn>
+                <v-btn size="small" variant="text" @click="clearWorkerSelection">
+                    {{ t('worker.batchClear') }}
+                </v-btn>
+            </div>
+        </v-card>
+
         <!-- Loading -->
         <v-row v-if="loading" justify="center" class="mt-6">
             <v-progress-circular indeterminate color="primary" />
@@ -694,6 +831,10 @@ async function cancelBatchDeploy() {
         <v-table v-else>
             <thead>
                 <tr>
+                    <th style="width:40px">
+                        <v-checkbox-btn :model-value="allWorkerRowsSelected" :indeterminate="someWorkerRowsSelected"
+                            density="compact" @update:model-value="toggleAllWorkers(Boolean($event))" />
+                    </th>
                     <th style="width:28px"></th>
                     <th class="text-no-wrap">{{ t('worker.colName') }}</th>
                     <th class="text-no-wrap">{{ t('worker.colAddress') }}</th>
@@ -704,6 +845,10 @@ async function cancelBatchDeploy() {
             <tbody>
                 <template v-for="w in workers" :key="w.id">
                     <tr @click="toggleExpand(w.id)" style="cursor:pointer">
+                        <td class="text-center" @click.stop>
+                            <v-checkbox-btn :model-value="isWorkerSelected(w.id)" density="compact"
+                                @update:model-value="toggleWorkerSelection(w.id, Boolean($event))" />
+                        </td>
                         <td class="text-center">
                             <v-icon size="small">{{ expandedWorkers.has(w.id) ? 'mdi-chevron-down' : 'mdi-chevron-right'
                             }}</v-icon>
@@ -828,6 +973,7 @@ async function cancelBatchDeploy() {
                     </tr>
                     <!-- Expandable detail row -->
                     <tr v-if="expandedWorkers.has(w.id)">
+                        <td></td>
                         <td></td>
                         <td :colspan="4" class="pa-3">
                             <v-row dense>
@@ -1112,7 +1258,7 @@ async function cancelBatchDeploy() {
                         {{ t('worker.deployCancel') }}
                     </v-btn>
                     <v-btn variant="text" :disabled="deploying" @click="showBatchDeployDialog = false">
-                        {{ t('common.cancel') }}
+                        {{ deployJobFinished ? t('common.done') : t('common.cancel') }}
                     </v-btn>
                     <v-btn v-if="hasDeployableTargets || deploying" color="success" :loading="deploying"
                         :disabled="!hasDeployableTargets" @click="startBatchDeploy">
@@ -1235,7 +1381,10 @@ async function cancelBatchDeploy() {
             <v-card class="pa-4">
                 <v-card-title class="text-error">{{ t('worker.deleteTitle') }}</v-card-title>
                 <v-card-text>
-                    <p>{{ t('worker.deleteConfirm', { name: deleteTarget?.name || deleteTarget?.id }) }}</p>
+                    <p v-if="deleteTargets.length > 1">
+                        {{ t('worker.batchDeleteConfirm', { count: deleteTargets.length }) }}
+                    </p>
+                    <p v-else>{{ t('worker.deleteConfirm', { name: deleteTarget?.name || deleteTarget?.id }) }}</p>
                     <p class="text-caption text-medium-emphasis">{{ t('worker.deleteWarning') }}</p>
                 </v-card-text>
                 <v-card-actions>
