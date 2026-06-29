@@ -1715,6 +1715,302 @@ func (*ConfigureResponse) Descriptor() ([]byte, []int) {
 	return file_worker_proto_rawDescGZIP(), []int{22}
 }
 
+type ListBuyersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credentials   *Credentials           `protobuf:"bytes,1,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBuyersRequest) Reset() {
+	*x = ListBuyersRequest{}
+	mi := &file_worker_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBuyersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBuyersRequest) ProtoMessage() {}
+
+func (x *ListBuyersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBuyersRequest.ProtoReflect.Descriptor instead.
+func (*ListBuyersRequest) Descriptor() ([]byte, []int) {
+	return file_worker_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ListBuyersRequest) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+type ListBuyersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Buyers        []*Buyer               `protobuf:"bytes,1,rep,name=buyers,proto3" json:"buyers,omitempty"`
+	Credentials   *Credentials           `protobuf:"bytes,2,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBuyersResponse) Reset() {
+	*x = ListBuyersResponse{}
+	mi := &file_worker_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBuyersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBuyersResponse) ProtoMessage() {}
+
+func (x *ListBuyersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBuyersResponse.ProtoReflect.Descriptor instead.
+func (*ListBuyersResponse) Descriptor() ([]byte, []int) {
+	return file_worker_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ListBuyersResponse) GetBuyers() []*Buyer {
+	if x != nil {
+		return x.Buyers
+	}
+	return nil
+}
+
+func (x *ListBuyersResponse) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+type CreateBuyerRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credentials   *Credentials           `protobuf:"bytes,1,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	Buyer         *Buyer                 `protobuf:"bytes,2,opt,name=buyer,proto3" json:"buyer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateBuyerRequest) Reset() {
+	*x = CreateBuyerRequest{}
+	mi := &file_worker_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateBuyerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateBuyerRequest) ProtoMessage() {}
+
+func (x *CreateBuyerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateBuyerRequest.ProtoReflect.Descriptor instead.
+func (*CreateBuyerRequest) Descriptor() ([]byte, []int) {
+	return file_worker_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *CreateBuyerRequest) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+func (x *CreateBuyerRequest) GetBuyer() *Buyer {
+	if x != nil {
+		return x.Buyer
+	}
+	return nil
+}
+
+type CreateBuyerResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Buyer         *Buyer                 `protobuf:"bytes,1,opt,name=buyer,proto3" json:"buyer,omitempty"`
+	Credentials   *Credentials           `protobuf:"bytes,2,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateBuyerResponse) Reset() {
+	*x = CreateBuyerResponse{}
+	mi := &file_worker_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateBuyerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateBuyerResponse) ProtoMessage() {}
+
+func (x *CreateBuyerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateBuyerResponse.ProtoReflect.Descriptor instead.
+func (*CreateBuyerResponse) Descriptor() ([]byte, []int) {
+	return file_worker_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *CreateBuyerResponse) GetBuyer() *Buyer {
+	if x != nil {
+		return x.Buyer
+	}
+	return nil
+}
+
+func (x *CreateBuyerResponse) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+type GetBuyerSensitiveDataRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credentials   *Credentials           `protobuf:"bytes,1,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	BuyerId       int64                  `protobuf:"varint,2,opt,name=buyer_id,json=buyerId,proto3" json:"buyer_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBuyerSensitiveDataRequest) Reset() {
+	*x = GetBuyerSensitiveDataRequest{}
+	mi := &file_worker_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBuyerSensitiveDataRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBuyerSensitiveDataRequest) ProtoMessage() {}
+
+func (x *GetBuyerSensitiveDataRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBuyerSensitiveDataRequest.ProtoReflect.Descriptor instead.
+func (*GetBuyerSensitiveDataRequest) Descriptor() ([]byte, []int) {
+	return file_worker_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *GetBuyerSensitiveDataRequest) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+func (x *GetBuyerSensitiveDataRequest) GetBuyerId() int64 {
+	if x != nil {
+		return x.BuyerId
+	}
+	return 0
+}
+
+type GetBuyerSensitiveDataResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Buyer         *Buyer                 `protobuf:"bytes,1,opt,name=buyer,proto3" json:"buyer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBuyerSensitiveDataResponse) Reset() {
+	*x = GetBuyerSensitiveDataResponse{}
+	mi := &file_worker_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBuyerSensitiveDataResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBuyerSensitiveDataResponse) ProtoMessage() {}
+
+func (x *GetBuyerSensitiveDataResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBuyerSensitiveDataResponse.ProtoReflect.Descriptor instead.
+func (*GetBuyerSensitiveDataResponse) Descriptor() ([]byte, []int) {
+	return file_worker_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *GetBuyerSensitiveDataResponse) GetBuyer() *Buyer {
+	if x != nil {
+		return x.Buyer
+	}
+	return nil
+}
+
 var File_worker_proto protoreflect.FileDescriptor
 
 const file_worker_proto_rawDesc = "" +
@@ -1852,7 +2148,23 @@ const file_worker_proto_rawDesc = "" +
 	"\x0estart_delay_ms\x18\x02 \x01(\x03R\fstartDelayMs\"@\n" +
 	"\x10ConfigureRequest\x12,\n" +
 	"\x06config\x18\x01 \x01(\v2\x14.worker.GlobalConfigR\x06config\"\x13\n" +
-	"\x11ConfigureResponse*\xa2\x01\n" +
+	"\x11ConfigureResponse\"J\n" +
+	"\x11ListBuyersRequest\x125\n" +
+	"\vcredentials\x18\x01 \x01(\v2\x13.worker.CredentialsR\vcredentials\"r\n" +
+	"\x12ListBuyersResponse\x12%\n" +
+	"\x06buyers\x18\x01 \x03(\v2\r.worker.BuyerR\x06buyers\x125\n" +
+	"\vcredentials\x18\x02 \x01(\v2\x13.worker.CredentialsR\vcredentials\"p\n" +
+	"\x12CreateBuyerRequest\x125\n" +
+	"\vcredentials\x18\x01 \x01(\v2\x13.worker.CredentialsR\vcredentials\x12#\n" +
+	"\x05buyer\x18\x02 \x01(\v2\r.worker.BuyerR\x05buyer\"q\n" +
+	"\x13CreateBuyerResponse\x12#\n" +
+	"\x05buyer\x18\x01 \x01(\v2\r.worker.BuyerR\x05buyer\x125\n" +
+	"\vcredentials\x18\x02 \x01(\v2\x13.worker.CredentialsR\vcredentials\"p\n" +
+	"\x1cGetBuyerSensitiveDataRequest\x125\n" +
+	"\vcredentials\x18\x01 \x01(\v2\x13.worker.CredentialsR\vcredentials\x12\x19\n" +
+	"\bbuyer_id\x18\x02 \x01(\x03R\abuyerId\"D\n" +
+	"\x1dGetBuyerSensitiveDataResponse\x12#\n" +
+	"\x05buyer\x18\x01 \x01(\v2\r.worker.BuyerR\x05buyer*\xa2\x01\n" +
 	"\fAttemptState\x12\x12\n" +
 	"\x0eATTEMPT_QUEUED\x10\x00\x12\x13\n" +
 	"\x0fATTEMPT_WAITING\x10\x01\x12\x13\n" +
@@ -1874,7 +2186,7 @@ const file_worker_proto_rawDesc = "" +
 	"\x14FAILURE_ACCOUNT_RISK\x10\x06\x12\x17\n" +
 	"\x13FAILURE_WORKER_LOST\x10\a\x12\x19\n" +
 	"\x15FAILURE_UNRECOVERABLE\x10\b\x12\x14\n" +
-	"\x10FAILURE_INTERNAL\x10\t2\xcf\x03\n" +
+	"\x10FAILURE_INTERNAL\x10\t2\xc2\x05\n" +
 	"\rWorkerService\x127\n" +
 	"\x06Health\x12\x15.worker.HealthRequest\x1a\x16.worker.HealthResponse\x127\n" +
 	"\x06Submit\x12\x15.worker.SubmitRequest\x1a\x16.worker.SubmitResponse\x127\n" +
@@ -1883,7 +2195,11 @@ const file_worker_proto_rawDesc = "" +
 	"\x04Stop\x12\x13.worker.StopRequest\x1a\x14.worker.StopResponse\x12.\n" +
 	"\x03Ack\x12\x12.worker.AckRequest\x1a\x13.worker.AckResponse\x12;\n" +
 	"\tHeartbeat\x12\x14.worker.HeartbeatMsg\x1a\x14.worker.HeartbeatMsg(\x010\x01\x12@\n" +
-	"\tConfigure\x12\x18.worker.ConfigureRequest\x1a\x19.worker.ConfigureResponseB-Z+bilibili-ticket-golang/cluster/worker/protob\x06proto3"
+	"\tConfigure\x12\x18.worker.ConfigureRequest\x1a\x19.worker.ConfigureResponse\x12C\n" +
+	"\n" +
+	"ListBuyers\x12\x19.worker.ListBuyersRequest\x1a\x1a.worker.ListBuyersResponse\x12F\n" +
+	"\vCreateBuyer\x12\x1a.worker.CreateBuyerRequest\x1a\x1b.worker.CreateBuyerResponse\x12d\n" +
+	"\x15GetBuyerSensitiveData\x12$.worker.GetBuyerSensitiveDataRequest\x1a%.worker.GetBuyerSensitiveDataResponseB-Z+bilibili-ticket-golang/cluster/worker/protob\x06proto3"
 
 var (
 	file_worker_proto_rawDescOnce sync.Once
@@ -1898,83 +2214,104 @@ func file_worker_proto_rawDescGZIP() []byte {
 }
 
 var file_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_worker_proto_goTypes = []any{
-	(AttemptState)(0),             // 0: worker.AttemptState
-	(StartMode)(0),                // 1: worker.StartMode
-	(FailureReason)(0),            // 2: worker.FailureReason
-	(*Buyer)(nil),                 // 3: worker.Buyer
-	(*Credentials)(nil),           // 4: worker.Credentials
-	(*HTTPCookie)(nil),            // 5: worker.HTTPCookie
-	(*ExecutionSpec)(nil),         // 6: worker.ExecutionSpec
-	(*ExecutionResult)(nil),       // 7: worker.ExecutionResult
-	(*LogEntry)(nil),              // 8: worker.LogEntry
-	(*TaskStatus)(nil),            // 9: worker.TaskStatus
-	(*HealthRequest)(nil),         // 10: worker.HealthRequest
-	(*HealthResponse)(nil),        // 11: worker.HealthResponse
-	(*SubmitRequest)(nil),         // 12: worker.SubmitRequest
-	(*SubmitResponse)(nil),        // 13: worker.SubmitResponse
-	(*StatusRequest)(nil),         // 14: worker.StatusRequest
-	(*StatusResponse)(nil),        // 15: worker.StatusResponse
-	(*LogsRequest)(nil),           // 16: worker.LogsRequest
-	(*LogsResponse)(nil),          // 17: worker.LogsResponse
-	(*StopRequest)(nil),           // 18: worker.StopRequest
-	(*StopResponse)(nil),          // 19: worker.StopResponse
-	(*AckRequest)(nil),            // 20: worker.AckRequest
-	(*AckResponse)(nil),           // 21: worker.AckResponse
-	(*HeartbeatMsg)(nil),          // 22: worker.HeartbeatMsg
-	(*GlobalConfig)(nil),          // 23: worker.GlobalConfig
-	(*ConfigureRequest)(nil),      // 24: worker.ConfigureRequest
-	(*ConfigureResponse)(nil),     // 25: worker.ConfigureResponse
-	nil,                           // 26: worker.Credentials.CookiesEntry
-	(*timestamppb.Timestamp)(nil), // 27: google.protobuf.Timestamp
+	(AttemptState)(0),                     // 0: worker.AttemptState
+	(StartMode)(0),                        // 1: worker.StartMode
+	(FailureReason)(0),                    // 2: worker.FailureReason
+	(*Buyer)(nil),                         // 3: worker.Buyer
+	(*Credentials)(nil),                   // 4: worker.Credentials
+	(*HTTPCookie)(nil),                    // 5: worker.HTTPCookie
+	(*ExecutionSpec)(nil),                 // 6: worker.ExecutionSpec
+	(*ExecutionResult)(nil),               // 7: worker.ExecutionResult
+	(*LogEntry)(nil),                      // 8: worker.LogEntry
+	(*TaskStatus)(nil),                    // 9: worker.TaskStatus
+	(*HealthRequest)(nil),                 // 10: worker.HealthRequest
+	(*HealthResponse)(nil),                // 11: worker.HealthResponse
+	(*SubmitRequest)(nil),                 // 12: worker.SubmitRequest
+	(*SubmitResponse)(nil),                // 13: worker.SubmitResponse
+	(*StatusRequest)(nil),                 // 14: worker.StatusRequest
+	(*StatusResponse)(nil),                // 15: worker.StatusResponse
+	(*LogsRequest)(nil),                   // 16: worker.LogsRequest
+	(*LogsResponse)(nil),                  // 17: worker.LogsResponse
+	(*StopRequest)(nil),                   // 18: worker.StopRequest
+	(*StopResponse)(nil),                  // 19: worker.StopResponse
+	(*AckRequest)(nil),                    // 20: worker.AckRequest
+	(*AckResponse)(nil),                   // 21: worker.AckResponse
+	(*HeartbeatMsg)(nil),                  // 22: worker.HeartbeatMsg
+	(*GlobalConfig)(nil),                  // 23: worker.GlobalConfig
+	(*ConfigureRequest)(nil),              // 24: worker.ConfigureRequest
+	(*ConfigureResponse)(nil),             // 25: worker.ConfigureResponse
+	(*ListBuyersRequest)(nil),             // 26: worker.ListBuyersRequest
+	(*ListBuyersResponse)(nil),            // 27: worker.ListBuyersResponse
+	(*CreateBuyerRequest)(nil),            // 28: worker.CreateBuyerRequest
+	(*CreateBuyerResponse)(nil),           // 29: worker.CreateBuyerResponse
+	(*GetBuyerSensitiveDataRequest)(nil),  // 30: worker.GetBuyerSensitiveDataRequest
+	(*GetBuyerSensitiveDataResponse)(nil), // 31: worker.GetBuyerSensitiveDataResponse
+	nil,                                   // 32: worker.Credentials.CookiesEntry
+	(*timestamppb.Timestamp)(nil),         // 33: google.protobuf.Timestamp
 }
 var file_worker_proto_depIdxs = []int32{
-	26, // 0: worker.Credentials.cookies:type_name -> worker.Credentials.CookiesEntry
+	32, // 0: worker.Credentials.cookies:type_name -> worker.Credentials.CookiesEntry
 	5,  // 1: worker.Credentials.cookie_jar:type_name -> worker.HTTPCookie
 	3,  // 2: worker.ExecutionSpec.buyers:type_name -> worker.Buyer
 	1,  // 3: worker.ExecutionSpec.start_mode:type_name -> worker.StartMode
-	27, // 4: worker.ExecutionSpec.start_at:type_name -> google.protobuf.Timestamp
-	27, // 5: worker.ExecutionSpec.deadline:type_name -> google.protobuf.Timestamp
+	33, // 4: worker.ExecutionSpec.start_at:type_name -> google.protobuf.Timestamp
+	33, // 5: worker.ExecutionSpec.deadline:type_name -> google.protobuf.Timestamp
 	4,  // 6: worker.ExecutionSpec.credentials:type_name -> worker.Credentials
 	0,  // 7: worker.ExecutionResult.state:type_name -> worker.AttemptState
 	2,  // 8: worker.ExecutionResult.reason:type_name -> worker.FailureReason
 	4,  // 9: worker.ExecutionResult.credentials:type_name -> worker.Credentials
-	27, // 10: worker.ExecutionResult.started_at:type_name -> google.protobuf.Timestamp
-	27, // 11: worker.ExecutionResult.finished_at:type_name -> google.protobuf.Timestamp
-	27, // 12: worker.LogEntry.time:type_name -> google.protobuf.Timestamp
+	33, // 10: worker.ExecutionResult.started_at:type_name -> google.protobuf.Timestamp
+	33, // 11: worker.ExecutionResult.finished_at:type_name -> google.protobuf.Timestamp
+	33, // 12: worker.LogEntry.time:type_name -> google.protobuf.Timestamp
 	0,  // 13: worker.TaskStatus.state:type_name -> worker.AttemptState
-	27, // 14: worker.TaskStatus.lease_until:type_name -> google.protobuf.Timestamp
+	33, // 14: worker.TaskStatus.lease_until:type_name -> google.protobuf.Timestamp
 	7,  // 15: worker.TaskStatus.result:type_name -> worker.ExecutionResult
 	6,  // 16: worker.SubmitRequest.spec:type_name -> worker.ExecutionSpec
 	9,  // 17: worker.SubmitResponse.status:type_name -> worker.TaskStatus
 	9,  // 18: worker.StatusResponse.status:type_name -> worker.TaskStatus
 	8,  // 19: worker.LogsResponse.entries:type_name -> worker.LogEntry
 	9,  // 20: worker.StopResponse.status:type_name -> worker.TaskStatus
-	27, // 21: worker.HeartbeatMsg.time:type_name -> google.protobuf.Timestamp
+	33, // 21: worker.HeartbeatMsg.time:type_name -> google.protobuf.Timestamp
 	7,  // 22: worker.HeartbeatMsg.completed_task:type_name -> worker.ExecutionResult
 	23, // 23: worker.ConfigureRequest.config:type_name -> worker.GlobalConfig
-	10, // 24: worker.WorkerService.Health:input_type -> worker.HealthRequest
-	12, // 25: worker.WorkerService.Submit:input_type -> worker.SubmitRequest
-	14, // 26: worker.WorkerService.Status:input_type -> worker.StatusRequest
-	16, // 27: worker.WorkerService.Logs:input_type -> worker.LogsRequest
-	18, // 28: worker.WorkerService.Stop:input_type -> worker.StopRequest
-	20, // 29: worker.WorkerService.Ack:input_type -> worker.AckRequest
-	22, // 30: worker.WorkerService.Heartbeat:input_type -> worker.HeartbeatMsg
-	24, // 31: worker.WorkerService.Configure:input_type -> worker.ConfigureRequest
-	11, // 32: worker.WorkerService.Health:output_type -> worker.HealthResponse
-	13, // 33: worker.WorkerService.Submit:output_type -> worker.SubmitResponse
-	15, // 34: worker.WorkerService.Status:output_type -> worker.StatusResponse
-	17, // 35: worker.WorkerService.Logs:output_type -> worker.LogsResponse
-	19, // 36: worker.WorkerService.Stop:output_type -> worker.StopResponse
-	21, // 37: worker.WorkerService.Ack:output_type -> worker.AckResponse
-	22, // 38: worker.WorkerService.Heartbeat:output_type -> worker.HeartbeatMsg
-	25, // 39: worker.WorkerService.Configure:output_type -> worker.ConfigureResponse
-	32, // [32:40] is the sub-list for method output_type
-	24, // [24:32] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	4,  // 24: worker.ListBuyersRequest.credentials:type_name -> worker.Credentials
+	3,  // 25: worker.ListBuyersResponse.buyers:type_name -> worker.Buyer
+	4,  // 26: worker.ListBuyersResponse.credentials:type_name -> worker.Credentials
+	4,  // 27: worker.CreateBuyerRequest.credentials:type_name -> worker.Credentials
+	3,  // 28: worker.CreateBuyerRequest.buyer:type_name -> worker.Buyer
+	3,  // 29: worker.CreateBuyerResponse.buyer:type_name -> worker.Buyer
+	4,  // 30: worker.CreateBuyerResponse.credentials:type_name -> worker.Credentials
+	4,  // 31: worker.GetBuyerSensitiveDataRequest.credentials:type_name -> worker.Credentials
+	3,  // 32: worker.GetBuyerSensitiveDataResponse.buyer:type_name -> worker.Buyer
+	10, // 33: worker.WorkerService.Health:input_type -> worker.HealthRequest
+	12, // 34: worker.WorkerService.Submit:input_type -> worker.SubmitRequest
+	14, // 35: worker.WorkerService.Status:input_type -> worker.StatusRequest
+	16, // 36: worker.WorkerService.Logs:input_type -> worker.LogsRequest
+	18, // 37: worker.WorkerService.Stop:input_type -> worker.StopRequest
+	20, // 38: worker.WorkerService.Ack:input_type -> worker.AckRequest
+	22, // 39: worker.WorkerService.Heartbeat:input_type -> worker.HeartbeatMsg
+	24, // 40: worker.WorkerService.Configure:input_type -> worker.ConfigureRequest
+	26, // 41: worker.WorkerService.ListBuyers:input_type -> worker.ListBuyersRequest
+	28, // 42: worker.WorkerService.CreateBuyer:input_type -> worker.CreateBuyerRequest
+	30, // 43: worker.WorkerService.GetBuyerSensitiveData:input_type -> worker.GetBuyerSensitiveDataRequest
+	11, // 44: worker.WorkerService.Health:output_type -> worker.HealthResponse
+	13, // 45: worker.WorkerService.Submit:output_type -> worker.SubmitResponse
+	15, // 46: worker.WorkerService.Status:output_type -> worker.StatusResponse
+	17, // 47: worker.WorkerService.Logs:output_type -> worker.LogsResponse
+	19, // 48: worker.WorkerService.Stop:output_type -> worker.StopResponse
+	21, // 49: worker.WorkerService.Ack:output_type -> worker.AckResponse
+	22, // 50: worker.WorkerService.Heartbeat:output_type -> worker.HeartbeatMsg
+	25, // 51: worker.WorkerService.Configure:output_type -> worker.ConfigureResponse
+	27, // 52: worker.WorkerService.ListBuyers:output_type -> worker.ListBuyersResponse
+	29, // 53: worker.WorkerService.CreateBuyer:output_type -> worker.CreateBuyerResponse
+	31, // 54: worker.WorkerService.GetBuyerSensitiveData:output_type -> worker.GetBuyerSensitiveDataResponse
+	44, // [44:55] is the sub-list for method output_type
+	33, // [33:44] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_worker_proto_init() }
@@ -1988,7 +2325,7 @@ func file_worker_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_worker_proto_rawDesc), len(file_worker_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   24,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -11,13 +11,13 @@ import "google/protobuf/timestamp.proto";
 // =============================================================================
 
 enum AttemptState {
-  ATTEMPT_QUEUED = 0;
-  ATTEMPT_WAITING = 1;
-  ATTEMPT_RUNNING = 2;
-  ATTEMPT_STOPPING = 3;
-  ATTEMPT_STOPPED = 4;
+  ATTEMPT_QUEUED    = 0;
+  ATTEMPT_WAITING   = 1;
+  ATTEMPT_RUNNING   = 2;
+  ATTEMPT_STOPPING  = 3;
+  ATTEMPT_STOPPED   = 4;
   ATTEMPT_SUCCEEDED = 5;
-  ATTEMPT_FAILED = 6;
+  ATTEMPT_FAILED    = 6;
 }
 
 enum StartMode {
@@ -26,16 +26,16 @@ enum StartMode {
 }
 
 enum FailureReason {
-  FAILURE_NONE = 0;
-  FAILURE_DEADLINE = 1;
-  FAILURE_STOPPED = 2;
+  FAILURE_NONE           = 0;
+  FAILURE_DEADLINE       = 1;
+  FAILURE_STOPPED        = 2;
   FAILURE_COOKIE_INVALID = 3;
-  FAILURE_HTTP_412 = 4;
-  FAILURE_CAPTCHA = 5;
-  FAILURE_ACCOUNT_RISK = 6;
-  FAILURE_WORKER_LOST = 7;
-  FAILURE_UNRECOVERABLE = 8;
-  FAILURE_INTERNAL = 9;
+  FAILURE_HTTP_412       = 4;
+  FAILURE_CAPTCHA        = 5;
+  FAILURE_ACCOUNT_RISK   = 6;
+  FAILURE_WORKER_LOST    = 7;
+  FAILURE_UNRECOVERABLE  = 8;
+  FAILURE_INTERNAL       = 9;
 }
 
 // =============================================================================
@@ -44,71 +44,71 @@ enum FailureReason {
 
 message Buyer {
   string logical_id = 1;
-  int64 buyer_id = 2;
-  string name = 3;
-  string tel = 4;
-  string id_card = 5;
-  int32 type = 6;
+  int64  buyer_id   = 2;
+  string name       = 3;
+  string tel        = 4;
+  string id_card    = 5;
+  int32  type       = 6;
 }
 
 message Credentials {
-  map<string, string> cookies = 1;
-  repeated HTTPCookie cookie_jar = 2;
-  string refresh_token = 3;
-  int64 version = 4;
-  bytes device_profile = 5;
+  map<string, string> cookies        = 1;
+  repeated HTTPCookie cookie_jar     = 2;
+  string              refresh_token  = 3;
+  int64               version        = 4;
+  bytes               device_profile = 5;
 }
 
 message HTTPCookie {
-  string name = 1;
-  string value = 2;
-  string domain = 3;
-  string path = 4;
-  bool secure = 5;
-  bool http_only = 6;
-  int64 expires = 7;
+  string name      = 1;
+  string value     = 2;
+  string domain    = 3;
+  string path      = 4;
+  bool   secure    = 5;
+  bool   http_only = 6;
+  int64  expires   = 7;
 }
 
 message ExecutionSpec {
-  string attempt_id = 1;
-  string intent_id = 2;
-  int64 project_id = 3;
-  int64 screen_id = 4;
-  int64 sku_id = 5;
-  repeated Buyer buyers = 6;
-  StartMode start_mode = 7;
-  google.protobuf.Timestamp start_at = 8;
-  google.protobuf.Timestamp deadline = 9;
-  int64 interval_ms = 10;
-  int64 start_delay_ms = 11;
-  Credentials credentials = 12;
+  string                    attempt_id     = 1;
+  string                    intent_id      = 2;
+  int64                     project_id     = 3;
+  int64                     screen_id      = 4;
+  int64                     sku_id         = 5;
+  repeated Buyer            buyers         = 6;
+  StartMode                 start_mode     = 7;
+  google.protobuf.Timestamp start_at       = 8;
+  google.protobuf.Timestamp deadline       = 9;
+  int64                     interval_ms    = 10;
+  int64                     start_delay_ms = 11;
+  Credentials               credentials    = 12;
 }
 
 message ExecutionResult {
-  string attempt_id = 1;
-  string intent_id = 2;
-  string spec_hash = 3;
-  AttemptState state = 4;
-  bool success = 5;
-  string order_id = 6;
-  FailureReason reason = 7;
-  string message = 8;
-  bool retryable = 9;
-  Credentials credentials = 10;
-  google.protobuf.Timestamp started_at = 11;
-  google.protobuf.Timestamp finished_at = 12;
-  string payment_url = 13;
-  int64 payment_expire = 14;
-  int64 order_time = 15;
+  string                    attempt_id     = 1;
+  string                    intent_id      = 2;
+  string                    spec_hash      = 3;
+  AttemptState              state          = 4;
+  bool                      success        = 5;
+  string                    order_id       = 6;
+  FailureReason             reason         = 7;
+  string                    message        = 8;
+  bool                      retryable      = 9;
+  Credentials               credentials    = 10;
+  google.protobuf.Timestamp started_at     = 11;
+  google.protobuf.Timestamp finished_at    = 12;
+  string                    payment_url    = 13;
+  int64                     payment_expire = 14;
+  int64                     order_time     = 15;
 }
 
 message LogEntry {
-  int64 sequence = 1;
-  google.protobuf.Timestamp time = 2;
-  string stage = 3;
-  string message = 4;
-  int32 code = 5;
-  bool retryable = 6;
+  int64                     sequence  = 1;
+  google.protobuf.Timestamp time      = 2;
+  string                    stage     = 3;
+  string                    message   = 4;
+  int32                     code      = 5;
+  bool                      retryable = 6;
 }
 
 // =============================================================================
@@ -116,11 +116,11 @@ message LogEntry {
 // =============================================================================
 
 message TaskStatus {
-  string attempt_id = 1;
-  string spec_hash = 2;
-  AttemptState state = 3;
+  string                    attempt_id  = 1;
+  string                    spec_hash   = 2;
+  AttemptState              state       = 3;
   google.protobuf.Timestamp lease_until = 4;
-  ExecutionResult result = 5;
+  ExecutionResult           result      = 5;
 }
 
 // =============================================================================
@@ -137,12 +137,12 @@ message HealthRequest {
 }
 
 message HealthResponse {
-  string worker_id = 1;
-  string version = 2;
-  string plugin_version = 3;
+  string worker_id         = 1;
+  string version           = 2;
+  string plugin_version    = 3;
   string algorithm_version = 4;
-  string captcha_plugin = 5;
-  bool clock_calibration = 6;
+  string captcha_plugin    = 5;
+  bool   clock_calibration = 6;
   string active_attempt_id = 7;
   // protocol_version_ok is false when the employer_version from the
   // request differs from the worker's own version.  The employer uses
@@ -152,7 +152,7 @@ message HealthResponse {
   // Clock offsets measured by this worker (milliseconds).
   // Positive means local clock is behind the server.
   int64 bilibili_offset_ms = 9;
-  int64 ntp_offset_ms = 10;
+  int64 ntp_offset_ms      = 10;
 }
 
 message SubmitRequest {
@@ -198,11 +198,11 @@ message AckResponse {}
 // =============================================================================
 
 message HeartbeatMsg {
-  string worker_id = 1;
-  string active_attempt_id = 2;
-  int64 sequence = 3;
-  google.protobuf.Timestamp time = 4;
-  ExecutionResult completed_task = 5;  // non-nil when a task just completed
+  string                    worker_id         = 1;
+  string                    active_attempt_id = 2;
+  int64                     sequence          = 3;
+  google.protobuf.Timestamp time              = 4;
+  ExecutionResult           completed_task    = 5;  // non-nil when a task just completed
 }
 
 // =============================================================================
@@ -224,6 +224,38 @@ message ConfigureRequest {
 }
 
 message ConfigureResponse {}
+
+// =============================================================================
+// Buyer management – worker-side Bilibili real‑name buyer CRUD
+// =============================================================================
+
+message ListBuyersRequest {
+  Credentials credentials = 1;
+}
+
+message ListBuyersResponse {
+  repeated Buyer buyers      = 1;
+  Credentials    credentials = 2;
+}
+
+message CreateBuyerRequest {
+  Credentials credentials = 1;
+  Buyer       buyer       = 2;
+}
+
+message CreateBuyerResponse {
+  Buyer       buyer       = 1;
+  Credentials credentials = 2;
+}
+
+message GetBuyerSensitiveDataRequest {
+  Credentials credentials = 1;
+  int64       buyer_id    = 2;
+}
+
+message GetBuyerSensitiveDataResponse {
+  Buyer buyer = 1;
+}
 
 // =============================================================================
 // WorkerService
@@ -266,4 +298,20 @@ service WorkerService {
   // all future tasks. The employer calls this after a successful Health
   // handshake and whenever the user changes settings.
   rpc Configure(ConfigureRequest) returns (ConfigureResponse);
+
+  // ListBuyers fetches the full (unmasked) real‑name buyer list from a
+  // Bilibili account.  The worker uses the supplied credentials to log
+  // into the Bilibili API and returns the refreshed credentials so the
+  // employer can persist the updated cookie/version state.
+  rpc ListBuyers(ListBuyersRequest) returns (ListBuyersResponse);
+
+  // CreateBuyer provisions a new real‑name buyer on a Bilibili account
+  // and returns the created buyer (with its assigned Bilibili buyer_id)
+  // together with refreshed credentials.
+  rpc CreateBuyer(CreateBuyerRequest) returns (CreateBuyerResponse);
+
+  // GetBuyerSensitiveData fetches the full unmasked real‑name
+  // information (ID card number, phone, etc.) for a specific buyer
+  // already on a Bilibili account's real‑name list.
+  rpc GetBuyerSensitiveData(GetBuyerSensitiveDataRequest) returns (GetBuyerSensitiveDataResponse);
 }

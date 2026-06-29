@@ -29,8 +29,27 @@ import (
 // dispatcher, and success/notification callbacks.
 func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 	client := employer.NewWorkerClient()
-	service := &ClusterService{repository: repository, client: client, phases: make(map[string]domain.Phase), loginSessions: make(map[string]*accountLoginSession)}
-	service.accounts = accounts.NewManager(repository, biliProvisioner{})
+	provisioner := NewWorkerProvisioner(client)
+	service := &ClusterService{
+		repository:    repository,
+		client:        client,
+		provisioner:   provisioner,
+		phases:        make(map[string]domain.Phase),
+		loginSessions: make(map[string]*accountLoginSession),
+	}
+	// Wire the worker selection strategy: the provisioner uses the
+	// current known worker set to decide which worker handles each
+	// account.  The closure captures *ClusterService so it can read
+	// the dispatcher's live worker state.
+	provisioner.SetPickWorker(
+		func(accountID string) (domain.WorkerNode, error) {
+			return service.pickWorkerForAccount(accountID)
+		},
+		func(accountID string) {
+			service.releaseAccount(accountID)
+		},
+	)
+	service.accounts = accounts.NewManager(repository, provisioner)
 	service.dispatcher = dispatcher.New(client, repository, buyerResolver{
 		repository: repository,
 		ensureFn: func(ctx context.Context, accountID string, buyer domain.Buyer) error {
@@ -57,10 +76,12 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 
 	// Wire the bidirectional heartbeat callback: when a worker pushes a
 	// completed task, the dispatcher processes it immediately instead of
-	// waiting for the next 15s polling cycle.
+	// waiting for the next 15s polling cycle.  Also record the event in
+	// the cluster-wide unified event log.
 	client.SetOnCompletedTask(func(workerID string, result domain.ExecutionResult) {
 		log.Printf("[cluster] heartbeat push received: worker=%s attempt=%s success=%v orderID=%s paymentURL=%q",
 			workerID, result.AttemptID, result.Success, result.OrderID, result.PaymentURL)
+		service.RecordTaskCompleted(workerID, result)
 		service.dispatcher.ProcessCompletedTask(workerID, result)
 	})
 
@@ -225,13 +246,6 @@ func (s *ClusterService) Start(parent context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, node := range workers {
-		if tls, err := s.repository.WorkerTLS(ctx, node.ID); err == nil {
-			if setErr := s.client.SetTLSFromConfig(node.ID, tls); setErr != nil {
-				log.Printf("[cluster] TLS config for worker %s: %v", node.ID, setErr)
-			}
-		}
-	}
 	pluginName := ""
 	pluginFile := "plugins/captcha-plugin"
 	if runtime.GOOS == "windows" {
@@ -240,9 +254,13 @@ func (s *ClusterService) Start(parent context.Context) error {
 	if _, statErr := os.Stat(pluginFile); statErr == nil {
 		pluginName = "captcha-plugin"
 	}
-	// Recover all local workers persisted in the repository (no longer
-	// auto-create a default "local" worker — users add them manually).
+	// Recover all local workers persisted in the repository and ensure
+	// the primary "local" worker always exists — it can never be deleted.
+	hasLocal := false
 	for _, node := range workers {
+		if node.ID == "local" {
+			hasLocal = true
+		}
 		if node.Type != domain.WorkerTypeLocal {
 			continue
 		}
@@ -264,14 +282,57 @@ func (s *ClusterService) Start(parent context.Context) error {
 			})
 		}
 	}
+	// Ensure the primary "local" worker always exists.
+	if !hasLocal {
+		log.Printf("[cluster] auto-creating primary local worker")
+		if _, startErr := s.local.AddWorker(ctx, s.client, "local", "Local Worker", "127.0.0.1:37900", employer.LocalWorkerOptions{
+			PluginDir:     "plugins",
+			CaptchaPlugin: pluginName,
+			Version:       global.GitCommit,
+		}); startErr != nil {
+			log.Printf("[cluster] auto-create local worker: %v", startErr)
+		} else {
+			localNode := domain.WorkerNode{ID: "local", Name: "Local Worker", Address: "127.0.0.1:37900", Type: domain.WorkerTypeLocal, Enabled: true}
+			_ = s.repository.PutWorker(ctx, localNode)
+			if tlsBundle, _, tlsErr := clusterworker.LoadOrGenerateLocalTLS("data/local"); tlsErr == nil {
+				_ = s.repository.PutWorkerTLS(ctx, "local", domain.WorkerTLSConfig{
+					CACertPEM:     tlsBundle.CAPEM,
+					ClientCertPEM: tlsBundle.CertPEM,
+					ClientKeyPEM:  tlsBundle.KeyPEM,
+					ServerName:    "localhost",
+				})
+			}
+		}
+		// Reload workers after adding the local one.
+		workers, _ = s.repository.ListWorkers(ctx)
+	}
 
 	workers, err = s.repository.ListWorkers(ctx)
 	if err != nil {
 		return err
 	}
+	// Load TLS for every worker into the client *after* all local workers
+	// have been started and their TLS keys persisted to the database.
+	// This must happen before refreshResources / pushGlobalConfigToAll
+	// because both require the client to be able to dial each worker.
+	for _, node := range workers {
+		if tls, err := s.repository.WorkerTLS(ctx, node.ID); err == nil {
+			if setErr := s.client.SetTLSFromConfig(node.ID, tls); setErr != nil {
+				log.Printf("[cluster] TLS config for worker %s: %v", node.ID, setErr)
+			}
+		} else {
+			log.Printf("[cluster] missing TLS for worker %s: %v", node.ID, err)
+		}
+	}
 	// Load all resources and eagerly dial every worker so connection
 	// problems surface immediately instead of waiting for a dispatch.
 	_ = s.refreshResources(ctx)
+
+	// Push the persisted global config to every worker that is now
+	// reachable.  Local workers are skipped in refreshResources' health
+	// loop (they have no RPC health check) but they still need to
+	// receive the retry-interval and start-delay settings.
+	s.pushGlobalConfigToAll(context.Background())
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
 		return err

@@ -434,6 +434,155 @@ func (ws *workerService) Configure(_ context.Context, req *pb.ConfigureRequest) 
 	return &pb.ConfigureResponse{}, nil
 }
 
+// =============================================================================
+// ListBuyers – fetch all real-name buyers from a Bilibili account
+// =============================================================================
+
+func (ws *workerService) ListBuyers(_ context.Context, req *pb.ListBuyersRequest) (*pb.ListBuyersResponse, error) {
+	if req.Credentials == nil {
+		return nil, status.Error(codes.InvalidArgument, "credentials are required")
+	}
+	creds := credentialsFromProto(req.Credentials)
+	backend, err := executor.NewBilibiliBackend(creds)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "initialize Bilibili client: %v", err)
+	}
+	client, _ := backend.ClientAndJar()
+	errVal, list := client.GetRealnameBuyerListNew()
+	if errVal != nil {
+		return nil, status.Errorf(codes.Internal, "list buyers: %v", errVal)
+	}
+	buyers := make([]*pb.Buyer, 0, len(list))
+	for _, item := range list {
+		b := &pb.Buyer{
+			BuyerId: item.Id,
+			Name:    item.Name,
+			Tel:     item.Tel,
+			IdCard:  item.IdCard,
+			Type:    int32(item.IdType),
+		}
+		// Fetch full unmasked sensitive data for each buyer.
+		if item.Id > 0 {
+			sensitiveErr, sensitive := client.GetTargetBuyerSensitiveData(item.Id)
+			if sensitiveErr == nil && sensitive.PersonalId != "" {
+				b.IdCard = sensitive.PersonalId
+				if sensitive.Tel != "" {
+					b.Tel = sensitive.Tel
+				}
+				if sensitive.Name != "" {
+					b.Name = sensitive.Name
+				}
+				if sensitive.IdType != 0 {
+					b.Type = int32(sensitive.IdType)
+				}
+			}
+		}
+		buyers = append(buyers, b)
+	}
+	refreshed := backend.Credentials()
+	return &pb.ListBuyersResponse{
+		Buyers:      buyers,
+		Credentials: credentialsToProto(refreshed),
+	}, nil
+}
+
+// =============================================================================
+// CreateBuyer – create a new real-name buyer on the target Bilibili account
+// =============================================================================
+
+func (ws *workerService) CreateBuyer(_ context.Context, req *pb.CreateBuyerRequest) (*pb.CreateBuyerResponse, error) {
+	if req.Credentials == nil {
+		return nil, status.Error(codes.InvalidArgument, "credentials are required")
+	}
+	if req.Buyer == nil {
+		return nil, status.Error(codes.InvalidArgument, "buyer is required")
+	}
+	creds := credentialsFromProto(req.Credentials)
+	backend, err := executor.NewBilibiliBackend(creds)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "initialize Bilibili client: %v", err)
+	}
+	client, _ := backend.ClientAndJar()
+	b := req.Buyer
+	if errVal := client.CreateBuyer(b.Name, b.Tel, int(b.Type), b.IdCard, false); errVal != nil {
+		return nil, status.Errorf(codes.Internal, "create buyer: %v", errVal)
+	}
+	// Re-list to get the newly created buyer's ID.
+	errVal, list := client.GetRealnameBuyerListNew()
+	if errVal != nil {
+		return nil, status.Errorf(codes.Internal, "list buyers after create: %v", errVal)
+	}
+	var created *pb.Buyer
+	for _, item := range list {
+		if item.Name == b.Name && item.Tel == b.Tel {
+			created = &pb.Buyer{
+				BuyerId: item.Id,
+				Name:    item.Name,
+				Tel:     item.Tel,
+				IdCard:  item.IdCard,
+				Type:    int32(item.IdType),
+			}
+			// Fetch full unmasked data.
+			if item.Id > 0 {
+				sensitiveErr, sensitive := client.GetTargetBuyerSensitiveData(item.Id)
+				if sensitiveErr == nil && sensitive.PersonalId != "" {
+					created.IdCard = sensitive.PersonalId
+					if sensitive.Tel != "" {
+						created.Tel = sensitive.Tel
+					}
+					if sensitive.Name != "" {
+						created.Name = sensitive.Name
+					}
+					if sensitive.IdType != 0 {
+						created.Type = int32(sensitive.IdType)
+					}
+				}
+			}
+			break
+		}
+	}
+	if created == nil {
+		return nil, status.Error(codes.Internal, "created buyer was not returned by API")
+	}
+	refreshed := backend.Credentials()
+	return &pb.CreateBuyerResponse{
+		Buyer:       created,
+		Credentials: credentialsToProto(refreshed),
+	}, nil
+}
+
+// =============================================================================
+// GetBuyerSensitiveData – fetch unmasked buyer details
+// =============================================================================
+
+func (ws *workerService) GetBuyerSensitiveData(_ context.Context, req *pb.GetBuyerSensitiveDataRequest) (*pb.GetBuyerSensitiveDataResponse, error) {
+	if req.Credentials == nil {
+		return nil, status.Error(codes.InvalidArgument, "credentials are required")
+	}
+	if req.BuyerId <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "buyer_id is required")
+	}
+	creds := credentialsFromProto(req.Credentials)
+	backend, err := executor.NewBilibiliBackend(creds)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "initialize Bilibili client: %v", err)
+	}
+	client, _ := backend.ClientAndJar()
+	sensitiveErr, sensitive := client.GetTargetBuyerSensitiveData(req.BuyerId)
+	if sensitiveErr != nil {
+		return nil, status.Errorf(codes.Internal, "get buyer sensitive data: %v", sensitiveErr)
+	}
+	return &pb.GetBuyerSensitiveDataResponse{
+		Buyer: &pb.Buyer{
+			BuyerId: req.BuyerId,
+			Name:    sensitive.Name,
+			Tel:     sensitive.Tel,
+			IdCard:  sensitive.PersonalId,
+			Type:    int32(sensitive.IdType),
+		},
+	}, nil
+}
+
 // Heartbeat
 // =============================================================================
 
@@ -584,6 +733,29 @@ func credentialsFromProto(p *pb.Credentials) domain.Credentials {
 		})
 	}
 	return c
+}
+
+func credentialsToProto(c domain.Credentials) *pb.Credentials {
+	p := &pb.Credentials{
+		Cookies:      c.Cookies,
+		RefreshToken: c.RefreshToken,
+		Version:      c.Version,
+	}
+	if len(c.DeviceProfile) > 0 {
+		p.DeviceProfile = c.DeviceProfile
+	}
+	for _, hc := range c.CookieJar {
+		p.CookieJar = append(p.CookieJar, &pb.HTTPCookie{
+			Name:     hc.Name,
+			Value:    hc.Value,
+			Domain:   hc.Domain,
+			Path:     hc.Path,
+			Secure:   hc.Secure,
+			HttpOnly: hc.HTTPOnly,
+			Expires:  hc.Expires,
+		})
+	}
+	return p
 }
 
 func startModeFromProto(m pb.StartMode) domain.StartMode {

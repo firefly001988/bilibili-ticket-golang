@@ -110,6 +110,13 @@ func (b *BilibiliBackend) Credentials() domain.Credentials {
 	return result
 }
 
+// ClientAndJar returns the underlying BiliClient and cookie jar for
+// direct API calls that are not part of the normal execution flow
+// (e.g. buyer management RPCs on the worker).
+func (b *BilibiliBackend) ClientAndJar() (*biliutils.BiliClient, *cookiejar.Jar) {
+	return b.client, b.jar
+}
+
 func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec) Outcome {
 	b.mu.Lock()
 	defer b.mu.Unlock()

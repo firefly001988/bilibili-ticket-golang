@@ -19,14 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	WorkerService_Health_FullMethodName    = "/worker.WorkerService/Health"
-	WorkerService_Submit_FullMethodName    = "/worker.WorkerService/Submit"
-	WorkerService_Status_FullMethodName    = "/worker.WorkerService/Status"
-	WorkerService_Logs_FullMethodName      = "/worker.WorkerService/Logs"
-	WorkerService_Stop_FullMethodName      = "/worker.WorkerService/Stop"
-	WorkerService_Ack_FullMethodName       = "/worker.WorkerService/Ack"
-	WorkerService_Heartbeat_FullMethodName = "/worker.WorkerService/Heartbeat"
-	WorkerService_Configure_FullMethodName = "/worker.WorkerService/Configure"
+	WorkerService_Health_FullMethodName                = "/worker.WorkerService/Health"
+	WorkerService_Submit_FullMethodName                = "/worker.WorkerService/Submit"
+	WorkerService_Status_FullMethodName                = "/worker.WorkerService/Status"
+	WorkerService_Logs_FullMethodName                  = "/worker.WorkerService/Logs"
+	WorkerService_Stop_FullMethodName                  = "/worker.WorkerService/Stop"
+	WorkerService_Ack_FullMethodName                   = "/worker.WorkerService/Ack"
+	WorkerService_Heartbeat_FullMethodName             = "/worker.WorkerService/Heartbeat"
+	WorkerService_Configure_FullMethodName             = "/worker.WorkerService/Configure"
+	WorkerService_ListBuyers_FullMethodName            = "/worker.WorkerService/ListBuyers"
+	WorkerService_CreateBuyer_FullMethodName           = "/worker.WorkerService/CreateBuyer"
+	WorkerService_GetBuyerSensitiveData_FullMethodName = "/worker.WorkerService/GetBuyerSensitiveData"
 )
 
 // WorkerServiceClient is the client API for WorkerService service.
@@ -62,6 +65,19 @@ type WorkerServiceClient interface {
 	// all future tasks. The employer calls this after a successful Health
 	// handshake and whenever the user changes settings.
 	Configure(ctx context.Context, in *ConfigureRequest, opts ...grpc.CallOption) (*ConfigureResponse, error)
+	// ListBuyers fetches the full (unmasked) real‑name buyer list from a
+	// Bilibili account.  The worker uses the supplied credentials to log
+	// into the Bilibili API and returns the refreshed credentials so the
+	// employer can persist the updated cookie/version state.
+	ListBuyers(ctx context.Context, in *ListBuyersRequest, opts ...grpc.CallOption) (*ListBuyersResponse, error)
+	// CreateBuyer provisions a new real‑name buyer on a Bilibili account
+	// and returns the created buyer (with its assigned Bilibili buyer_id)
+	// together with refreshed credentials.
+	CreateBuyer(ctx context.Context, in *CreateBuyerRequest, opts ...grpc.CallOption) (*CreateBuyerResponse, error)
+	// GetBuyerSensitiveData fetches the full unmasked real‑name
+	// information (ID card number, phone, etc.) for a specific buyer
+	// already on a Bilibili account's real‑name list.
+	GetBuyerSensitiveData(ctx context.Context, in *GetBuyerSensitiveDataRequest, opts ...grpc.CallOption) (*GetBuyerSensitiveDataResponse, error)
 }
 
 type workerServiceClient struct {
@@ -155,6 +171,36 @@ func (c *workerServiceClient) Configure(ctx context.Context, in *ConfigureReques
 	return out, nil
 }
 
+func (c *workerServiceClient) ListBuyers(ctx context.Context, in *ListBuyersRequest, opts ...grpc.CallOption) (*ListBuyersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBuyersResponse)
+	err := c.cc.Invoke(ctx, WorkerService_ListBuyers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workerServiceClient) CreateBuyer(ctx context.Context, in *CreateBuyerRequest, opts ...grpc.CallOption) (*CreateBuyerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateBuyerResponse)
+	err := c.cc.Invoke(ctx, WorkerService_CreateBuyer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workerServiceClient) GetBuyerSensitiveData(ctx context.Context, in *GetBuyerSensitiveDataRequest, opts ...grpc.CallOption) (*GetBuyerSensitiveDataResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBuyerSensitiveDataResponse)
+	err := c.cc.Invoke(ctx, WorkerService_GetBuyerSensitiveData_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkerServiceServer is the server API for WorkerService service.
 // All implementations must embed UnimplementedWorkerServiceServer
 // for forward compatibility.
@@ -188,6 +234,19 @@ type WorkerServiceServer interface {
 	// all future tasks. The employer calls this after a successful Health
 	// handshake and whenever the user changes settings.
 	Configure(context.Context, *ConfigureRequest) (*ConfigureResponse, error)
+	// ListBuyers fetches the full (unmasked) real‑name buyer list from a
+	// Bilibili account.  The worker uses the supplied credentials to log
+	// into the Bilibili API and returns the refreshed credentials so the
+	// employer can persist the updated cookie/version state.
+	ListBuyers(context.Context, *ListBuyersRequest) (*ListBuyersResponse, error)
+	// CreateBuyer provisions a new real‑name buyer on a Bilibili account
+	// and returns the created buyer (with its assigned Bilibili buyer_id)
+	// together with refreshed credentials.
+	CreateBuyer(context.Context, *CreateBuyerRequest) (*CreateBuyerResponse, error)
+	// GetBuyerSensitiveData fetches the full unmasked real‑name
+	// information (ID card number, phone, etc.) for a specific buyer
+	// already on a Bilibili account's real‑name list.
+	GetBuyerSensitiveData(context.Context, *GetBuyerSensitiveDataRequest) (*GetBuyerSensitiveDataResponse, error)
 	mustEmbedUnimplementedWorkerServiceServer()
 }
 
@@ -221,6 +280,15 @@ func (UnimplementedWorkerServiceServer) Heartbeat(grpc.BidiStreamingServer[Heart
 }
 func (UnimplementedWorkerServiceServer) Configure(context.Context, *ConfigureRequest) (*ConfigureResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Configure not implemented")
+}
+func (UnimplementedWorkerServiceServer) ListBuyers(context.Context, *ListBuyersRequest) (*ListBuyersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBuyers not implemented")
+}
+func (UnimplementedWorkerServiceServer) CreateBuyer(context.Context, *CreateBuyerRequest) (*CreateBuyerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateBuyer not implemented")
+}
+func (UnimplementedWorkerServiceServer) GetBuyerSensitiveData(context.Context, *GetBuyerSensitiveDataRequest) (*GetBuyerSensitiveDataResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBuyerSensitiveData not implemented")
 }
 func (UnimplementedWorkerServiceServer) mustEmbedUnimplementedWorkerServiceServer() {}
 func (UnimplementedWorkerServiceServer) testEmbeddedByValue()                       {}
@@ -376,6 +444,60 @@ func _WorkerService_Configure_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkerService_ListBuyers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBuyersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).ListBuyers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_ListBuyers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).ListBuyers(ctx, req.(*ListBuyersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkerService_CreateBuyer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateBuyerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).CreateBuyer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_CreateBuyer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).CreateBuyer(ctx, req.(*CreateBuyerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkerService_GetBuyerSensitiveData_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBuyerSensitiveDataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).GetBuyerSensitiveData(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_GetBuyerSensitiveData_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).GetBuyerSensitiveData(ctx, req.(*GetBuyerSensitiveDataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkerService_ServiceDesc is the grpc.ServiceDesc for WorkerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -410,6 +532,18 @@ var WorkerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Configure",
 			Handler:    _WorkerService_Configure_Handler,
+		},
+		{
+			MethodName: "ListBuyers",
+			Handler:    _WorkerService_ListBuyers_Handler,
+		},
+		{
+			MethodName: "CreateBuyer",
+			Handler:    _WorkerService_CreateBuyer_Handler,
+		},
+		{
+			MethodName: "GetBuyerSensitiveData",
+			Handler:    _WorkerService_GetBuyerSensitiveData_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

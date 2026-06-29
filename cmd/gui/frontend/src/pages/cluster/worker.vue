@@ -37,6 +37,7 @@ interface WorkerSummary {
     type: string
     enabled: boolean
     healthy: boolean
+    versionBlocked?: boolean
     activeAttemptId?: string
     version?: string
     skipVersionCheck?: boolean
@@ -379,7 +380,9 @@ function confirmAddFromConfig() {
 // ── Computed ──────────────────────────────────────────────────
 
 const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
-const isVersionBlocked = (w: WorkerSummary) => !w.healthy && !!w.version && !w.skipVersionCheck && !isLocalWorker(w)
+const isPrimaryLocal = (w: WorkerSummary) => w.id === 'local'
+const isVersionBlocked = (w: WorkerSummary) => w.versionBlocked === true
+const isReachable = (w: WorkerSummary) => w.healthy || w.versionBlocked === true
 
 // ── Force Reconnect (version mismatch bypass) ─────────────────
 async function doForceReconnect(w: WorkerSummary) {
@@ -453,13 +456,13 @@ async function doForceReconnect(w: WorkerSummary) {
                     <tr @click="toggleExpand(w.id)" style="cursor:pointer">
                         <td class="text-center">
                             <v-icon size="small">{{ expandedWorkers.has(w.id) ? 'mdi-chevron-down' : 'mdi-chevron-right'
-                                }}</v-icon>
+                            }}</v-icon>
                         </td>
                         <td style="max-width:200px">
                             <div class="d-flex align-center text-truncate" style="min-width:0">
                                 <v-icon start size="small" class="mr-1 flex-shrink-0">mdi-server-network</v-icon>
                                 <span class="text-truncate font-weight-bold" style="min-width:0">{{ w.name || w.id
-                                    }}</span>
+                                }}</span>
                                 <v-chip v-if="isLocalWorker(w)" size="x-small" color="info" variant="tonal"
                                     class="ml-1 flex-shrink-0">
                                     {{ t('worker.localLabel') }}
@@ -480,7 +483,7 @@ async function doForceReconnect(w: WorkerSummary) {
                             </v-chip>
                             <v-chip v-else :color="w.healthy ? 'success' : 'error'" size="small" variant="tonal">
                                 <v-icon start size="x-small">{{ w.healthy ? 'mdi-check-circle' : 'mdi-close-circle'
-                                    }}</v-icon>
+                                }}</v-icon>
                                 {{ w.healthy ? t('worker.online') : t('worker.offline') }}
                             </v-chip>
                             <v-chip v-if="w.activeAttemptId" size="x-small" color="orange" variant="tonal" class="ml-1">
@@ -506,7 +509,7 @@ async function doForceReconnect(w: WorkerSummary) {
                                     <v-list-item density="compact" disabled>
                                         <div style="font-size:0.8rem;line-height:1.4">
                                             <div class="text-caption text-medium-emphasis">{{ t('worker.workerVersion')
-                                                }}</div>
+                                            }}</div>
                                             <div class="text-warning font-weight-bold">{{ w.version || '—' }}</div>
                                         </div>
                                     </v-list-item>
@@ -518,7 +521,7 @@ async function doForceReconnect(w: WorkerSummary) {
                                         </template>
                                         <template #title>
                                             <span class="text-error font-weight-bold">{{ t('worker.forceReconnectTitle')
-                                            }}</span>
+                                                }}</span>
                                         </template>
                                     </v-list-item>
                                 </v-list>
@@ -526,8 +529,14 @@ async function doForceReconnect(w: WorkerSummary) {
                         </td>
                         <td class="text-no-wrap" style="white-space:nowrap" @click.stop>
                             <div style="display:flex;gap:4px">
-                                <!-- Local workers: start/stop + delete -->
-                                <template v-if="isLocalWorker(w)">
+                                <!-- Primary local worker — read-only, no stop/delete -->
+                                <template v-if="isPrimaryLocal(w)">
+                                    <v-chip size="x-small" color="info" variant="tonal" class="mr-1">
+                                        {{ t('worker.primaryLocal') }}
+                                    </v-chip>
+                                </template>
+                                <!-- Other local workers: start/stop + delete -->
+                                <template v-else-if="isLocalWorker(w)">
                                     <v-btn v-if="w.healthy" icon="mdi-stop-circle-outline" size="small" variant="text"
                                         color="warning" :loading="connecting[w.id]" :title="t('worker.localStop')"
                                         @click="toggleLocalWorker(w)" />
@@ -573,12 +582,16 @@ async function doForceReconnect(w: WorkerSummary) {
                                     <div class="text-body-2">{{ isLocalWorker(w) ? t('worker.localLabel') :
                                         t('worker.remoteLabel') }}</div>
                                 </v-col>
-                                <v-col v-if="w.version" cols="6" md="3">
+                                <v-col v-if="isReachable(w) && w.version" cols="6" md="3">
                                     <div class="text-caption text-medium-emphasis">{{ t('worker.colVersion') }}</div>
                                     <div class="text-body-2"
                                         :class="{ 'text-warning font-weight-bold': w.skipVersionCheck }">
                                         {{ w.version }}
                                     </div>
+                                </v-col>
+                                <v-col v-else-if="isReachable(w) && !w.version" cols="6" md="3">
+                                    <div class="text-caption text-medium-emphasis">{{ t('worker.colVersion') }}</div>
+                                    <div class="text-body-2 text-medium-emphasis">—</div>
                                 </v-col>
                                 <v-col v-if="w.activeAttemptId" cols="6" md="3">
                                     <div class="text-caption text-medium-emphasis">当前任务</div>
@@ -600,26 +613,29 @@ async function doForceReconnect(w: WorkerSummary) {
                                         ⛔ {{ t('worker.skipVersionCheckDesc') }}
                                     </div>
                                 </v-col>
-                                <!-- Global clock offsets -->
-                                <v-col cols="12">
-                                    <v-divider class="my-1" />
-                                    <div class="text-caption text-medium-emphasis mt-1">{{ t('worker.clockOffsetTitle')
-                                    }}</div>
-                                </v-col>
-                                <v-col cols="6" md="3">
-                                    <div class="text-caption text-medium-emphasis">Bilibili API</div>
-                                    <div class="text-body-2"
-                                        :class="Math.abs(w.bilibiliOffsetMs) > 1000 ? 'text-red' : 'text-green'">
-                                        {{ w.bilibiliOffsetMs > 0 ? '+' : '' }}{{ w.bilibiliOffsetMs }}ms
-                                    </div>
-                                </v-col>
-                                <v-col cols="6" md="3">
-                                    <div class="text-caption text-medium-emphasis">NTP (阿里云)</div>
-                                    <div class="text-body-2"
-                                        :class="Math.abs(w.ntpOffsetMs) > 1000 ? 'text-red' : 'text-green'">
-                                        {{ w.ntpOffsetMs > 0 ? '+' : '' }}{{ w.ntpOffsetMs }}ms
-                                    </div>
-                                </v-col>
+                                <!-- Global clock offsets — only shown when worker is reachable -->
+                                <template v-if="isReachable(w)">
+                                    <v-col cols="12">
+                                        <v-divider class="my-1" />
+                                        <div class="text-caption text-medium-emphasis mt-1">{{
+                                            t('worker.clockOffsetTitle')
+                                            }}</div>
+                                    </v-col>
+                                    <v-col cols="6" md="3">
+                                        <div class="text-caption text-medium-emphasis">Bilibili API</div>
+                                        <div class="text-body-2"
+                                            :class="Math.abs(w.bilibiliOffsetMs) > 1000 ? 'text-red' : 'text-green'">
+                                            {{ w.bilibiliOffsetMs > 0 ? '+' : '' }}{{ w.bilibiliOffsetMs }}ms
+                                        </div>
+                                    </v-col>
+                                    <v-col cols="6" md="3">
+                                        <div class="text-caption text-medium-emphasis">NTP (阿里云)</div>
+                                        <div class="text-body-2"
+                                            :class="Math.abs(w.ntpOffsetMs) > 1000 ? 'text-red' : 'text-green'">
+                                            {{ w.ntpOffsetMs > 0 ? '+' : '' }}{{ w.ntpOffsetMs }}ms
+                                        </div>
+                                    </v-col>
+                                </template>
                                 <!-- Cooldown detail section -->
                                 <template v-if="w.cooldown?.cooledDown">
                                     <v-col cols="12">
@@ -644,7 +660,7 @@ async function doForceReconnect(w: WorkerSummary) {
                                     <v-col cols="6" md="3">
                                         <div class="text-caption text-medium-emphasis">总冷却时长</div>
                                         <div class="text-body-2">{{ Math.round((w.cooldown.totalDurationMs || 0) / 1000)
-                                            }}s</div>
+                                        }}s</div>
                                     </v-col>
                                     <v-col cols="6" md="3">
                                         <div class="text-caption text-medium-emphasis">剩余</div>

@@ -51,6 +51,7 @@ func (s *ClusterService) refreshResources(ctx context.Context) error {
 			cancel()
 			if err != nil {
 				log.Printf("[cluster] health check failed for worker %s (%s): %v", node.ID, node.Address, err)
+				s.RecordWorkerDisconnected(node.ID, err.Error())
 				dispatchWorkers[i].Enabled = false
 				return
 			}
@@ -65,7 +66,10 @@ func (s *ClusterService) refreshResources(ctx context.Context) error {
 					_ = s.repository.PutWorker(ctx, node)
 				}
 			}
-			log.Printf("[cluster] worker %s connected (version=%s, plugin=%s)", node.ID, info["version"], info["pluginVersion"])
+			ver, _ := info["version"].(string)
+			plugin, _ := info["pluginVersion"].(string)
+			log.Printf("[cluster] worker %s connected (version=%s, plugin=%s)", node.ID, ver, plugin)
+			s.RecordWorkerConnected(node.ID, node.Address, ver)
 			// Push the current global config to the newly connected worker.
 			s.pushGlobalConfigToWorker(ctx, node)
 			if s.client.IsHealthy(node.ID) {
@@ -80,6 +84,11 @@ func (s *ClusterService) refreshResources(ctx context.Context) error {
 		}
 	}
 	s.dispatcher.SetResources(accountList, dispatchWorkers)
+
+	// Cache worker list for provisioner use.
+	s.mu.Lock()
+	s.workers = dispatchWorkers
+	s.mu.Unlock()
 
 	return nil
 }

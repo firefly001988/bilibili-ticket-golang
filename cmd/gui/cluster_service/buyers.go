@@ -121,58 +121,6 @@ func (r buyerResolver) Resolve(ctx context.Context, accountID string, buyers []d
 	return result, nil
 }
 
-type biliProvisioner struct{}
-
-func (biliProvisioner) ListBuyers(_ context.Context, account domain.Account) ([]domain.Buyer, domain.Credentials, error) {
-	client, jar, err := accountClient(account)
-	if err != nil {
-		return nil, account.Credentials, err
-	}
-	err, list := client.GetRealnameBuyerListNew()
-	if err != nil {
-		return nil, credentialsFrom(client, jar, account.Credentials), err
-	}
-	result := make([]domain.Buyer, len(list))
-	for i, value := range list {
-		buyer := domain.Buyer{BuyerID: value.Id, Name: value.Name, Tel: value.Tel, IDCard: value.IdCard, Type: value.IdType}
-		// Fetch full sensitive data (unmasked ID card, phone, etc.) for each buyer.
-		if value.Id > 0 {
-			sensitiveErr, sensitive := client.GetTargetBuyerSensitiveData(value.Id)
-			if sensitiveErr == nil && sensitive.PersonalId != "" {
-				buyer.IDCard = sensitive.PersonalId
-				if sensitive.Tel != "" {
-					buyer.Tel = sensitive.Tel
-				}
-				if sensitive.Name != "" {
-					buyer.Name = sensitive.Name
-				}
-				if sensitive.IdType != 0 {
-					buyer.Type = sensitive.IdType
-				}
-			}
-		}
-		result[i] = buyer
-	}
-	return result, credentialsFrom(client, jar, account.Credentials), nil
-}
-
-func (biliProvisioner) CreateBuyer(ctx context.Context, account domain.Account, buyer domain.Buyer) (domain.Buyer, domain.Credentials, error) {
-	client, jar, err := accountClient(account)
-	if err != nil {
-		return domain.Buyer{}, account.Credentials, err
-	}
-	if err := client.CreateBuyer(buyer.Name, buyer.Tel, buyer.Type, buyer.IDCard, false); err != nil {
-		return domain.Buyer{}, credentialsFrom(client, jar, account.Credentials), err
-	}
-	list, credentials, err := (biliProvisioner{}).ListBuyers(ctx, account)
-	if err != nil {
-		return domain.Buyer{}, credentials, err
-	}
-	for _, value := range list {
-		if value.Name == buyer.Name && value.Tel == buyer.Tel {
-			buyer.BuyerID = value.BuyerID
-			return buyer, credentials, nil
-		}
-	}
-	return domain.Buyer{}, credentials, fmt.Errorf("created buyer was not returned by API")
-}
+// biliProvisioner has been replaced by WorkerProvisioner in worker_provisioner.go.
+// Buyer CRUD is now delegated to workers via gRPC instead of calling the
+// Bilibili API directly from the employer process.

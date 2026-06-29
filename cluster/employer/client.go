@@ -387,6 +387,59 @@ func (c *WorkerClient) Configure(ctx context.Context, node domain.WorkerNode, re
 	return err
 }
 
+// ListBuyers fetches all real-name buyers from a worker that proxies
+// the Bilibili API. Returns the buyers and refreshed credentials.
+func (c *WorkerClient) ListBuyers(ctx context.Context, node domain.WorkerNode, creds domain.Credentials) ([]domain.Buyer, domain.Credentials, error) {
+	cli, err := c.getClient(node)
+	if err != nil {
+		return nil, domain.Credentials{}, err
+	}
+	resp, err := cli.ListBuyers(ctx, &pb.ListBuyersRequest{
+		Credentials: credentialsToProto(creds),
+	})
+	if err != nil {
+		return nil, domain.Credentials{}, err
+	}
+	buyers := make([]domain.Buyer, len(resp.Buyers))
+	for i, b := range resp.Buyers {
+		buyers[i] = buyerFromProto(b)
+	}
+	return buyers, credentialsFromProto(resp.Credentials), nil
+}
+
+// CreateBuyer creates a new real-name buyer on the target Bilibili account
+// via the worker. Returns the created buyer and refreshed credentials.
+func (c *WorkerClient) CreateBuyer(ctx context.Context, node domain.WorkerNode, creds domain.Credentials, buyer domain.Buyer) (domain.Buyer, domain.Credentials, error) {
+	cli, err := c.getClient(node)
+	if err != nil {
+		return domain.Buyer{}, domain.Credentials{}, err
+	}
+	resp, err := cli.CreateBuyer(ctx, &pb.CreateBuyerRequest{
+		Credentials: credentialsToProto(creds),
+		Buyer:       buyerToProto2(buyer),
+	})
+	if err != nil {
+		return domain.Buyer{}, domain.Credentials{}, err
+	}
+	return buyerFromProto(resp.Buyer), credentialsFromProto(resp.Credentials), nil
+}
+
+// GetBuyerSensitiveData fetches unmasked buyer details from a worker.
+func (c *WorkerClient) GetBuyerSensitiveData(ctx context.Context, node domain.WorkerNode, creds domain.Credentials, buyerID int64) (domain.Buyer, error) {
+	cli, err := c.getClient(node)
+	if err != nil {
+		return domain.Buyer{}, err
+	}
+	resp, err := cli.GetBuyerSensitiveData(ctx, &pb.GetBuyerSensitiveDataRequest{
+		Credentials: credentialsToProto(creds),
+		BuyerId:     buyerID,
+	})
+	if err != nil {
+		return domain.Buyer{}, err
+	}
+	return buyerFromProto(resp.Buyer), nil
+}
+
 func (c *WorkerClient) Health(ctx context.Context, node domain.WorkerNode) (map[string]any, error) {
 	version := global.GitCommit
 	if version == "Development" {
@@ -630,4 +683,41 @@ func credentialsFromProto(p *pb.Credentials) domain.Credentials {
 		})
 	}
 	return c
+}
+
+func credentialsToProto(c domain.Credentials) *pb.Credentials {
+	p := &pb.Credentials{
+		Cookies:      c.Cookies,
+		RefreshToken: c.RefreshToken,
+		Version:      c.Version,
+	}
+	if len(c.DeviceProfile) > 0 {
+		p.DeviceProfile = c.DeviceProfile
+	}
+	for _, hc := range c.CookieJar {
+		p.CookieJar = append(p.CookieJar, &pb.HTTPCookie{
+			Name:     hc.Name,
+			Value:    hc.Value,
+			Domain:   hc.Domain,
+			Path:     hc.Path,
+			Secure:   hc.Secure,
+			HttpOnly: hc.HTTPOnly,
+			Expires:  hc.Expires,
+		})
+	}
+	return p
+}
+
+func buyerFromProto(p *pb.Buyer) domain.Buyer {
+	if p == nil {
+		return domain.Buyer{}
+	}
+	return domain.Buyer{
+		LogicalID: p.LogicalId,
+		BuyerID:   p.BuyerId,
+		Name:      p.Name,
+		Tel:       p.Tel,
+		IDCard:    p.IdCard,
+		Type:      int(p.Type),
+	}
 }

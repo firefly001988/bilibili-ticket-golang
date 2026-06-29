@@ -71,6 +71,7 @@ type WorkerSummary struct {
 	Enabled              bool               `json:"enabled"`
 	Healthy              bool               `json:"healthy"`
 	SkipVersionCheck     bool               `json:"skipVersionCheck"`
+	VersionBlocked       bool               `json:"versionBlocked"` // Health passed but protocol version mismatched
 	ActiveAttemptID      string             `json:"activeAttemptId,omitempty"`
 	Version              string             `json:"version,omitempty"`
 	BilibiliOffsetMs     int64              `json:"bilibiliOffsetMs"` // worker clock offset to Bilibili API (ms)
@@ -99,6 +100,40 @@ type AttemptSummary struct {
 	Reason     domain.FailureReason `json:"reason,omitempty"`
 }
 
+// ClusterEventKind categorises a cluster-wide event for the unified log.
+type ClusterEventKind string
+
+const (
+	EventWorkerConnected    ClusterEventKind = "worker_connected"
+	EventWorkerDisconnected ClusterEventKind = "worker_disconnected"
+	EventWorkerHealthy      ClusterEventKind = "worker_healthy"
+	EventWorkerUnhealthy    ClusterEventKind = "worker_unhealthy"
+	EventTaskCompleted      ClusterEventKind = "task_completed"
+	EventTaskFailed         ClusterEventKind = "task_failed"
+	EventHeartbeatTimeout   ClusterEventKind = "heartbeat_timeout"
+	EventHeartbeatLatency   ClusterEventKind = "heartbeat_latency"
+	EventWorkerInfo         ClusterEventKind = "worker_info"
+)
+
+// ClusterEvent is a single entry in the unified cluster event feed.
+type ClusterEvent struct {
+	Time      time.Time        `json:"time"`
+	Kind      ClusterEventKind `json:"kind"`
+	WorkerID  string           `json:"workerId"`
+	Stage     string           `json:"stage"`
+	Message   string           `json:"message"`
+	OrderID   string           `json:"orderId,omitempty"`
+	AttemptID string           `json:"attemptId,omitempty"`
+	Code      int              `json:"code"`
+	Retryable bool             `json:"retryable"`
+}
+
+// ClusterEventLog is the accumulation of cluster-scoped events pushed to
+// the frontend on demand.
+type ClusterEventLog struct {
+	Events []ClusterEvent `json:"events"`
+}
+
 // IntentSummary exposes an armed intent for the UI dispatch log.
 type IntentSummary struct {
 	ID              string               `json:"id"`
@@ -121,18 +156,22 @@ type IntentSummary struct {
 // dispatcher, account manager, worker client, and local worker manager,
 // and exposes high-level operations to the Wails frontend.
 type ClusterService struct {
-	repository    *clusterstorage.Repository
-	client        *employer.WorkerClient
-	dispatcher    *dispatcher.Dispatcher
-	accounts      *accounts.Manager
-	local         employer.LocalWorkerManager
-	mu            sync.RWMutex
-	mainAccountMu sync.Mutex
-	phases        map[string]domain.Phase
-	loginSessions map[string]*accountLoginSession
-	catalog       *biliutils.BiliClient
-	cancel        context.CancelFunc
-	notify        func(string)
-	wailsApp      *application.App
-	globalCfg     globalConfig // pushed to all workers via Configure RPC
+	repository      *clusterstorage.Repository
+	client          *employer.WorkerClient
+	dispatcher      *dispatcher.Dispatcher
+	accounts        *accounts.Manager
+	provisioner     *WorkerProvisioner
+	local           employer.LocalWorkerManager
+	mu              sync.RWMutex
+	mainAccountMu   sync.Mutex
+	phases          map[string]domain.Phase
+	loginSessions   map[string]*accountLoginSession
+	catalog         *biliutils.BiliClient
+	cancel          context.CancelFunc
+	notify          func(string)
+	wailsApp        *application.App
+	globalCfg       globalConfig        // pushed to all workers via Configure RPC
+	workers         []domain.WorkerNode // cached worker list for provisioner
+	eventLog        []ClusterEvent      // aggregated event feed (ring buffer)
+	accountBindings map[string]string   // accountID → workerID (mutual exclusion)
 }

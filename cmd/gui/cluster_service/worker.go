@@ -33,6 +33,9 @@ func (s *ClusterService) AddWorker(document string) error {
 	if err := json.Unmarshal([]byte(document), &input); err != nil {
 		return err
 	}
+	if input.ID == "local" {
+		return fmt.Errorf("the local worker is automatically managed and cannot be added manually")
+	}
 	if input.ID == "" || input.Address == "" || input.ClientKey == "" {
 		return fmt.Errorf("id, address and clientKey are required")
 	}
@@ -170,7 +173,12 @@ func (s *ClusterService) UpdateWorker(document string) error {
 
 // AddLocalWorker creates and starts a new in-process local worker with
 // the given ID, name and listen address. If id is empty, one is generated.
+// The primary "local" worker is automatically managed — callers must not
+// attempt to create it manually.
 func (s *ClusterService) AddLocalWorker(id, name, listen string) error {
+	if id == "local" {
+		return fmt.Errorf("the local worker is automatically managed and cannot be added manually")
+	}
 	ctx := context.Background()
 	pluginName := ""
 	if _, statErr := os.Stat("plugins/captcha-plugin"); statErr == nil {
@@ -245,7 +253,11 @@ func (s *ClusterService) StartLocalWorker(workerID string) error {
 // the repository. The worker stays enabled so the frontend shows it as
 // "offline" with a start button. The gRPC client connection is closed
 // immediately so IsHealthy returns false right away.
+// The primary "local" worker can never be stopped.
 func (s *ClusterService) StopLocalWorker(workerID string) error {
+	if workerID == "local" {
+		return fmt.Errorf("the local worker cannot be stopped")
+	}
 	if err := s.local.StopWorker(workerID); err != nil {
 		return err
 	}

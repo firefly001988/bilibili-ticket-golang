@@ -36,8 +36,9 @@ func (cfg globalConfig) EffectiveStartDelay(fallback int64) int64 {
 }
 
 // LoadGlobalConfig reads the persisted global configuration from the
-// repository and applies it to the dispatcher. Call this after creating
-// the dispatcher to restore saved settings from disk.
+// repository and applies it to the dispatcher.  When no config has been
+// saved yet the defaults (retryInterval=500ms, startDelay=50ms) are
+// used and persisted immediately so the worker log never shows 0ms.
 func (s *ClusterService) LoadGlobalConfig(ctx context.Context) {
 	if s.repository == nil {
 		return
@@ -47,6 +48,13 @@ func (s *ClusterService) LoadGlobalConfig(ctx context.Context) {
 		log.Printf("[cluster] load global config failed: %v", err)
 		return
 	}
+	// Apply defaults when nothing has been persisted yet.
+	if retryMs <= 0 {
+		retryMs = 500
+	}
+	if startMs <= 0 {
+		startMs = 50
+	}
 
 	s.mu.Lock()
 	s.globalCfg.RetryIntervalMs = retryMs
@@ -55,6 +63,11 @@ func (s *ClusterService) LoadGlobalConfig(ctx context.Context) {
 
 	if s.dispatcher != nil {
 		s.dispatcher.SetGlobalConfig(retryMs, startMs)
+	}
+
+	// Persist the defaults so they survive restarts.
+	if s.repository != nil {
+		_ = s.repository.PutGlobalConfig(ctx, retryMs, startMs)
 	}
 
 	log.Printf("[cluster] loaded global config: retryInterval=%dms startDelay=%dms", retryMs, startMs)
@@ -78,11 +91,12 @@ func (s *ClusterService) SetRetryInterval(ms int) {
 
 	s.mu.Lock()
 	s.globalCfg.RetryIntervalMs = int64(ms)
+	startMs := s.globalCfg.StartDelayMs
 	s.mu.Unlock()
 
 	// Persist to disk.
 	if s.repository != nil {
-		if err := s.repository.PutGlobalConfig(context.Background(), int64(ms), s.globalCfg.StartDelayMs); err != nil {
+		if err := s.repository.PutGlobalConfig(context.Background(), int64(ms), startMs); err != nil {
 			log.Printf("[cluster] persist retry interval failed: %v", err)
 		}
 	}
@@ -120,11 +134,12 @@ func (s *ClusterService) SetStartDelay(ms int) {
 
 	s.mu.Lock()
 	s.globalCfg.StartDelayMs = int64(ms)
+	retryMs := s.globalCfg.RetryIntervalMs
 	s.mu.Unlock()
 
 	// Persist to disk.
 	if s.repository != nil {
-		if err := s.repository.PutGlobalConfig(context.Background(), s.globalCfg.RetryIntervalMs, int64(ms)); err != nil {
+		if err := s.repository.PutGlobalConfig(context.Background(), retryMs, int64(ms)); err != nil {
 			log.Printf("[cluster] persist start delay failed: %v", err)
 		}
 	}
@@ -157,7 +172,10 @@ func (s *ClusterService) pushGlobalConfigToAll(ctx context.Context) {
 		if !w.Enabled {
 			continue
 		}
-		if !s.client.IsHealthy(w.ID) {
+		// Remote workers require a healthy connection (heartbeat).
+		// Local workers may not have a heartbeat yet at startup,
+		// but their gRPC connection is always available in-process.
+		if w.Type == domain.WorkerTypeRemote && !s.client.IsHealthy(w.ID) {
 			continue
 		}
 		w := w

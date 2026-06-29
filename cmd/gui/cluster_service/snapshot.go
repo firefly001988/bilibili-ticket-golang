@@ -82,7 +82,6 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 			Name:             node.Name,
 			Address:          node.Address,
 			Type:             node.Type,
-			Version:          node.Version,
 			Enabled:          node.Enabled,
 			SkipVersionCheck: node.SkipVersionCheck,
 		}
@@ -125,6 +124,10 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 				}
 				if v, ok := health["ntpOffsetMs"].(int64); ok {
 					summary.NtpOffsetMs = v
+				}
+				// Explicit version-blocked flag from the protocol check.
+				if blocked, ok := health["protocolVersionOk"].(bool); ok && !blocked {
+					summary.VersionBlocked = true
 				}
 			}
 			// If Health succeeded (versions match) and this worker was

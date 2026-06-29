@@ -96,7 +96,11 @@ func (m *LocalWorkerManager) StartWorker(ctx context.Context, client *WorkerClie
 // (which terminates all active streams including heartbeats) and closing
 // the listener.  The slot is preserved so StartWorker can read the saved
 // node name, address and data directory for restart.
+// The primary "local" worker can never be stopped.
 func (m *LocalWorkerManager) StopWorker(workerID string) error {
+	if workerID == "local" {
+		return fmt.Errorf("the local worker cannot be stopped")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.slots == nil {
@@ -120,8 +124,12 @@ func (m *LocalWorkerManager) StopWorker(workerID string) error {
 	return nil
 }
 
-// RemoveWorker stops and permanently removes a worker.
+// RemoveWorker stops and permanently removes a worker. The primary
+// "local" worker can never be removed — it must always exist.
 func (m *LocalWorkerManager) RemoveWorker(workerID string) error {
+	if workerID == "local" {
+		return fmt.Errorf("the local worker cannot be removed")
+	}
 	return m.StopWorker(workerID)
 }
 

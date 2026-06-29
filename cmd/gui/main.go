@@ -194,24 +194,21 @@ func main() {
 		log.Fatalf("[main] Failed to start cluster service: %v", err)
 	}
 
-	// Scheduler service — orchestrates tasks, BiliClient, LogBroker and ticket storage
-	schedSvc := scheduler.NewSchedulerService(c, logBroker, store.TicketData, store.BWSData, notifier, store.NotifyChData, store)
+	// Scheduler service — BWS (Bilibili World) reservations and
+	// notification‑channel management.
+	schedSvc := scheduler.NewSchedulerService(c, logBroker, store.BWSData, notifier, store.NotifyChData, store)
 
 	// App instance for frontend verification & misc utilities
 	app := NewAppWithClientAndStore(c, store)
 
 	defer func() {
 		clusterSvc.Close()
-		schedSvc.StopClockCalibration()
 		c.PersistCookies()
 		logBroker.FlushLogs()
 	}()
 
-	// Membership ticket execution is owned by ClusterService. BWS remains local.
+	// Recover persisted BWS reservations on startup.
 	schedSvc.ReloadBWSTasks()
-
-	// Start periodic clock calibration against Bilibili server (every 10s)
-	schedSvc.StartClockCalibration()
 
 	// Keep tickets persisted on change
 	store.TicketData.SetChangeCallback(func(_ configuration.TicketEntry) {

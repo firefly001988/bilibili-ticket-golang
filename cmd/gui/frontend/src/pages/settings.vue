@@ -5,7 +5,7 @@ import { useMessagesStore } from '@/stores/snackbar'
 import {
     GetRetryInterval, SetRetryInterval,
     GetStartDelay, SetStartDelay,
-} from '../../bindings/bilibili-ticket-golang/lib/biliutils/scheduler/schedulerservice'
+} from '../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t, locale } = useI18n()
 const messages = useMessagesStore()

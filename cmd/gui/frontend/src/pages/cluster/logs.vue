@@ -220,8 +220,8 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
                     <v-card-item class="py-2 px-4">
                         <template #title><span class="text-subtitle-2">{{ t('logs.attempts') }}</span></template>
                         <template #append>
-                            <v-btn v-if="selectedIds.length > 0" size="x-small" color="error" variant="tonal"
-                                :loading="deleting" @click="deleteSelected" class="mr-2">
+                            <v-btn v-if="selectedIds.length > 0" color="error" variant="tonal" :loading="deleting"
+                                @click="deleteSelected" class="mr-2">
                                 {{ t('logs.deleteSelected', { count: selectedIds.length }) }}
                             </v-btn>
                             <v-select v-model="stateFilter" :items="stateOptions" density="compact" variant="outlined"
@@ -262,7 +262,7 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
 
                 <!-- Log viewer (below attempt table, same column) -->
                 <v-card v-if="selectedAttemptId" elevation="2" class="mt-4">
-                    <v-card-item class="py-2 px-4 bg-surface-variant">
+                    <v-card-item class="py-2 px-4">
                         <template #prepend>
                             <v-icon :color="stateColor(selectedAttempt?.state || '')" size="20">{{
                                 stateIcon(selectedAttempt?.state || '') }}</v-icon>
