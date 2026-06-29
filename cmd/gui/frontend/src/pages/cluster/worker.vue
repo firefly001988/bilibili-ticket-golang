@@ -597,7 +597,7 @@ async function cancelBatchDeploy() {
                 <v-btn prepend-icon="mdi-cloud-upload-outline" variant="tonal" color="success" @click="openBatchDeploy">
                     {{ t('worker.batchDeploy') }}
                 </v-btn>
-                <v-btn prepend-icon="mdi-import" variant="tonal" @click="showImportDialog = true">
+                <v-btn prepend-icon="mdi-import" variant="tonal" class="ml-2" @click="showImportDialog = true">
                     {{ t('worker.importWorker') }}
                 </v-btn>
                 <v-btn prepend-icon="mdi-cog-outline" variant="tonal" color="info" class="ml-2"
@@ -902,12 +902,12 @@ async function cancelBatchDeploy() {
                                 <td><v-text-field v-model="target.host" density="compact" hide-details
                                         placeholder="1.2.3.4" /></td>
                                 <td><v-text-field v-model.number="target.sshPort" type="number" density="compact"
-                                        hide-details /></td>
+                                        hide-details class="no-spin" /></td>
                                 <td><v-text-field v-model="target.username" density="compact" hide-details /></td>
                                 <td><v-text-field v-model="target.password" type="password" density="compact"
                                         hide-details /></td>
                                 <td><v-text-field v-model.number="target.workerPort" type="number" density="compact"
-                                        hide-details /></td>
+                                        hide-details class="no-spin" /></td>
                                 <td><v-text-field v-model="target.name" density="compact" hide-details
                                         :placeholder="t('worker.deployAuto')" /></td>
                                 <td><v-text-field v-model="target.workerId" density="compact" hide-details
@@ -966,7 +966,8 @@ async function cancelBatchDeploy() {
                                     <v-col cols="12" md="3">
                                         <v-text-field v-model.number="deployConcurrency" type="number"
                                             :label="t('worker.deployConcurrency')" variant="outlined"
-                                            density="compact" min="1" max="10" />
+                                            density="compact" min="1" max="10" :hint="t('worker.deployConcurrencyHint')"
+                                            persistent-hint />
                                     </v-col>
                                     <v-col cols="12" md="6">
                                         <v-switch v-model="deployOverwriteBinary"
@@ -1216,3 +1217,16 @@ async function cancelBatchDeploy() {
         </v-dialog>
     </v-container>
 </template>
+
+<style scoped>
+.no-spin :deep(input[type='number']) {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.no-spin :deep(input[type='number']::-webkit-outer-spin-button),
+.no-spin :deep(input[type='number']::-webkit-inner-spin-button) {
+    -webkit-appearance: none;
+    margin: 0;
+}
+</style>

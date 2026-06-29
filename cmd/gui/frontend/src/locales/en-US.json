@@ -124,6 +124,7 @@
         "deployInstallDir": "Remote install directory",
         "deployStartMode": "Start mode",
         "deployConcurrency": "Deploy concurrency",
+        "deployConcurrencyHint": "Number of servers deployed in parallel; it does not affect ticketing concurrency.",
         "deployOverwriteBinary": "Overwrite existing worker binary",
         "deployRestartExisting": "Restart existing worker",
         "deployProgress": "Deployment Progress",
