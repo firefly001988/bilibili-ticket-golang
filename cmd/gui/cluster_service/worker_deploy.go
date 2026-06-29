@@ -33,7 +33,8 @@ const (
 
 type RemoteWorkerDeployRequest struct {
 	Targets           []RemoteWorkerDeployTarget `json:"targets"`
-	BinarySource      string                     `json:"binarySource"` // local | url
+	PackageType       string                     `json:"packageType,omitempty"` // binary | targz
+	BinarySource      string                     `json:"binarySource"`          // local | url
 	LocalBinaryPath   string                     `json:"localBinaryPath,omitempty"`
 	DownloadURL       string                     `json:"downloadUrl,omitempty"`
 	InstallDir        string                     `json:"installDir,omitempty"`
@@ -87,7 +88,7 @@ func (s *ClusterService) SelectWorkerBinary() (string, error) {
 		return "", fmt.Errorf("file dialog is not available")
 	}
 	return s.wailsApp.Dialog.OpenFile().
-		SetTitle("选择 ticket-worker 二进制").
+		SetTitle("选择 ticket-worker 文件").
 		CanChooseFiles(true).
 		CanChooseDirectories(false).
 		PromptForSingleSelection()
@@ -104,9 +105,9 @@ func (s *ClusterService) StartBatchDeployRemoteWorkers(document string) (string,
 	}
 	if req.BinarySource == "local" {
 		if stat, err := os.Stat(req.LocalBinaryPath); err != nil {
-			return "", fmt.Errorf("local worker binary is not readable: %w", err)
+			return "", fmt.Errorf("local worker package is not readable: %w", err)
 		} else if stat.IsDir() {
-			return "", fmt.Errorf("local worker binary path is a directory")
+			return "", fmt.Errorf("local worker package path is a directory")
 		}
 	}
 
@@ -163,9 +164,16 @@ func (s *ClusterService) CancelRemoteWorkerDeployJob(jobID string) error {
 }
 
 func normalizeDeployRequest(req *RemoteWorkerDeployRequest) {
+	req.PackageType = strings.TrimSpace(strings.ToLower(req.PackageType))
+	if req.PackageType == "" {
+		req.PackageType = "binary"
+	}
 	req.BinarySource = strings.TrimSpace(strings.ToLower(req.BinarySource))
 	if req.BinarySource == "" {
 		req.BinarySource = "local"
+	}
+	if req.PackageType == "targz" {
+		req.SaveTraffic = false
 	}
 	req.LocalBinaryPath = strings.TrimSpace(req.LocalBinaryPath)
 	req.DownloadURL = strings.TrimSpace(req.DownloadURL)
@@ -214,11 +222,14 @@ func validateDeployRequest(req RemoteWorkerDeployRequest) error {
 	if len(req.Targets) == 0 {
 		return fmt.Errorf("at least one remote server is required")
 	}
+	if req.PackageType != "binary" && req.PackageType != "targz" {
+		return fmt.Errorf("packageType must be binary or targz")
+	}
 	if req.BinarySource != "local" && req.BinarySource != "url" {
 		return fmt.Errorf("binarySource must be local or url")
 	}
 	if req.BinarySource == "local" && req.LocalBinaryPath == "" {
-		return fmt.Errorf("local worker binary path is required")
+		return fmt.Errorf("local worker package path is required")
 	}
 	if req.BinarySource == "url" && req.DownloadURL == "" {
 		return fmt.Errorf("remote download URL is required")
@@ -297,14 +308,14 @@ func (s *ClusterService) deployOneRemoteWorker(ctx context.Context, jobID string
 	}
 
 	if req.BinarySource == "local" {
-		s.updateDeployItem(jobID, index, "install_binary", deployStatusRunning, "uploading worker binary", false)
-		if err := s.uploadWorkerBinary(ctx, client, req, commandTimeout); err != nil {
+		s.updateDeployItem(jobID, index, "install_binary", deployStatusRunning, "uploading worker package", false)
+		if err := s.uploadLocalWorkerPackage(ctx, client, req, commandTimeout); err != nil {
 			return err
 		}
 	} else {
-		s.updateDeployItem(jobID, index, "install_binary", deployStatusRunning, "downloading worker binary on remote host", false)
-		if err := runDeployScript(ctx, client, remoteDownloadScript(req.InstallDir, req.DownloadURL, req.OverwriteBinary), nil, commandTimeout); err != nil {
-			return fmt.Errorf("download worker binary: %w", err)
+		s.updateDeployItem(jobID, index, "install_binary", deployStatusRunning, "downloading worker package on remote host", false)
+		if err := s.downloadRemoteWorkerPackage(ctx, client, req, commandTimeout); err != nil {
+			return err
 		}
 	}
 
@@ -335,7 +346,7 @@ func (s *ClusterService) deployOneRemoteWorker(ctx context.Context, jobID string
 	return nil
 }
 
-func (s *ClusterService) uploadWorkerBinary(ctx context.Context, client *ssh.Client, req RemoteWorkerDeployRequest, timeout time.Duration) error {
+func (s *ClusterService) uploadLocalWorkerPackage(ctx context.Context, client *ssh.Client, req RemoteWorkerDeployRequest, timeout time.Duration) error {
 	if !req.OverwriteBinary {
 		if err := runDeployScript(ctx, client, remoteBinaryExistsGuardScript(req.InstallDir), nil, timeout); err != nil {
 			return fmt.Errorf("remote worker binary already exists: %w", err)
@@ -343,24 +354,42 @@ func (s *ClusterService) uploadWorkerBinary(ctx context.Context, client *ssh.Cli
 	}
 	file, err := os.Open(req.LocalBinaryPath)
 	if err != nil {
-		return fmt.Errorf("open local worker binary: %w", err)
+		return fmt.Errorf("open local worker package: %w", err)
 	}
 	defer file.Close()
-	if req.SaveTraffic {
+	switch {
+	case req.PackageType == "targz":
+		if err := runDeployScript(ctx, client, remoteUploadArchiveScript(req.InstallDir), file, timeout); err != nil {
+			return fmt.Errorf("upload worker tar.gz: %w", err)
+		}
+	case req.SaveTraffic:
 		compressed, compressErr := gzipTarSingleFile(ctx, req.LocalBinaryPath, "ticket-worker.new")
 		if compressErr != nil {
 			return compressErr
 		}
-		if err := runDeployScript(ctx, client, remoteUploadCompressedScript(req.InstallDir), compressed, timeout); err != nil {
+		if err := runDeployScript(ctx, client, remoteUploadArchiveScript(req.InstallDir), compressed, timeout); err != nil {
 			return fmt.Errorf("upload compressed worker binary: %w", err)
 		}
-	} else {
+	default:
 		if err := runDeployScript(ctx, client, remoteUploadScript(req.InstallDir), file, timeout); err != nil {
 			return fmt.Errorf("upload worker binary: %w", err)
 		}
 	}
 	if err := runDeployScript(ctx, client, remoteInstallUploadedScript(req.InstallDir, req.OverwriteBinary), nil, timeout); err != nil {
 		return fmt.Errorf("install uploaded worker binary: %w", err)
+	}
+	return nil
+}
+
+func (s *ClusterService) downloadRemoteWorkerPackage(ctx context.Context, client *ssh.Client, req RemoteWorkerDeployRequest, timeout time.Duration) error {
+	if req.PackageType == "targz" {
+		if err := runDeployScript(ctx, client, remoteDownloadArchiveScript(req.InstallDir, req.DownloadURL, req.OverwriteBinary), nil, timeout); err != nil {
+			return fmt.Errorf("download worker tar.gz: %w", err)
+		}
+		return nil
+	}
+	if err := runDeployScript(ctx, client, remoteDownloadScript(req.InstallDir, req.DownloadURL, req.OverwriteBinary), nil, timeout); err != nil {
+		return fmt.Errorf("download worker binary: %w", err)
 	}
 	return nil
 }
@@ -493,13 +522,31 @@ chmod 0600 "$INSTALL_DIR/ticket-worker.new"
 `
 }
 
-func remoteUploadCompressedScript(installDir string) string {
+func remoteUploadArchiveScript(installDir string) string {
 	return remoteInstallDirAssignment(installDir) + `
 set -e
 mkdir -p "$INSTALL_DIR"
 cat > "$INSTALL_DIR/ticket-worker.tar.gz.new"
-tar -xzf "$INSTALL_DIR/ticket-worker.tar.gz.new" -C "$INSTALL_DIR"
+unpack_dir="$INSTALL_DIR/.ticket-worker-unpack"
+rm -rf "$unpack_dir"
+mkdir -p "$unpack_dir"
+tar -xzf "$INSTALL_DIR/ticket-worker.tar.gz.new" -C "$unpack_dir"
 rm -f "$INSTALL_DIR/ticket-worker.tar.gz.new"
+candidate=""
+if [ -f "$unpack_dir/ticket-worker" ]; then
+  candidate="$unpack_dir/ticket-worker"
+elif [ -f "$unpack_dir/ticket-worker.new" ]; then
+  candidate="$unpack_dir/ticket-worker.new"
+else
+  candidate="$(find "$unpack_dir" -type f | head -n 1)"
+fi
+if [ -z "$candidate" ] || [ ! -f "$candidate" ]; then
+  echo "worker tar.gz does not contain a regular file"
+  rm -rf "$unpack_dir"
+  exit 23
+fi
+cp "$candidate" "$INSTALL_DIR/ticket-worker.new"
+rm -rf "$unpack_dir"
 chmod 0600 "$INSTALL_DIR/ticket-worker.new"
 `
 }
@@ -532,6 +579,53 @@ elif command -v wget >/dev/null 2>&1; then
 else
   echo "curl or wget is required for remote download"
   exit 18
+fi
+mv "$INSTALL_DIR/ticket-worker.new" "$INSTALL_DIR/ticket-worker"
+chmod 0755 "$INSTALL_DIR/ticket-worker"
+"$INSTALL_DIR/ticket-worker" version >/dev/null
+`
+}
+
+func remoteDownloadArchiveScript(installDir, url string, overwrite bool) string {
+	return remoteInstallDirAssignment(installDir) + boolAssignment("OVERWRITE", overwrite) + "URL=" + shellQuote(url) + `
+set -e
+if [ -f "$INSTALL_DIR/ticket-worker" ] && [ "$OVERWRITE" != "1" ]; then
+  echo "ticket-worker already exists; enable overwrite to replace it"
+  exit 17
+fi
+mkdir -p "$INSTALL_DIR"
+if command -v curl >/dev/null 2>&1; then
+  curl -fL --retry 3 -o "$INSTALL_DIR/ticket-worker.tar.gz.new" "$URL"
+elif command -v wget >/dev/null 2>&1; then
+  wget -O "$INSTALL_DIR/ticket-worker.tar.gz.new" "$URL"
+else
+  echo "curl or wget is required for remote download"
+  exit 18
+fi
+unpack_dir="$INSTALL_DIR/.ticket-worker-unpack"
+rm -rf "$unpack_dir"
+mkdir -p "$unpack_dir"
+tar -xzf "$INSTALL_DIR/ticket-worker.tar.gz.new" -C "$unpack_dir"
+rm -f "$INSTALL_DIR/ticket-worker.tar.gz.new"
+candidate=""
+if [ -f "$unpack_dir/ticket-worker" ]; then
+  candidate="$unpack_dir/ticket-worker"
+elif [ -f "$unpack_dir/ticket-worker.new" ]; then
+  candidate="$unpack_dir/ticket-worker.new"
+else
+  candidate="$(find "$unpack_dir" -type f | head -n 1)"
+fi
+if [ -z "$candidate" ] || [ ! -f "$candidate" ]; then
+  echo "worker tar.gz does not contain a regular file"
+  rm -rf "$unpack_dir"
+  exit 23
+fi
+cp "$candidate" "$INSTALL_DIR/ticket-worker.new"
+rm -rf "$unpack_dir"
+if [ -f "$INSTALL_DIR/ticket-worker" ] && [ "$OVERWRITE" != "1" ]; then
+  rm -f "$INSTALL_DIR/ticket-worker.new"
+  echo "ticket-worker already exists; enable overwrite to replace it"
+  exit 17
 fi
 mv "$INSTALL_DIR/ticket-worker.new" "$INSTALL_DIR/ticket-worker"
 chmod 0755 "$INSTALL_DIR/ticket-worker"

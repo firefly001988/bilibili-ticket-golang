@@ -140,6 +140,7 @@ const connecting = ref<Record<string, boolean>>({})
 // Batch deploy dialog
 const showBatchDeployDialog = ref(false)
 const deployTargets = ref<DeployTarget[]>([])
+const deployPackageType = ref<'binary' | 'targz'>('binary')
 const deployBinarySource = ref<'local' | 'url'>('local')
 const deployLocalBinaryPath = ref('')
 const deployDownloadUrl = ref('')
@@ -509,6 +510,15 @@ const deployableTargets = computed(() => deployTargets.value
     .filter(entry => entry.target.host.trim()))
 
 const hasDeployableTargets = computed(() => deployableTargets.value.length > 0)
+const deployLocalPathLabel = computed(() => deployPackageType.value === 'targz'
+    ? t('worker.deployLocalTarGzPath')
+    : t('worker.deployLocalBinaryPath'))
+const deployDownloadUrlLabel = computed(() => deployPackageType.value === 'targz'
+    ? t('worker.deployTarGzDownloadUrl')
+    : t('worker.deployDownloadUrl'))
+const deployDownloadUrlPlaceholder = computed(() => deployPackageType.value === 'targz'
+    ? 'https://example.com/ticket-worker-linux-amd64.tar.gz'
+    : 'https://example.com/ticket-worker-linux-amd64')
 
 function heartbeatColor(ms: number) {
     if (ms <= 2000) return 'success'
@@ -540,7 +550,7 @@ function validateDeployForm(): boolean {
         }
     }
     if (deployBinarySource.value === 'local' && !deployLocalBinaryPath.value.trim()) {
-        messages.add({ text: t('worker.deployNeedLocalBinary'), color: 'warning' })
+        messages.add({ text: t('worker.deployNeedLocalPackage'), color: 'warning' })
         return false
     }
     if (deployBinarySource.value === 'url' && !deployDownloadUrl.value.trim()) {
@@ -567,6 +577,7 @@ async function startBatchDeploy() {
                 name: t.name.trim(),
                 workerId: t.workerId.trim(),
             })),
+            packageType: deployPackageType.value,
             binarySource: deployBinarySource.value,
             localBinaryPath: deployLocalBinaryPath.value.trim(),
             downloadUrl: deployDownloadUrl.value.trim(),
@@ -574,7 +585,7 @@ async function startBatchDeploy() {
             startMode: deployStartMode.value || 'nohup',
             overwriteBinary: deployOverwriteBinary.value,
             restartExisting: deployRestartExisting.value,
-            saveTraffic: deploySaveTraffic.value,
+            saveTraffic: deployPackageType.value === 'binary' && deployBinarySource.value === 'local' && deploySaveTraffic.value,
             concurrency: Number(deployConcurrency.value) || 3,
         }
         const jobID = await StartBatchDeployRemoteWorkers(JSON.stringify(payload))
@@ -983,15 +994,22 @@ async function cancelBatchDeploy() {
                     </v-btn>
 
                     <v-row dense>
-                        <v-col cols="12" md="4">
+                        <v-col cols="12" md="3">
+                            <v-radio-group v-model="deployPackageType" :label="t('worker.deployPackageType')"
+                                density="compact">
+                                <v-radio :label="t('worker.deployPackageBinary')" value="binary" />
+                                <v-radio :label="t('worker.deployPackageTarGz')" value="targz" />
+                            </v-radio-group>
+                        </v-col>
+                        <v-col cols="12" md="3">
                             <v-radio-group v-model="deployBinarySource" :label="t('worker.deployBinarySource')"
                                 density="compact">
                                 <v-radio :label="t('worker.deployBinaryLocal')" value="local" />
                                 <v-radio :label="t('worker.deployBinaryUrl')" value="url" />
                             </v-radio-group>
                         </v-col>
-                        <v-col v-if="deployBinarySource === 'local'" cols="12" md="8">
-                            <v-text-field v-model="deployLocalBinaryPath" :label="t('worker.deployLocalBinaryPath')"
+                        <v-col v-if="deployBinarySource === 'local'" cols="12" md="6">
+                            <v-text-field v-model="deployLocalBinaryPath" :label="deployLocalPathLabel"
                                 variant="outlined" density="compact" class="mb-2">
                                 <template #append>
                                     <v-btn variant="tonal" size="small" @click="chooseWorkerBinary">
@@ -1000,10 +1018,9 @@ async function cancelBatchDeploy() {
                                 </template>
                             </v-text-field>
                         </v-col>
-                        <v-col v-else cols="12" md="8">
-                            <v-text-field v-model="deployDownloadUrl" :label="t('worker.deployDownloadUrl')"
-                                placeholder="https://example.com/ticket-worker-linux-amd64" variant="outlined"
-                                density="compact" />
+                        <v-col v-else cols="12" md="6">
+                            <v-text-field v-model="deployDownloadUrl" :label="deployDownloadUrlLabel"
+                                :placeholder="deployDownloadUrlPlaceholder" variant="outlined" density="compact" />
                         </v-col>
                     </v-row>
 
@@ -1037,7 +1054,8 @@ async function cancelBatchDeploy() {
                                         <v-switch v-model="deployRestartExisting"
                                             :label="t('worker.deployRestartExisting')" color="primary" />
                                     </v-col>
-                                    <v-col v-if="deployBinarySource === 'local'" cols="12">
+                                    <v-col v-if="deployPackageType === 'binary' && deployBinarySource === 'local'"
+                                        cols="12">
                                         <v-switch v-model="deploySaveTraffic" :label="t('worker.deploySaveTraffic')"
                                             :hint="t('worker.deploySaveTrafficHint')" persistent-hint color="primary" />
                                     </v-col>
