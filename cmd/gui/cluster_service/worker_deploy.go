@@ -1,7 +1,9 @@
 package cluster_service
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -35,9 +37,10 @@ type RemoteWorkerDeployRequest struct {
 	LocalBinaryPath   string                     `json:"localBinaryPath,omitempty"`
 	DownloadURL       string                     `json:"downloadUrl,omitempty"`
 	InstallDir        string                     `json:"installDir,omitempty"`
-	StartMode         string                     `json:"startMode,omitempty"` // first version: nohup
+	StartMode         string                     `json:"startMode,omitempty"` // nohup or systemd-user
 	OverwriteBinary   bool                       `json:"overwriteBinary"`
 	RestartExisting   bool                       `json:"restartExisting"`
+	SaveTraffic       bool                       `json:"saveTraffic"`
 	Concurrency       int                        `json:"concurrency,omitempty"`
 	ConnectionTimeout int                        `json:"connectionTimeoutSec,omitempty"`
 	CommandTimeout    int                        `json:"commandTimeoutSec,omitempty"`
@@ -199,7 +202,7 @@ func normalizeDeployRequest(req *RemoteWorkerDeployRequest) {
 			t.WorkerPort = 37900
 		}
 		if t.WorkerID == "" {
-			t.WorkerID = generatedWorkerID(t.Host, i)
+			t.WorkerID = generatedWorkerID(t.Host)
 		}
 		if t.Name == "" {
 			t.Name = t.WorkerID
@@ -220,7 +223,7 @@ func validateDeployRequest(req RemoteWorkerDeployRequest) error {
 	if req.BinarySource == "url" && req.DownloadURL == "" {
 		return fmt.Errorf("remote download URL is required")
 	}
-	if req.StartMode != "nohup" {
+	if req.StartMode != "nohup" && req.StartMode != "systemd-user" {
 		return fmt.Errorf("unsupported start mode %q", req.StartMode)
 	}
 	seenWorkerIDs := make(map[string]struct{}, len(req.Targets))
@@ -318,7 +321,7 @@ func (s *ClusterService) deployOneRemoteWorker(ctx context.Context, jobID string
 	}
 
 	s.updateDeployItem(jobID, index, "start_worker", deployStatusRunning, "starting worker", false)
-	if err := runDeployScript(ctx, client, remoteStartScript(req.InstallDir, req.RestartExisting), nil, commandTimeout); err != nil {
+	if err := runDeployScript(ctx, client, remoteStartScript(req.InstallDir, req.StartMode, req.RestartExisting), nil, commandTimeout); err != nil {
 		return fmt.Errorf("start worker: %w", err)
 	}
 
@@ -343,13 +346,71 @@ func (s *ClusterService) uploadWorkerBinary(ctx context.Context, client *ssh.Cli
 		return fmt.Errorf("open local worker binary: %w", err)
 	}
 	defer file.Close()
-	if err := runDeployScript(ctx, client, remoteUploadScript(req.InstallDir), file, timeout); err != nil {
-		return fmt.Errorf("upload worker binary: %w", err)
+	if req.SaveTraffic {
+		compressed, compressErr := gzipTarSingleFile(ctx, req.LocalBinaryPath, "ticket-worker.new")
+		if compressErr != nil {
+			return compressErr
+		}
+		if err := runDeployScript(ctx, client, remoteUploadCompressedScript(req.InstallDir), compressed, timeout); err != nil {
+			return fmt.Errorf("upload compressed worker binary: %w", err)
+		}
+	} else {
+		if err := runDeployScript(ctx, client, remoteUploadScript(req.InstallDir), file, timeout); err != nil {
+			return fmt.Errorf("upload worker binary: %w", err)
+		}
 	}
 	if err := runDeployScript(ctx, client, remoteInstallUploadedScript(req.InstallDir, req.OverwriteBinary), nil, timeout); err != nil {
 		return fmt.Errorf("install uploaded worker binary: %w", err)
 	}
 	return nil
+}
+
+func gzipTarSingleFile(ctx context.Context, sourcePath, entryName string) (io.Reader, error) {
+	stat, err := os.Stat(sourcePath)
+	if err != nil {
+		return nil, fmt.Errorf("stat local worker binary: %w", err)
+	}
+	pr, pw := io.Pipe()
+	go func() {
+		var pipeErr error
+		defer func() {
+			_ = pw.CloseWithError(pipeErr)
+		}()
+		file, err := os.Open(sourcePath)
+		if err != nil {
+			pipeErr = fmt.Errorf("open local worker binary: %w", err)
+			return
+		}
+		defer file.Close()
+		gz := gzip.NewWriter(pw)
+		tw := tar.NewWriter(gz)
+		header := &tar.Header{
+			Name:    entryName,
+			Mode:    0600,
+			Size:    stat.Size(),
+			ModTime: stat.ModTime(),
+		}
+		if err = tw.WriteHeader(header); err != nil {
+			pipeErr = err
+			return
+		}
+		if _, err = io.Copy(tw, file); err != nil {
+			pipeErr = err
+			return
+		}
+		if err = tw.Close(); err != nil {
+			pipeErr = err
+			return
+		}
+		if err = gz.Close(); err != nil {
+			pipeErr = err
+			return
+		}
+		if err = ctx.Err(); err != nil {
+			pipeErr = err
+		}
+	}()
+	return pr, nil
 }
 
 func dialDeploySSH(target RemoteWorkerDeployTarget, timeout time.Duration) (*ssh.Client, error) {
@@ -432,6 +493,17 @@ chmod 0600 "$INSTALL_DIR/ticket-worker.new"
 `
 }
 
+func remoteUploadCompressedScript(installDir string) string {
+	return remoteInstallDirAssignment(installDir) + `
+set -e
+mkdir -p "$INSTALL_DIR"
+cat > "$INSTALL_DIR/ticket-worker.tar.gz.new"
+tar -xzf "$INSTALL_DIR/ticket-worker.tar.gz.new" -C "$INSTALL_DIR"
+rm -f "$INSTALL_DIR/ticket-worker.tar.gz.new"
+chmod 0600 "$INSTALL_DIR/ticket-worker.new"
+`
+}
+
 func remoteInstallUploadedScript(installDir string, overwrite bool) string {
 	return remoteInstallDirAssignment(installDir) + boolAssignment("OVERWRITE", overwrite) + `
 set -e
@@ -474,7 +546,14 @@ set -e
 `
 }
 
-func remoteStartScript(installDir string, restart bool) string {
+func remoteStartScript(installDir, mode string, restart bool) string {
+	if mode == "systemd-user" {
+		return remoteStartSystemdUserScript(installDir, restart)
+	}
+	return remoteStartNohupScript(installDir, restart)
+}
+
+func remoteStartNohupScript(installDir string, restart bool) string {
 	return remoteInstallDirAssignment(installDir) + boolAssignment("RESTART", restart) + `
 set -e
 if [ -f "$INSTALL_DIR/worker.pid" ]; then
@@ -502,6 +581,58 @@ fi
 `
 }
 
+func remoteStartSystemdUserScript(installDir string, restart bool) string {
+	return remoteInstallDirAssignment(installDir) + boolAssignment("RESTART", restart) + `
+set -e
+if ! command -v systemctl >/dev/null 2>&1; then
+  echo "systemctl is required for systemd --user start mode"
+  exit 21
+fi
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+  echo "systemd user manager is unavailable; enable user lingering or use nohup start mode"
+  exit 22
+fi
+mkdir -p "$HOME/.config/systemd/user" "$INSTALL_DIR/logs"
+SERVICE_FILE="$HOME/.config/systemd/user/bilibili-ticket-worker.service"
+cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=Bilibili Ticket Worker
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/ticket-worker serve --config $INSTALL_DIR/data/worker/worker.json
+Restart=always
+RestartSec=3
+StandardOutput=append:$INSTALL_DIR/logs/worker.log
+StandardError=append:$INSTALL_DIR/logs/worker.log
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable bilibili-ticket-worker.service >/dev/null
+if systemctl --user is-active --quiet bilibili-ticket-worker.service; then
+  if [ "$RESTART" = "1" ]; then
+    systemctl --user restart bilibili-ticket-worker.service
+  else
+    echo "worker service is already running; enable restart to replace it"
+    exit 19
+  fi
+else
+  systemctl --user start bilibili-ticket-worker.service
+fi
+sleep 1
+if ! systemctl --user is-active --quiet bilibili-ticket-worker.service; then
+  echo "worker service failed to stay running"
+  systemctl --user status bilibili-ticket-worker.service --no-pager 2>/dev/null || true
+  tail -80 "$INSTALL_DIR/logs/worker.log" 2>/dev/null || true
+  exit 20
+fi
+`
+}
+
 func remoteInstallDirAssignment(installDir string) string {
 	if installDir == "~" {
 		return "INSTALL_DIR=$HOME\n"
@@ -523,7 +654,7 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
-func generatedWorkerID(host string, index int) string {
+func generatedWorkerID(host string) string {
 	base := strings.ToLower(host)
 	base = strings.Trim(base, "[]")
 	re := regexp.MustCompile(`[^a-z0-9]+`)
@@ -535,7 +666,7 @@ func generatedWorkerID(host string, index int) string {
 		base = base[:32]
 		base = strings.Trim(base, "-")
 	}
-	return fmt.Sprintf("worker-%s-%02d", base, index+1)
+	return "worker-" + base
 }
 
 func uniqueNonEmpty(values []string) []string {

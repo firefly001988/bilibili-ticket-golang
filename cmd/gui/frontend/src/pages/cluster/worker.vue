@@ -147,9 +147,12 @@ const deployInstallDir = ref('~/bilibili-ticket-golang')
 const deployStartMode = ref('nohup')
 const deployOverwriteBinary = ref(true)
 const deployRestartExisting = ref(true)
+const deploySaveTraffic = ref(false)
 const deployConcurrency = ref(3)
 const deployJob = ref<DeployJob | null>(null)
 const deploying = ref(false)
+const deployActiveTargetRows = ref<number[]>([])
+const deployPrunedJobIds = new Set<string>()
 let deployPollInterval: ReturnType<typeof setInterval> | null = null
 
 // Expandable worker detail rows
@@ -501,13 +504,36 @@ function deployStatusColor(status: string) {
     return 'default'
 }
 
+const deployableTargets = computed(() => deployTargets.value
+    .map((target, index) => ({ target, index }))
+    .filter(entry => entry.target.host.trim()))
+
+const hasDeployableTargets = computed(() => deployableTargets.value.length > 0)
+
+function heartbeatColor(ms: number) {
+    if (ms <= 2000) return 'success'
+    if (ms <= 8000) return 'warning'
+    return 'error'
+}
+
+function offsetColor(ms: number) {
+    const value = Math.abs(ms || 0)
+    if (value <= 200) return 'success'
+    if (value <= 1000) return 'warning'
+    return 'error'
+}
+
+function signedMs(ms: number) {
+    return `${ms > 0 ? '+' : ''}${ms || 0}ms`
+}
+
 function validateDeployForm(): boolean {
-    const targets = deployTargets.value.filter(t => t.host.trim())
+    const targets = deployableTargets.value
     if (targets.length === 0) {
         messages.add({ text: t('worker.deployNeedTarget'), color: 'warning' })
         return false
     }
-    for (const target of targets) {
+    for (const { target } of targets) {
         if (!target.username.trim() || !target.password) {
             messages.add({ text: t('worker.deployNeedSSH', { host: target.host || '-' }), color: 'warning' })
             return false
@@ -529,8 +555,10 @@ async function startBatchDeploy() {
     deploying.value = true
     deployJob.value = null
     try {
+        const targets = deployableTargets.value
+        deployActiveTargetRows.value = targets.map(entry => entry.index)
         const payload = {
-            targets: deployTargets.value.filter(t => t.host.trim()).map(t => ({
+            targets: targets.map(({ target: t }) => ({
                 host: t.host.trim(),
                 sshPort: Number(t.sshPort) || 22,
                 username: t.username.trim(),
@@ -546,6 +574,7 @@ async function startBatchDeploy() {
             startMode: deployStartMode.value || 'nohup',
             overwriteBinary: deployOverwriteBinary.value,
             restartExisting: deployRestartExisting.value,
+            saveTraffic: deploySaveTraffic.value,
             concurrency: Number(deployConcurrency.value) || 3,
         }
         const jobID = await StartBatchDeployRemoteWorkers(JSON.stringify(payload))
@@ -565,6 +594,7 @@ async function pollDeployJob(jobID?: string) {
         const job = await GetRemoteWorkerDeployJob(id) as DeployJob
         deployJob.value = job
         if (['succeeded', 'failed', 'partial_failed', 'cancelled'].includes(job.status)) {
+            pruneSucceededDeployTargets(job)
             if (deployPollInterval) {
                 clearInterval(deployPollInterval)
                 deployPollInterval = null
@@ -575,6 +605,23 @@ async function pollDeployJob(jobID?: string) {
     } catch (e: any) {
         messages.add({ text: t('worker.deployPollFailed', { error: String(e) }), color: 'error' })
     }
+}
+
+function pruneSucceededDeployTargets(job: DeployJob) {
+    if (!job.id || deployPrunedJobIds.has(job.id)) return
+    deployPrunedJobIds.add(job.id)
+    const originalIndexes = job.items
+        .filter(item => item.status === 'succeeded')
+        .map(item => deployActiveTargetRows.value[item.index])
+        .filter((index): index is number => index !== undefined)
+        .sort((a, b) => b - a)
+    for (const index of originalIndexes) {
+        deployTargets.value.splice(index, 1)
+    }
+    if (deployTargets.value.length === 0) {
+        deployTargets.value.push(defaultDeployTarget())
+    }
+    deployActiveTargetRows.value = []
 }
 
 async function cancelBatchDeploy() {
@@ -678,6 +725,18 @@ async function cancelBatchDeploy() {
                                 }}</v-icon>
                                 {{ w.healthy ? t('worker.online') : t('worker.offline') }}
                             </v-chip>
+                            <template v-if="w.healthy">
+                                <v-chip size="x-small" :color="heartbeatColor(w.lastHeartbeatLatencyMs)" variant="tonal"
+                                    class="ml-1">
+                                    <v-icon start size="x-small">mdi-heart-pulse</v-icon>
+                                    {{ w.lastHeartbeatLatencyMs }}ms
+                                </v-chip>
+                                <v-chip size="x-small" :color="offsetColor(w.bilibiliOffsetMs)" variant="tonal"
+                                    class="ml-1">
+                                    <v-icon start size="x-small">mdi-clock-outline</v-icon>
+                                    Bili {{ signedMs(w.bilibiliOffsetMs) }}
+                                </v-chip>
+                            </template>
                             <v-chip v-if="w.activeAttemptId" size="x-small" color="orange" variant="tonal" class="ml-1">
                                 {{ t('worker.busy') }}
                             </v-chip>
@@ -868,7 +927,7 @@ async function cancelBatchDeploy() {
         </v-table>
 
         <!-- ═══ Batch Deploy Remote Workers Dialog ═══ -->
-        <v-dialog v-model="showBatchDeployDialog" max-width="1100" persistent scrollable>
+        <v-dialog v-model="showBatchDeployDialog" max-width="1280" persistent scrollable>
             <v-card class="pa-4">
                 <v-card-title class="d-flex align-center">
                     <v-icon start>mdi-cloud-upload-outline</v-icon>
@@ -959,7 +1018,8 @@ async function cancelBatchDeploy() {
                                             density="compact" />
                                     </v-col>
                                     <v-col cols="12" md="3">
-                                        <v-select v-model="deployStartMode" :items="[{ title: 'nohup', value: 'nohup' }]"
+                                        <v-select v-model="deployStartMode"
+                                            :items="[{ title: 'nohup', value: 'nohup' }, { title: 'systemd --user', value: 'systemd-user' }]"
                                             :label="t('worker.deployStartMode')" variant="outlined"
                                             density="compact" />
                                     </v-col>
@@ -976,6 +1036,10 @@ async function cancelBatchDeploy() {
                                     <v-col cols="12" md="6">
                                         <v-switch v-model="deployRestartExisting"
                                             :label="t('worker.deployRestartExisting')" color="primary" />
+                                    </v-col>
+                                    <v-col v-if="deployBinarySource === 'local'" cols="12">
+                                        <v-switch v-model="deploySaveTraffic" :label="t('worker.deploySaveTraffic')"
+                                            :hint="t('worker.deploySaveTrafficHint')" persistent-hint color="primary" />
                                     </v-col>
                                 </v-row>
                             </v-expansion-panel-text>
@@ -1032,7 +1096,8 @@ async function cancelBatchDeploy() {
                     <v-btn variant="text" :disabled="deploying" @click="showBatchDeployDialog = false">
                         {{ t('common.cancel') }}
                     </v-btn>
-                    <v-btn color="success" :loading="deploying" @click="startBatchDeploy">
+                    <v-btn v-if="hasDeployableTargets || deploying" color="success" :loading="deploying"
+                        :disabled="!hasDeployableTargets" @click="startBatchDeploy">
                         {{ t('worker.deployStart') }}
                     </v-btn>
                 </v-card-actions>

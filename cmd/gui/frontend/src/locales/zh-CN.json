@@ -127,6 +127,8 @@
         "deployConcurrencyHint": "同一时间并行部署的服务器数量，不影响 Worker 抢票并发。",
         "deployOverwriteBinary": "覆盖已有 worker 二进制",
         "deployRestartExisting": "重启已存在 worker",
+        "deploySaveTraffic": "省流模式",
+        "deploySaveTrafficHint": "先把本地 worker 二进制压缩成 tar.gz 再上传，远程服务器需要有 tar。",
         "deployProgress": "部署进度",
         "deployStageLabel": "阶段",
         "deployMessage": "消息",

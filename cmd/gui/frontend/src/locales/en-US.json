@@ -127,6 +127,8 @@
         "deployConcurrencyHint": "Number of servers deployed in parallel; it does not affect ticketing concurrency.",
         "deployOverwriteBinary": "Overwrite existing worker binary",
         "deployRestartExisting": "Restart existing worker",
+        "deploySaveTraffic": "Save traffic",
+        "deploySaveTrafficHint": "Compress the local worker binary as tar.gz before uploading. The remote server must have tar.",
         "deployProgress": "Deployment Progress",
         "deployStageLabel": "Stage",
         "deployMessage": "Message",
