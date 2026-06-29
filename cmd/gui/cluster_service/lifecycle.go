@@ -311,8 +311,8 @@ func (s *ClusterService) Start(parent context.Context) error {
 		}
 	}
 	go func() {
-		normalTicker := time.NewTicker(15 * time.Second)
-		fastTicker := time.NewTicker(5 * time.Second)
+		normalTicker := time.NewTicker(5 * time.Second)
+		fastTicker := time.NewTicker(2 * time.Second)
 		defer normalTicker.Stop()
 		defer fastTicker.Stop()
 		// Drain the fast ticker channel when not in fast mode so we don't
