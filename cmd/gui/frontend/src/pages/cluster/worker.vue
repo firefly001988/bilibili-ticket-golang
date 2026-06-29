@@ -15,6 +15,10 @@ import {
     StopLocalWorker,
     AddLocalWorker,
     GenerateRemoteWorkerConfig,
+    SelectWorkerBinary,
+    StartBatchDeployRemoteWorkers,
+    GetRemoteWorkerDeployJob,
+    CancelRemoteWorkerDeployJob,
 } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t } = useI18n()
@@ -51,6 +55,36 @@ interface WorkerSummary {
 interface SnapshotExt {
     workers: WorkerSummary[]
     employerVersion: string
+}
+
+interface DeployTarget {
+    host: string
+    sshPort: number
+    username: string
+    password: string
+    workerPort: number
+    name: string
+    workerId: string
+}
+
+interface DeployItemStatus {
+    index: number
+    host: string
+    sshPort: number
+    workerId?: string
+    name?: string
+    address?: string
+    stage: string
+    status: string
+    message?: string
+    logs?: string[]
+}
+
+interface DeployJob {
+    id: string
+    status: string
+    message?: string
+    items: DeployItemStatus[]
 }
 
 // ── State ─────────────────────────────────────────────────────
@@ -102,6 +136,21 @@ const forceImporting = ref(false)
 
 // Connecting state
 const connecting = ref<Record<string, boolean>>({})
+
+// Batch deploy dialog
+const showBatchDeployDialog = ref(false)
+const deployTargets = ref<DeployTarget[]>([])
+const deployBinarySource = ref<'local' | 'url'>('local')
+const deployLocalBinaryPath = ref('')
+const deployDownloadUrl = ref('')
+const deployInstallDir = ref('~/bilibili-ticket-golang')
+const deployStartMode = ref('nohup')
+const deployOverwriteBinary = ref(true)
+const deployRestartExisting = ref(true)
+const deployConcurrency = ref(3)
+const deployJob = ref<DeployJob | null>(null)
+const deploying = ref(false)
+let deployPollInterval: ReturnType<typeof setInterval> | null = null
 
 // Expandable worker detail rows
 const expandedWorkers = ref<Set<string>>(new Set())
@@ -155,6 +204,7 @@ onMounted(() => {
 onUnmounted(() => {
     if (cooldownInterval) clearInterval(cooldownInterval)
     if (pollInterval) clearInterval(pollInterval)
+    if (deployPollInterval) clearInterval(deployPollInterval)
 })
 
 // ── Auto-polling (silent background refresh) ──────────────────
@@ -396,6 +446,145 @@ async function doForceReconnect(w: WorkerSummary) {
     }
     connecting.value[w.id] = false
 }
+
+// ── Batch remote deploy ───────────────────────────────────────
+function defaultDeployTarget(): DeployTarget {
+    return {
+        host: '',
+        sshPort: 22,
+        username: 'root',
+        password: '',
+        workerPort: 37900,
+        name: '',
+        workerId: '',
+    }
+}
+
+function openBatchDeploy() {
+    if (deployTargets.value.length === 0) {
+        deployTargets.value = [defaultDeployTarget()]
+    }
+    deployJob.value = null
+    showBatchDeployDialog.value = true
+}
+
+function addDeployTarget() {
+    deployTargets.value.push(defaultDeployTarget())
+}
+
+function removeDeployTarget(index: number) {
+    deployTargets.value.splice(index, 1)
+    if (deployTargets.value.length === 0) {
+        deployTargets.value.push(defaultDeployTarget())
+    }
+}
+
+async function chooseWorkerBinary() {
+    try {
+        const path = await SelectWorkerBinary()
+        if (path) deployLocalBinaryPath.value = path
+    } catch (e: any) {
+        messages.add({ text: t('worker.deploySelectBinaryFailed', { error: String(e) }), color: 'error' })
+    }
+}
+
+function deployStageText(stage: string) {
+    return t(`worker.deployStage.${stage}`)
+}
+
+function deployStatusColor(status: string) {
+    if (status === 'succeeded') return 'success'
+    if (status === 'failed') return 'error'
+    if (status === 'cancelled') return 'grey'
+    if (status === 'running') return 'info'
+    if (status === 'partial_failed') return 'warning'
+    return 'default'
+}
+
+function validateDeployForm(): boolean {
+    const targets = deployTargets.value.filter(t => t.host.trim())
+    if (targets.length === 0) {
+        messages.add({ text: t('worker.deployNeedTarget'), color: 'warning' })
+        return false
+    }
+    for (const target of targets) {
+        if (!target.username.trim() || !target.password) {
+            messages.add({ text: t('worker.deployNeedSSH', { host: target.host || '-' }), color: 'warning' })
+            return false
+        }
+    }
+    if (deployBinarySource.value === 'local' && !deployLocalBinaryPath.value.trim()) {
+        messages.add({ text: t('worker.deployNeedLocalBinary'), color: 'warning' })
+        return false
+    }
+    if (deployBinarySource.value === 'url' && !deployDownloadUrl.value.trim()) {
+        messages.add({ text: t('worker.deployNeedDownloadUrl'), color: 'warning' })
+        return false
+    }
+    return true
+}
+
+async function startBatchDeploy() {
+    if (!validateDeployForm()) return
+    deploying.value = true
+    deployJob.value = null
+    try {
+        const payload = {
+            targets: deployTargets.value.filter(t => t.host.trim()).map(t => ({
+                host: t.host.trim(),
+                sshPort: Number(t.sshPort) || 22,
+                username: t.username.trim(),
+                password: t.password,
+                workerPort: Number(t.workerPort) || 37900,
+                name: t.name.trim(),
+                workerId: t.workerId.trim(),
+            })),
+            binarySource: deployBinarySource.value,
+            localBinaryPath: deployLocalBinaryPath.value.trim(),
+            downloadUrl: deployDownloadUrl.value.trim(),
+            installDir: deployInstallDir.value.trim() || '~/bilibili-ticket-golang',
+            startMode: deployStartMode.value || 'nohup',
+            overwriteBinary: deployOverwriteBinary.value,
+            restartExisting: deployRestartExisting.value,
+            concurrency: Number(deployConcurrency.value) || 3,
+        }
+        const jobID = await StartBatchDeployRemoteWorkers(JSON.stringify(payload))
+        await pollDeployJob(jobID)
+        if (deployPollInterval) clearInterval(deployPollInterval)
+        deployPollInterval = setInterval(() => pollDeployJob(jobID), 1500)
+    } catch (e: any) {
+        messages.add({ text: t('worker.deployStartFailed', { error: String(e) }), color: 'error' })
+        deploying.value = false
+    }
+}
+
+async function pollDeployJob(jobID?: string) {
+    const id = jobID || deployJob.value?.id
+    if (!id) return
+    try {
+        const job = await GetRemoteWorkerDeployJob(id) as DeployJob
+        deployJob.value = job
+        if (['succeeded', 'failed', 'partial_failed', 'cancelled'].includes(job.status)) {
+            if (deployPollInterval) {
+                clearInterval(deployPollInterval)
+                deployPollInterval = null
+            }
+            deploying.value = false
+            await load()
+        }
+    } catch (e: any) {
+        messages.add({ text: t('worker.deployPollFailed', { error: String(e) }), color: 'error' })
+    }
+}
+
+async function cancelBatchDeploy() {
+    if (!deployJob.value?.id) return
+    try {
+        await CancelRemoteWorkerDeployJob(deployJob.value.id)
+    } catch (e: any) {
+        messages.add({ text: t('worker.deployCancelFailed', { error: String(e) }), color: 'error' })
+    }
+}
 </script>
 
 <template>
@@ -405,6 +594,9 @@ async function doForceReconnect(w: WorkerSummary) {
             <v-spacer />
             <div style="display:flex;gap:4px;flex-wrap:wrap">
 
+                <v-btn prepend-icon="mdi-cloud-upload-outline" variant="tonal" color="success" @click="openBatchDeploy">
+                    {{ t('worker.batchDeploy') }}
+                </v-btn>
                 <v-btn prepend-icon="mdi-import" variant="tonal" @click="showImportDialog = true">
                     {{ t('worker.importWorker') }}
                 </v-btn>
@@ -674,6 +866,177 @@ async function doForceReconnect(w: WorkerSummary) {
                 </template>
             </tbody>
         </v-table>
+
+        <!-- ═══ Batch Deploy Remote Workers Dialog ═══ -->
+        <v-dialog v-model="showBatchDeployDialog" max-width="1100" persistent scrollable>
+            <v-card class="pa-4">
+                <v-card-title class="d-flex align-center">
+                    <v-icon start>mdi-cloud-upload-outline</v-icon>
+                    {{ t('worker.batchDeployTitle') }}
+                    <v-spacer />
+                    <v-chip v-if="deployJob" :color="deployStatusColor(deployJob.status)" variant="tonal" size="small">
+                        {{ deployJob.status }}
+                    </v-chip>
+                </v-card-title>
+                <v-card-text>
+                    <v-alert type="info" variant="tonal" density="compact" class="mb-4">
+                        {{ t('worker.batchDeployHint') }}
+                    </v-alert>
+
+                    <div class="text-subtitle-2 mb-2">{{ t('worker.deployTargets') }}</div>
+                    <v-table density="compact" class="mb-3">
+                        <thead>
+                            <tr>
+                                <th>{{ t('worker.deployHost') }}</th>
+                                <th style="width:90px">{{ t('worker.deploySSHPort') }}</th>
+                                <th>{{ t('worker.deployUsername') }}</th>
+                                <th>{{ t('worker.deployPassword') }}</th>
+                                <th style="width:110px">{{ t('worker.deployWorkerPort') }}</th>
+                                <th>{{ t('worker.colName') }}</th>
+                                <th>{{ t('worker.colId') }}</th>
+                                <th style="width:48px"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(target, index) in deployTargets" :key="index">
+                                <td><v-text-field v-model="target.host" density="compact" hide-details
+                                        placeholder="1.2.3.4" /></td>
+                                <td><v-text-field v-model.number="target.sshPort" type="number" density="compact"
+                                        hide-details /></td>
+                                <td><v-text-field v-model="target.username" density="compact" hide-details /></td>
+                                <td><v-text-field v-model="target.password" type="password" density="compact"
+                                        hide-details /></td>
+                                <td><v-text-field v-model.number="target.workerPort" type="number" density="compact"
+                                        hide-details /></td>
+                                <td><v-text-field v-model="target.name" density="compact" hide-details
+                                        :placeholder="t('worker.deployAuto')" /></td>
+                                <td><v-text-field v-model="target.workerId" density="compact" hide-details
+                                        :placeholder="t('worker.deployAuto')" /></td>
+                                <td>
+                                    <v-btn icon="mdi-delete" size="small" variant="text" color="error"
+                                        @click="removeDeployTarget(index)" />
+                                </td>
+                            </tr>
+                        </tbody>
+                    </v-table>
+                    <v-btn prepend-icon="mdi-plus" variant="tonal" size="small" class="mb-5" @click="addDeployTarget">
+                        {{ t('worker.deployAddTarget') }}
+                    </v-btn>
+
+                    <v-row dense>
+                        <v-col cols="12" md="4">
+                            <v-radio-group v-model="deployBinarySource" :label="t('worker.deployBinarySource')"
+                                density="compact">
+                                <v-radio :label="t('worker.deployBinaryLocal')" value="local" />
+                                <v-radio :label="t('worker.deployBinaryUrl')" value="url" />
+                            </v-radio-group>
+                        </v-col>
+                        <v-col v-if="deployBinarySource === 'local'" cols="12" md="8">
+                            <v-text-field v-model="deployLocalBinaryPath" :label="t('worker.deployLocalBinaryPath')"
+                                variant="outlined" density="compact" class="mb-2">
+                                <template #append>
+                                    <v-btn variant="tonal" size="small" @click="chooseWorkerBinary">
+                                        {{ t('worker.deployBrowse') }}
+                                    </v-btn>
+                                </template>
+                            </v-text-field>
+                        </v-col>
+                        <v-col v-else cols="12" md="8">
+                            <v-text-field v-model="deployDownloadUrl" :label="t('worker.deployDownloadUrl')"
+                                placeholder="https://example.com/ticket-worker-linux-amd64" variant="outlined"
+                                density="compact" />
+                        </v-col>
+                    </v-row>
+
+                    <v-expansion-panels variant="accordion" class="mb-4">
+                        <v-expansion-panel>
+                            <v-expansion-panel-title>{{ t('worker.deployAdvanced') }}</v-expansion-panel-title>
+                            <v-expansion-panel-text>
+                                <v-row dense>
+                                    <v-col cols="12" md="6">
+                                        <v-text-field v-model="deployInstallDir"
+                                            :label="t('worker.deployInstallDir')" variant="outlined"
+                                            density="compact" />
+                                    </v-col>
+                                    <v-col cols="12" md="3">
+                                        <v-select v-model="deployStartMode" :items="[{ title: 'nohup', value: 'nohup' }]"
+                                            :label="t('worker.deployStartMode')" variant="outlined"
+                                            density="compact" />
+                                    </v-col>
+                                    <v-col cols="12" md="3">
+                                        <v-text-field v-model.number="deployConcurrency" type="number"
+                                            :label="t('worker.deployConcurrency')" variant="outlined"
+                                            density="compact" min="1" max="10" />
+                                    </v-col>
+                                    <v-col cols="12" md="6">
+                                        <v-switch v-model="deployOverwriteBinary"
+                                            :label="t('worker.deployOverwriteBinary')" color="primary" />
+                                    </v-col>
+                                    <v-col cols="12" md="6">
+                                        <v-switch v-model="deployRestartExisting"
+                                            :label="t('worker.deployRestartExisting')" color="primary" />
+                                    </v-col>
+                                </v-row>
+                            </v-expansion-panel-text>
+                        </v-expansion-panel>
+                    </v-expansion-panels>
+
+                    <template v-if="deployJob">
+                        <v-divider class="my-3" />
+                        <div class="d-flex align-center mb-2">
+                            <div class="text-subtitle-2">{{ t('worker.deployProgress') }}</div>
+                            <v-spacer />
+                            <span class="text-caption text-medium-emphasis">{{ deployJob.message }}</span>
+                        </div>
+                        <v-table density="compact">
+                            <thead>
+                                <tr>
+                                    <th>{{ t('worker.deployHost') }}</th>
+                                    <th>{{ t('worker.colId') }}</th>
+                                    <th>{{ t('worker.deployStageLabel') }}</th>
+                                    <th>{{ t('worker.colStatus') }}</th>
+                                    <th>{{ t('worker.deployMessage') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="item in deployJob.items" :key="item.index">
+                                    <td>
+                                        <div>{{ item.host }}:{{ item.sshPort }}</div>
+                                        <div class="text-caption text-medium-emphasis">{{ item.address }}</div>
+                                    </td>
+                                    <td class="font-monospace">{{ item.workerId || '—' }}</td>
+                                    <td>{{ deployStageText(item.stage) }}</td>
+                                    <td>
+                                        <v-chip :color="deployStatusColor(item.status)" size="small" variant="tonal">
+                                            {{ item.status }}
+                                        </v-chip>
+                                    </td>
+                                    <td style="max-width:360px">
+                                        <div class="text-body-2">{{ item.message }}</div>
+                                        <details v-if="item.logs?.length" class="text-caption">
+                                            <summary>{{ t('worker.deployShowLogs') }}</summary>
+                                            <pre style="white-space:pre-wrap">{{ item.logs.join('\n') }}</pre>
+                                        </details>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </v-table>
+                    </template>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn v-if="deploying && deployJob" variant="text" color="warning" @click="cancelBatchDeploy">
+                        {{ t('worker.deployCancel') }}
+                    </v-btn>
+                    <v-btn variant="text" :disabled="deploying" @click="showBatchDeployDialog = false">
+                        {{ t('common.cancel') }}
+                    </v-btn>
+                    <v-btn color="success" :loading="deploying" @click="startBatchDeploy">
+                        {{ t('worker.deployStart') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <!-- ═══ Import Worker Dialog ═══ -->
         <v-dialog v-model="showImportDialog" max-width="560">

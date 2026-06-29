@@ -36,6 +36,7 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 		provisioner:   provisioner,
 		phases:        make(map[string]domain.Phase),
 		loginSessions: make(map[string]*accountLoginSession),
+		deployJobs:    make(map[string]*RemoteWorkerDeployJob),
 	}
 	// Wire the worker selection strategy: the provisioner uses the
 	// current known worker set to decide which worker handles each

@@ -22,6 +22,7 @@ type RemoteWorkerConfig struct {
 	PluginDir        string `json:"pluginDir,omitempty"`
 	CaptchaPlugin    string `json:"captchaPlugin,omitempty"`
 	CalibrateClock   bool   `json:"calibrateClock,omitempty"`
+	TLSServerName    string `json:"tlsServerName,omitempty"`
 
 	// TLS material — these are the PEM-encoded certificates and keys
 	// needed by both the worker (server side) and the employer (client side)

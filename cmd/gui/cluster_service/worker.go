@@ -560,6 +560,9 @@ func (s *ClusterService) AddWorkerFromEncodedConfig(encodedConfig string, overri
 	}
 
 	// Set TLS server name from the worker node or derive from config.
+	if rc.TLSServerName != "" {
+		tlsConfig.ServerName = rc.TLSServerName
+	}
 	if tlsConfig.ServerName == "" {
 		// Use the worker ID as a fallback SNI hostname.
 		tlsConfig.ServerName = rc.WorkerID
@@ -654,6 +657,9 @@ func (s *ClusterService) ForceAddWorkerFromEncodedConfig(encodedConfig string, o
 		tlsConfig = stored
 	}
 
+	if rc.TLSServerName != "" {
+		tlsConfig.ServerName = rc.TLSServerName
+	}
 	if tlsConfig.ServerName == "" {
 		tlsConfig.ServerName = rc.WorkerID
 	}

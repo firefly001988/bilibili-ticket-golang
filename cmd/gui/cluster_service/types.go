@@ -174,4 +174,6 @@ type ClusterService struct {
 	workers         []domain.WorkerNode // cached worker list for provisioner
 	eventLog        []ClusterEvent      // aggregated event feed (ring buffer)
 	accountBindings map[string]string   // accountID → workerID (mutual exclusion)
+	deployMu        sync.RWMutex
+	deployJobs      map[string]*RemoteWorkerDeployJob
 }

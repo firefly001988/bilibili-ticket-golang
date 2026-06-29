@@ -329,6 +329,7 @@ func GenerateRemoteWorkerConfig(caCertPEM, caKeyPEM, clientCertPEM, clientKeyPEM
 		PluginDir:        opts.PluginDir,
 		CaptchaPlugin:    opts.CaptchaPlugin,
 		CalibrateClock:   opts.CalibrateClock,
+		TLSServerName:    serverName,
 		CACertPEM:        string(caCertPEM),
 		ServerCertPEM:    string(serverCertPEM),
 		ServerKeyPEM:     string(serverKeyPEM),
