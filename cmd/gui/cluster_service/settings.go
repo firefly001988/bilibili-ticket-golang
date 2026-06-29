@@ -141,7 +141,7 @@ func (s *ClusterService) SetStartDelay(ms int) {
 }
 
 // pushGlobalConfigToAll sends the current global config to every enabled
-// remote worker that has a healthy connection.
+// worker (both local and remote) that has a healthy connection.
 func (s *ClusterService) pushGlobalConfigToAll(ctx context.Context) {
 	s.mu.RLock()
 	cfg := s.globalCfg
@@ -154,7 +154,7 @@ func (s *ClusterService) pushGlobalConfigToAll(ctx context.Context) {
 	}
 
 	for _, w := range workers {
-		if !w.Enabled || w.Type != domain.WorkerTypeRemote {
+		if !w.Enabled {
 			continue
 		}
 		if !s.client.IsHealthy(w.ID) {

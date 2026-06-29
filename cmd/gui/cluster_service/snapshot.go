@@ -111,7 +111,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		}
 		// Fetch live metadata via Health RPC.  The worker always returns
 		// its real version and clock offsets in the response map.
-		if node.Type == domain.WorkerTypeRemote {
+		if node.Type == domain.WorkerTypeRemote || node.Type == domain.WorkerTypeLocal {
 			healthCtx, healthCancel := context.WithTimeout(ctx, 800*time.Millisecond)
 			health, healthErr := s.client.Health(healthCtx, node)
 			healthCancel()

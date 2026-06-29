@@ -15,11 +15,11 @@ import (
 // moment it produced the response, and the request's elapsed time is
 // subtracted from the local send-time to estimate that same moment locally.
 func GetBilibiliClockOffset() (time.Duration, error) {
-	offset, err := getBilibiliClockOffsetNew()
+	offset, err := getBilibiliClockOffsetOld()
 	if err == nil {
 		return offset, nil
 	}
-	return getBilibiliClockOffsetOld()
+	return getBilibiliClockOffsetNew()
 }
 
 func getBilibiliClockOffsetNew() (time.Duration, error) {
@@ -33,7 +33,7 @@ func getBilibiliClockOffsetNew() (time.Duration, error) {
 		return 0, err
 	}
 	t := res.TraceInfo()
-	offset := time.UnixMilli(r.Data).Sub(now) + t.ResponseTime
+	offset := time.Unix(r.Data, 0).Sub(now) + t.ResponseTime
 	return offset, nil
 }
 

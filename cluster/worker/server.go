@@ -128,10 +128,11 @@ type Server struct {
 	globalConfig   GlobalConfig
 	globalConfigMu sync.RWMutex
 
-	// Cached clock offsets (computed once, reported in Health).
+	// Cached clock offsets (computed with TTL, reported in Health).
 	biliOffset   time.Duration
 	ntpOffset    time.Duration
 	offsetsReady bool
+	offsetsAt    time.Time
 	offsetsMu    sync.Mutex
 }
 
@@ -261,15 +262,21 @@ func (ws *workerService) Health(_ context.Context, req *pb.HealthRequest) (*pb.H
 	}, nil
 }
 
+const clockOffsetCacheTTL = 120 * time.Second
+
 // clockOffsets computes (or returns cached) Bilibili API and NTP clock
-// offsets for this worker.  Results are cached permanently after the first
-// successful computation.
+// offsets for this worker.  Results are cached for clockOffsetCacheTTL
+// (120s) before re-measuring, so that temporary network failures at
+// startup are eventually self-healing.
 func (s *Server) clockOffsets() (biliMs, ntpMs int64) {
 	s.offsetsMu.Lock()
 	defer s.offsetsMu.Unlock()
-	if s.offsetsReady {
+
+	// Return cached values if they are fresh enough.
+	if s.offsetsReady && time.Since(s.offsetsAt) < clockOffsetCacheTTL {
 		return s.biliOffset.Milliseconds(), s.ntpOffset.Milliseconds()
 	}
+
 	if s.config.CalibrateClock {
 		if off, err := biliclock.GetBilibiliClockOffset(); err == nil {
 			s.biliOffset = off
@@ -279,6 +286,7 @@ func (s *Server) clockOffsets() (biliMs, ntpMs int64) {
 		}
 	}
 	s.offsetsReady = true
+	s.offsetsAt = time.Now()
 	return s.biliOffset.Milliseconds(), s.ntpOffset.Milliseconds()
 }
 
