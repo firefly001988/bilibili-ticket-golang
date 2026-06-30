@@ -41,6 +41,7 @@ const loginPolling = ref(false)
 const loginStarting = ref(false)
 const loginErrorMsg = ref('')
 let loginTimer: ReturnType<typeof setInterval> | null = null
+let loginPollInFlight = false
 
 // Import dialog
 const showImportDialog = ref(false)
@@ -106,6 +107,7 @@ async function startLogin() {
     loginStatusMsg.value = ''
     loginQR.value = ''
     loginSessionID.value = ''
+    loginPollInFlight = false
     try {
         const result = await BeginAccountLogin('')
         if (!result?.url || !result?.sessionId) {
@@ -129,11 +131,14 @@ async function startLogin() {
 function startLoginPolling() {
     if (loginTimer) clearInterval(loginTimer)
     loginTimer = setInterval(async () => {
+        if (loginPollInFlight) return
+        loginPollInFlight = true
         qrExpirySeconds.value = Math.max(0, Math.floor((loginQRExpiry.value - Date.now()) / 1000))
         if (Date.now() > loginQRExpiry.value) {
             stopLoginPolling()
             loginStatusMsg.value = t('account.qrExpired')
             loginQR.value = ''
+            loginPollInFlight = false
             return
         }
         try {
@@ -155,12 +160,15 @@ function startLoginPolling() {
             stopLoginPolling()
             loginErrorMsg.value = t('account.loginPollFailed', { error: String(e) })
             messages.add({ text: loginErrorMsg.value, color: 'error' })
+        } finally {
+            loginPollInFlight = false
         }
     }, 1000)
 }
 
 function stopLoginPolling() {
     loginPolling.value = false
+    loginPollInFlight = false
     if (loginTimer) { clearInterval(loginTimer); loginTimer = null }
 }
 

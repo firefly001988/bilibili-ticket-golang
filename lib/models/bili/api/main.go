@@ -24,6 +24,7 @@ type QRLoginKeyStruct struct {
 }
 
 type VerifyQRLoginStateStruct struct {
+	URL          string `json:"url"`
 	RefreshToken string `json:"refresh_token"`
 	Timestamp    int64  `json:"timestamp"`
 	Code         int    `json:"code"`
