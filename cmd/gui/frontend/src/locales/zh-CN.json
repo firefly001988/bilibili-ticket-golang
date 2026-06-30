@@ -370,6 +370,8 @@
         "dispatch": "摊派",
         "groupConfig": "任务组调度配置",
         "groupRunningLocked": "运行中，配置已锁定",
+        "groupAccounts": "账号池",
+        "groupAccountsHint": "任务组启动后会独占这些账号；调度只会从这些账号中选择。",
         "groupPrimaryWorkers": "主力 Worker",
         "groupPrimaryWorkersHint": "任务组启动后会独占这些 Worker，并优先把任务分配给它们。",
         "groupStandbyWorkers": "后备 Worker",
@@ -380,6 +382,7 @@
         "groupConfigSaved": "任务组配置已保存",
         "groupConfigSaveFailed": "保存任务组配置失败: {error}",
         "editLockedHint": "任务组运行中不能修改宏任务、购票组或 Worker 配置。请先停止任务组。",
+        "noAccountsConfigured": "请先在任务组调度配置中选择账号",
         "noWorkersConfigured": "请先在任务组调度配置中选择 Worker",
         "startAll": "等待开始准点抢票",
         "startReflowNow": "立刻开始回流抢票",
@@ -445,6 +448,16 @@
         "blockerNoWorkers": "没有健康的 Worker",
         "blockerNoBuyerMapping": "购票人尚未同步到任何账号，请先在「购票人管理」中同步"
     },
+    "accountPicker": {
+        "title": "选择账号",
+        "none": "未选择账号",
+        "summary": "{name} 等 {count} 个账号",
+        "selected": "已选 {count}",
+        "search": "搜索账号、标签",
+        "selectAll": "全选账号",
+        "clearAll": "清空",
+        "tags": "按标签选择"
+    },
     "account": {
         "title": "账号管理",
         "addAccount": "添加账号",
@@ -475,6 +488,7 @@
         "emptyHint": "暂无账号",
         "colName": "名称",
         "colId": "账号 ID",
+        "colTags": "标签",
         "colStatus": "状态",
         "colActions": "操作",
         "enabled": "可用",
@@ -486,7 +500,13 @@
         "loggedIn": "已登录",
         "username": "用户名",
         "uid": "UID",
-        "vip": "大会员"
+        "vip": "大会员",
+        "editTagsTitle": "编辑账号标签",
+        "editTagsHint": "多个标签可用逗号、中文逗号或换行分隔。",
+        "tagsLabel": "标签",
+        "tagsPlaceholder": "例如：主力, 华东, 家人账号",
+        "tagsSaved": "账号标签已保存",
+        "tagsSaveFailed": "保存账号标签失败: {error}"
     },
     "buyer": {
         "title": "购票人管理",

@@ -370,6 +370,8 @@
         "dispatch": "Dispatch",
         "groupConfig": "Task Group Dispatch Config",
         "groupRunningLocked": "Running; config locked",
+        "groupAccounts": "Account Pool",
+        "groupAccountsHint": "These accounts are reserved when the task group starts; dispatch only uses this pool.",
         "groupPrimaryWorkers": "Primary Workers",
         "groupPrimaryWorkersHint": "These workers are reserved when the task group starts and receive assignments first.",
         "groupStandbyWorkers": "Standby Workers",
@@ -380,6 +382,7 @@
         "groupConfigSaved": "Task group config saved",
         "groupConfigSaveFailed": "Save task group config failed: {error}",
         "editLockedHint": "The task group is running. Stop it before editing macros, purchase groups, or worker config.",
+        "noAccountsConfigured": "Select accounts in task group dispatch config first",
         "noWorkersConfigured": "Select workers in task group dispatch config first",
         "startAll": "Wait for Punctual Start",
         "startReflowNow": "Start Reflow Now",
@@ -445,6 +448,16 @@
         "blockerNoWorkers": "No healthy workers available",
         "blockerNoBuyerMapping": "Buyers not synced to any account — sync in Buyer Management"
     },
+    "accountPicker": {
+        "title": "Select Accounts",
+        "none": "No accounts selected",
+        "summary": "{name} and {count} accounts",
+        "selected": "{count} selected",
+        "search": "Search accounts or tags",
+        "selectAll": "Select all accounts",
+        "clearAll": "Clear",
+        "tags": "Select by tag"
+    },
     "account": {
         "title": "Account Management",
         "addAccount": "Add Account",
@@ -475,6 +488,7 @@
         "emptyHint": "No accounts",
         "colName": "Name",
         "colId": "Account ID",
+        "colTags": "Tags",
         "colStatus": "Status",
         "colActions": "Actions",
         "enabled": "Available",
@@ -486,7 +500,13 @@
         "loggedIn": "Logged In",
         "username": "Username",
         "uid": "UID",
-        "vip": "VIP"
+        "vip": "VIP",
+        "editTagsTitle": "Edit Account Tags",
+        "editTagsHint": "Separate tags with commas or new lines.",
+        "tagsLabel": "Tags",
+        "tagsPlaceholder": "e.g. primary, east, family",
+        "tagsSaved": "Account tags saved",
+        "tagsSaveFailed": "Save account tags failed: {error}"
     },
     "buyer": {
         "title": "Buyer Management",

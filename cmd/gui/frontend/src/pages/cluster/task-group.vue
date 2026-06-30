@@ -4,13 +4,15 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
 import WorkerPicker from '@/components/cluster/WorkerPicker.vue'
+import AccountPicker from '@/components/cluster/AccountPicker.vue'
 import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup, StopTaskGroup, ForceStopTaskGroup, ForceRestartTaskGroup, StartTaskGroup, StopIntent, SaveTaskGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
 
 const route = useRoute(); const { t } = useI18n(); const messages = useMessagesStore()
 const START_REFLOW_NOW_TOKEN = '__cluster_reflow_now__'
 
-interface TaskGroupSummary { id: string; name: string; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; paymentTimeoutMinutes?: number; waveDurationMinutes?: number; maxWaves?: number; createdAt?: string }
+interface TaskGroupSummary { id: string; name: string; accountIds?: string[]; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; paymentTimeoutMinutes?: number; waveDurationMinutes?: number; maxWaves?: number; createdAt?: string }
+interface AccountBrief { id: string; name: string; enabled: boolean; vipStatus?: number; tags?: string[] }
 interface WorkerBrief { id: string; name: string; address: string; type: string; healthy: boolean; tags?: string[] }
 interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; phase?: string; purchaseGroups?: any[] }
 interface AttemptBrief { id: string; intentId: string; accountId: string; workerId: string; state: string; orderId?: string }
@@ -19,6 +21,8 @@ interface IntentBrief { id: string; macroTaskId: string; purchaseGroupId?: strin
 const group = ref<TaskGroupSummary | null>(null); const macros = ref<MacroSummary[]>([]); const attempts = ref<AttemptBrief[]>([]); const intents = ref<IntentBrief[]>([]); const loading = ref(true)
 const dispatching = ref<Record<string, boolean>>({}); const dispatchingAll = ref(false)
 const activeTaskGroup = ref('')
+const accountList = ref<AccountBrief[]>([])
+const groupAccountIds = ref<string[]>([])
 const workerList = ref<WorkerBrief[]>([])
 const groupPrimaryWorkerIds = ref<string[]>([])
 const groupStandbyWorkerIds = ref<string[]>([])
@@ -115,6 +119,11 @@ function onGroupStandbyWorkerSelectionChange(vals: string[]) {
     groupConfigDirty.value = true
 }
 
+function onGroupAccountSelectionChange(vals: string[]) {
+    groupAccountIds.value = vals
+    groupConfigDirty.value = true
+}
+
 function markGroupConfigDirty() {
     groupConfigDirty.value = true
 }
@@ -122,6 +131,7 @@ function markGroupConfigDirty() {
 function syncGroupDraft(nextGroup: TaskGroupSummary | null, force = false) {
     if (!nextGroup) return
     if (!force && groupConfigDirty.value && activeTaskGroup.value !== nextGroup.id) return
+    groupAccountIds.value = [...(nextGroup.accountIds || [])]
     groupPrimaryWorkerIds.value = [...(nextGroup.primaryWorkerIds || [])]
     groupStandbyWorkerIds.value = [...(nextGroup.standbyWorkerIds || [])].filter(id => !groupPrimaryWorkerIds.value.includes(id))
     groupPaymentTimeoutMinutes.value = nextGroup.paymentTimeoutMinutes || 10
@@ -142,6 +152,7 @@ async function loadAll(id: string, silent = false) {
         macros.value = allMacros
         intents.value = ((snap.intents || []) as IntentBrief[]).filter(i => allMacros.some(m => m.id === i.macroTaskId))
         attempts.value = ((snap.attempts || []) as AttemptBrief[])
+        accountList.value = ((snap.accounts || []) as AccountBrief[])
         workerList.value = ((snap.workers || []) as WorkerBrief[])
         syncGroupDraft(nextGroup, !silent)
         if (allBuyers.value.length === 0) {
@@ -357,6 +368,7 @@ async function saveGroupConfig() {
     try {
         await SaveTaskGroup(JSON.stringify({
             ...group.value,
+            accountIds: groupAccountIds.value,
             primaryWorkerIds: groupPrimaryWorkerIds.value,
             standbyWorkerIds: groupStandbyWorkerIds.value,
             paymentTimeoutMinutes: Number(groupPaymentTimeoutMinutes.value) || 10,
@@ -382,6 +394,10 @@ async function startAllMacros() {
         messages.add({ text: t('taskGroup.noWorkersConfigured'), color: 'warning' })
         return
     }
+    if (groupAccountIds.value.length === 0) {
+        messages.add({ text: t('taskGroup.noAccountsConfigured'), color: 'warning' })
+        return
+    }
     dispatchingAll.value = true
     try {
         await StartTaskGroup(group.value.id, '')
@@ -399,6 +415,10 @@ async function startReflowNow() {
     }
     if (groupPrimaryWorkerIds.value.length + groupStandbyWorkerIds.value.length === 0) {
         messages.add({ text: t('taskGroup.noWorkersConfigured'), color: 'warning' })
+        return
+    }
+    if (groupAccountIds.value.length === 0) {
+        messages.add({ text: t('taskGroup.noAccountsConfigured'), color: 'warning' })
         return
     }
     dispatchingAll.value = true
@@ -443,6 +463,10 @@ async function forceRestartAllMacros() {
         messages.add({ text: t('taskGroup.noWorkersConfigured'), color: 'warning' })
         return
     }
+    if (groupAccountIds.value.length === 0) {
+        messages.add({ text: t('taskGroup.noAccountsConfigured'), color: 'warning' })
+        return
+    }
     dispatchingAll.value = true
     try {
         await ForceRestartTaskGroup(group.value.id, '')
@@ -465,6 +489,7 @@ const dispatchableMacros = computed(() => macros.value.filter(m => m.purchaseGro
 const anyRunning = computed(() => dispatchableMacros.value.some(m => hasLiveIntent(m)))
 const groupRunning = computed(() => anyRunning.value || (!!group.value && activeTaskGroup.value === group.value.id))
 const editingDisabled = computed(() => groupRunning.value || dispatchingAll.value)
+const accountPoolConfigured = computed(() => groupAccountIds.value.length > 0)
 const workerPoolConfigured = computed(() => groupPrimaryWorkerIds.value.length + groupStandbyWorkerIds.value.length > 0)
 const groupStats = computed(() => {
     const groupIntents = intents.value.filter(i => i.armed && !i.succeeded)
@@ -511,6 +536,12 @@ const allPurchaseGroups = computed(() => {
                 </v-card-title>
                 <v-card-text>
                     <v-row dense>
+                        <v-col cols="12">
+                            <AccountPicker :model-value="groupAccountIds"
+                                @update:model-value="onGroupAccountSelectionChange" :accounts="accountList"
+                                :label="t('taskGroup.groupAccounts')" :hint="t('taskGroup.groupAccountsHint')"
+                                :disabled="editingDisabled" />
+                        </v-col>
                         <v-col cols="12" md="6">
                             <WorkerPicker :model-value="groupPrimaryWorkerIds"
                                 @update:model-value="onGroupPrimaryWorkerSelectionChange" :workers="workerList"
@@ -542,6 +573,9 @@ const allPurchaseGroups = computed(() => {
                         </v-col>
                     </v-row>
                     <div class="d-flex align-center mt-2" style="gap:8px">
+                        <v-chip v-if="!accountPoolConfigured" size="small" color="warning" variant="tonal">
+                            {{ t('taskGroup.noAccountsConfigured') }}
+                        </v-chip>
                         <v-chip v-if="!workerPoolConfigured" size="small" color="warning" variant="tonal">
                             {{ t('taskGroup.noWorkersConfigured') }}
                         </v-chip>

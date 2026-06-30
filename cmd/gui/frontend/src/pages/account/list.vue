@@ -8,6 +8,7 @@ import {
     PollAccountLogin,
     DeleteAccount,
     ImportAccount,
+    SetAccountTags,
 } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t } = useI18n()
@@ -17,6 +18,7 @@ const messages = useMessagesStore()
 interface AccountSummary {
     id: string
     name: string
+    tags?: string[]
     enabled: boolean
     vipStatus: number
     cooldownUntil?: string
@@ -45,6 +47,12 @@ const importDocument = ref('')
 const showDeleteDialog = ref(false)
 const deleteTarget = ref<AccountSummary | null>(null)
 const deleting = ref(false)
+
+// Tags dialog
+const showTagsDialog = ref(false)
+const tagTarget = ref<AccountSummary | null>(null)
+const tagDraft = ref('')
+const savingTags = ref(false)
 
 // ── Cooldown countdown timers ──────────────────────────────────
 const cooldownTimers = ref<Record<string, number>>({})
@@ -193,6 +201,40 @@ function promptDelete(account: AccountSummary) {
     showDeleteDialog.value = true
 }
 
+function promptEditTags(account: AccountSummary) {
+    tagTarget.value = account
+    tagDraft.value = (account.tags || []).join(', ')
+    showTagsDialog.value = true
+}
+
+function parseTags(value: string) {
+    const seen = new Set<string>()
+    const result: string[] = []
+    for (const raw of value.split(/[,，\n]/)) {
+        const tag = raw.trim()
+        if (!tag || seen.has(tag)) continue
+        seen.add(tag)
+        result.push(tag)
+    }
+    return result
+}
+
+async function saveTags() {
+    if (!tagTarget.value) return
+    savingTags.value = true
+    try {
+        await SetAccountTags(tagTarget.value.id, JSON.stringify(parseTags(tagDraft.value)))
+        showTagsDialog.value = false
+        tagTarget.value = null
+        tagDraft.value = ''
+        await load()
+        messages.add({ text: t('account.tagsSaved'), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('account.tagsSaveFailed', { error: String(e) }), color: 'error' })
+    }
+    savingTags.value = false
+}
+
 // ── Computed ──────────────────────────────────────────────────
 const qrExpirySeconds = ref(0)
 
@@ -239,6 +281,7 @@ const loginQRCodeUrl = computed(() => {
                 <tr>
                     <th>{{ t('account.colName') }}</th>
                     <th>{{ t('account.colId') }}</th>
+                    <th>{{ t('account.colTags') }}</th>
                     <th>{{ t('account.colStatus') }}</th>
                     <th>{{ t('account.colActions') }}</th>
                 </tr>
@@ -250,6 +293,14 @@ const loginQRCodeUrl = computed(() => {
                         {{ acc.name || t('account.unnamed') }}
                     </td>
                     <td class="text-caption">{{ acc.id }}</td>
+                    <td>
+                        <div class="d-flex flex-wrap" style="gap:4px">
+                            <v-chip v-for="tag in acc.tags || []" :key="tag" size="x-small" variant="tonal">
+                                {{ tag }}
+                            </v-chip>
+                            <span v-if="!acc.tags || acc.tags.length === 0" class="text-caption text-medium-emphasis">—</span>
+                        </div>
+                    </td>
                     <td>
                         <v-chip :color="acc.enabled ? 'success' : 'grey'" size="small" variant="tonal">
                             {{ acc.enabled ? t('account.enabled') : t('account.disabled') }}
@@ -278,6 +329,8 @@ const loginQRCodeUrl = computed(() => {
                     </td>
                     <td>
                         <div style="display:flex;gap:4px">
+                            <v-btn icon="mdi-tag-edit" size="small" variant="text" color="primary"
+                                @click="promptEditTags(acc)" />
                             <v-btn icon="mdi-delete" size="small" variant="text" color="error"
                                 @click="promptDelete(acc)" />
                         </div>
@@ -358,6 +411,27 @@ const loginQRCodeUrl = computed(() => {
                     <v-btn variant="text" @click="showDeleteDialog = false">{{ t('common.cancel') }}</v-btn>
                     <v-btn color="error" :loading="deleting" @click="confirmDelete">
                         {{ t('common.delete') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <!-- ═══ Edit Tags Dialog ═══ -->
+        <v-dialog v-model="showTagsDialog" max-width="460">
+            <v-card class="pa-4">
+                <v-card-title>{{ t('account.editTagsTitle') }}</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 text-medium-emphasis mb-3">
+                        {{ t('account.editTagsHint') }}
+                    </p>
+                    <v-textarea v-model="tagDraft" :label="t('account.tagsLabel')"
+                        :placeholder="t('account.tagsPlaceholder')" variant="outlined" rows="3" auto-grow />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showTagsDialog = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="primary" :loading="savingTags" @click="saveTags">
+                        {{ t('common.save') }}
                     </v-btn>
                 </v-card-actions>
             </v-card>
