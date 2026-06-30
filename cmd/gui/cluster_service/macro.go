@@ -234,6 +234,10 @@ func (s *ClusterService) startTaskGroupPhase(taskGroupID string, phase domain.Ph
 		}
 	}
 
+	accountIDs := uniqueStrings(taskGroup.AccountIDs)
+	if len(accountIDs) == 0 {
+		return fmt.Errorf("at least one task-group account must be selected")
+	}
 	primaryWorkerIDs := append([]string(nil), taskGroup.PrimaryWorkerIDs...)
 	standbyWorkerIDs := append([]string(nil), taskGroup.StandbyWorkerIDs...)
 	// Compatibility path: older frontend calls pass a single worker ID list.
@@ -254,9 +258,11 @@ func (s *ClusterService) startTaskGroupPhase(taskGroupID string, phase domain.Ph
 		return fmt.Errorf("at least one task-group worker must be selected")
 	}
 
-	// Reserve workers before planning so Reconcile only sees allowed workers.
+	// Reserve accounts and workers before planning so Reconcile only sees
+	// allowed resources.
+	s.dispatcher.ReserveAccounts(taskGroupID, accountIDs)
 	s.dispatcher.ReserveWorkerPools(taskGroupID, primaryWorkerIDs, standbyWorkerIDs)
-	log.Printf("[cluster] reserved %d primary and %d standby workers for task group %s", len(primaryWorkerIDs), len(standbyWorkerIDs), taskGroupID)
+	log.Printf("[cluster] reserved %d accounts, %d primary and %d standby workers for task group %s", len(accountIDs), len(primaryWorkerIDs), len(standbyWorkerIDs), taskGroupID)
 
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {

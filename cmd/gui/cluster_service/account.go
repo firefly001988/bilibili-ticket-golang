@@ -2,10 +2,30 @@ package cluster_service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"bilibili-ticket-golang/cluster/domain"
 )
+
+// SetAccountTags updates user-managed tags for an account.
+func (s *ClusterService) SetAccountTags(accountID string, tagsJSON string) error {
+	var tags []string
+	if err := json.Unmarshal([]byte(tagsJSON), &tags); err != nil {
+		return err
+	}
+	ctx := context.Background()
+	account, err := s.repository.Account(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("account %s not found: %w", accountID, err)
+	}
+	oldVersion := account.Credentials.Version
+	account.Tags = normalizeAccountTags(tags)
+	if err := s.repository.PutAccount(ctx, account, &oldVersion); err != nil {
+		return err
+	}
+	return s.refreshResources(ctx)
+}
 
 // ImportAccount imports an account from an encoded credential document.
 func (s *ClusterService) ImportAccount(document string) error {

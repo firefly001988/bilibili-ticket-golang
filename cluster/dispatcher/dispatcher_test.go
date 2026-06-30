@@ -144,11 +144,33 @@ func TestPriorityBreaksEqualWeightRemaindersAscending(t *testing.T) {
 	}
 }
 
+func TestTaskGroupAccountScope(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, nil)
+	accounts, workers := resourcesN(3)
+	d.SetResources(accounts, workers)
+	d.ReserveAccounts("g", []string{"a2"})
+	d.ReserveWorkerPools("g", []string{"w1", "w2", "w3"}, nil)
+	macro := dispatchMacro("m", 0)
+	d.Add(IntentPlan{Macro: macro, Intent: dispatchIntent("i", "m", 10, "buyer")})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	attempts := d.Attempts()
+	if len(attempts) != 1 {
+		t.Fatalf("expected exactly one attempt from reserved account, got %#v", attempts)
+	}
+	if attempts[0].AccountID != "a2" {
+		t.Fatalf("unexpected account selected: %#v", attempts[0])
+	}
+}
+
 func TestTaskGroupStandbyWorkersStayIdleUntilPrimaryFails(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	d := New(c, nil, nil)
 	accounts, workers := resourcesN(4)
 	d.SetResources(accounts, workers)
+	d.ReserveAccounts("g", []string{"a1", "a2", "a3", "a4"})
 	d.ReserveWorkerPools("g", []string{"w2"}, []string{"w4"})
 	macro := dispatchMacro("m", 0)
 	d.Add(IntentPlan{Macro: macro, Intent: dispatchIntent("i", "m", 10, "buyer")})
@@ -168,6 +190,7 @@ func TestTaskGroupStandbyWorkersReplaceFailedPrimaryWorkers(t *testing.T) {
 	d := New(c, nil, nil)
 	accounts, workers := resourcesN(5)
 	d.SetResources(accounts, workers)
+	d.ReserveAccounts("g", []string{"a1", "a2", "a3", "a4", "a5"})
 	d.ReserveWorkerPools("g", []string{"w1", "w2"}, []string{"w3", "w4", "w5"})
 	d.failedWorkers["w1"] = d.now()
 	macro := dispatchMacro("m", 0)

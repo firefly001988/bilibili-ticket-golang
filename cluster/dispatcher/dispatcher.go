@@ -60,6 +60,7 @@ type Dispatcher struct {
 	workers             map[string]domain.WorkerNode
 	accountBusy         map[string]string
 	workerBusy          map[string]string
+	accountReservations map[string]string // accountID → taskGroupID
 	failedWorkers       map[string]time.Time
 	quarantinedAccounts map[string]time.Time
 	workerCooldown      map[string]time.Time // 412 → 5-min cooldown
@@ -82,7 +83,7 @@ func (d *Dispatcher) SetSuccessHandler(handler func(domain.LogicalOrderIntent, d
 }
 
 func New(client WorkerClient, repository Repository, resolver MappingResolver) *Dispatcher {
-	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), workerCooldown: make(map[string]time.Time), stoppedPhases: make(map[domain.Phase]bool), workerReservations: make(map[string]string), workerRoles: make(map[string]domain.ResourceRole), now: time.Now}
+	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), accountReservations: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), workerCooldown: make(map[string]time.Time), stoppedPhases: make(map[domain.Phase]bool), workerReservations: make(map[string]string), workerRoles: make(map[string]domain.ResourceRole), now: time.Now}
 }
 
 // SetGlobalConfig updates the dispatcher's runtime configuration. Values
@@ -115,6 +116,21 @@ func (d *Dispatcher) ReserveWorkers(taskGroupID string, workerIDs []string) {
 	d.ReserveWorkerPools(taskGroupID, workerIDs, nil)
 }
 
+// ReserveAccounts locks a set of accounts for a task group. Only the active
+// task group's accounts may be picked during Reconcile.
+func (d *Dispatcher) ReserveAccounts(taskGroupID string, accountIDs []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.accountReservations = make(map[string]string, len(accountIDs))
+	for _, id := range accountIDs {
+		if id == "" {
+			continue
+		}
+		d.accountReservations[id] = taskGroupID
+	}
+	d.activeTaskGroup = taskGroupID
+}
+
 // ReserveWorkerPools locks primary and standby worker pools for a task group.
 // Standby workers are reserved by the task group immediately, but are only
 // selected to replace failed primary workers.  If no primary pool is configured,
@@ -142,6 +158,7 @@ func (d *Dispatcher) ReserveWorkerPools(taskGroupID string, primaryWorkerIDs, st
 func (d *Dispatcher) ReleaseWorkers() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.accountReservations = make(map[string]string)
 	d.workerReservations = make(map[string]string)
 	d.workerRoles = make(map[string]domain.ResourceRole)
 	d.activeTaskGroup = ""
@@ -834,6 +851,11 @@ func (d *Dispatcher) availableAccounts() []domain.Account {
 		}
 		if !value.Enabled || d.accountBusy[value.ID] != "" || value.CooldownUntil.After(d.now()) {
 			continue
+		}
+		if d.activeTaskGroup != "" {
+			if tg, ok := d.accountReservations[value.ID]; !ok || tg != d.activeTaskGroup {
+				continue
+			}
 		}
 		if !value.CooldownUntil.IsZero() {
 			recoveredAccounts = append(recoveredAccounts, value)

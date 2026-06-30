@@ -46,6 +46,7 @@ type BuyerWithAccounts struct {
 type AccountSummary struct {
 	ID                string     `json:"id"`
 	Name              string     `json:"name"`
+	Tags              []string   `json:"tags,omitempty"`
 	Enabled           bool       `json:"enabled"`
 	VipStatus         int        `json:"vipStatus"` // 0=unknown/not VIP, 1=VIP
 	CooldownUntil     *time.Time `json:"cooldownUntil,omitempty"`

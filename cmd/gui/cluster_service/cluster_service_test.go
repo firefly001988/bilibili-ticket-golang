@@ -140,9 +140,6 @@ func TestClusterServiceEditsAndDeletesPurchaseGroups(t *testing.T) {
 func TestClusterServicePlansTaskGroupAndRequiresHealthyWorker(t *testing.T) {
 	service := testClusterService(t)
 	ctx := context.Background()
-	if err := service.SaveTaskGroup(`{"id":"group","name":"test"}`); err != nil {
-		t.Fatal(err)
-	}
 	// Add a local worker so StartTaskGroup has something to dispatch to.
 	worker := domain.WorkerNode{ID: "w", Name: "test-worker", Type: domain.WorkerTypeLocal, Enabled: true}
 	if err := service.repository.PutWorker(ctx, worker); err != nil {
@@ -156,6 +153,9 @@ func TestClusterServicePlansTaskGroupAndRequiresHealthyWorker(t *testing.T) {
 	// Map buyer "a" to account "acct".
 	mapping := domain.AccountBuyerMapping{AccountID: "acct", LogicalBuyerID: "a", BuyerID: 1}
 	if err := service.repository.PutBuyerMapping(ctx, mapping); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SaveTaskGroup(`{"id":"group","name":"test","accountIds":["acct"]}`); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
@@ -185,7 +185,7 @@ func TestClusterServiceRejectsStartingAnotherActiveTaskGroup(t *testing.T) {
 	if err := service.SaveTaskGroup(`{"id":"group-a","name":"A"}`); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.SaveTaskGroup(`{"id":"group-b","name":"B","primaryWorkerIds":["w"]}`); err != nil {
+	if err := service.SaveTaskGroup(`{"id":"group-b","name":"B","accountIds":["account"],"primaryWorkerIds":["w"]}`); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.repository.PutWorker(ctx, domain.WorkerNode{ID: "w", Name: "worker", Type: domain.WorkerTypeLocal, Enabled: true}); err != nil {

@@ -35,6 +35,7 @@ func (s *ClusterService) SaveTaskGroup(document string) error {
 }
 
 func normalizeTaskGroupDefaults(value *domain.TaskGroup) {
+	value.AccountIDs = uniqueStrings(value.AccountIDs)
 	value.PrimaryWorkerIDs = uniqueStrings(value.PrimaryWorkerIDs)
 	value.StandbyWorkerIDs = removeStrings(uniqueStrings(value.StandbyWorkerIDs), value.PrimaryWorkerIDs)
 	if value.PaymentTimeoutMinutes <= 0 {

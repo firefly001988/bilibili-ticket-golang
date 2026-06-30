@@ -66,7 +66,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyersWithAccounts, ActiveTaskGroup: s.dispatcher.ActiveTaskGroup(), EmployerVersion: global.GitCommit}
 
 	for _, account := range accountList {
-		summary := AccountSummary{ID: account.ID, Name: account.Name, Enabled: account.Enabled, VipStatus: account.VipStatus, CredentialVersion: account.Credentials.Version}
+		summary := AccountSummary{ID: account.ID, Name: account.Name, Tags: normalizeAccountTags(account.Tags), Enabled: account.Enabled, VipStatus: account.VipStatus, CredentialVersion: account.Credentials.Version}
 		if !account.CooldownUntil.IsZero() {
 			cooldown := account.CooldownUntil
 			summary.CooldownUntil = &cooldown

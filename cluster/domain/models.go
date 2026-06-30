@@ -81,6 +81,7 @@ func (k BuyerDayKey) String() string { return k.BuyerID + "@" + k.EventDay }
 type TaskGroup struct {
 	ID                    string    `json:"id"`
 	Name                  string    `json:"name"`
+	AccountIDs            []string  `json:"accountIds,omitempty"`
 	PrimaryWorkerIDs      []string  `json:"primaryWorkerIds,omitempty"`
 	StandbyWorkerIDs      []string  `json:"standbyWorkerIds,omitempty"`
 	PaymentTimeoutMinutes int       `json:"paymentTimeoutMinutes,omitempty"`
@@ -222,6 +223,7 @@ type Account struct {
 	ID            string      `json:"id"`
 	Name          string      `json:"name"`
 	Credentials   Credentials `json:"credentials"`
+	Tags          []string    `json:"tags,omitempty"`
 	CooldownUntil time.Time   `json:"cooldownUntil,omitempty"`
 	Enabled       bool        `json:"enabled"`
 	VipStatus     int         `json:"vipStatus"` // 0=unknown, 1=VIP
