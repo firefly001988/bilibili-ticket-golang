@@ -9,6 +9,7 @@ import {
     RemoveBuyerFromAccount,
     RemoveBuyerFromAllAccounts,
     SyncAllAccountBuyers,
+    SyncAllAccountBuyersFast,
     SyncBuyerToAccount,
     SyncBuyerToAllAccounts,
 } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
@@ -59,6 +60,7 @@ const syncing = ref<Record<string, boolean>>({})
 
 // Sync all accounts
 const syncingAll = ref(false)
+const syncingAllFast = ref(false)
 
 // Edit phone dialog
 const showPhoneDialog = ref(false)
@@ -222,6 +224,18 @@ async function refreshAllBuyers() {
     syncingAll.value = false
 }
 
+async function fastRefreshAllBuyers() {
+    syncingAllFast.value = true
+    try {
+        const result = await SyncAllAccountBuyersFast()
+        await load()
+        messages.add({ text: t('buyer.fastRefreshAllSuccess', { count: (result || []).length }), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('buyer.fastRefreshAllFailed', { error: String(e) }), color: 'error' })
+    }
+    syncingAllFast.value = false
+}
+
 function openPhoneDialog(b: BuyerWithAccounts) {
     phoneBuyer.value = b
     phoneValue.value = b.tel || ''
@@ -383,14 +397,20 @@ function accountSummary(accounts: BuyerAccountBadge[]) {
 <template>
     <v-container>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <h1>{{ t('buyer.title') }}</h1>
+            <h1 style="margin: 0;">{{ t('buyer.title') }}</h1>
             <v-spacer />
-            <v-btn prepend-icon="mdi-refresh" variant="tonal" :loading="syncingAll" @click="refreshAllBuyers">
-                {{ t('buyer.refreshAllBuyers') }}
-            </v-btn>
-            <v-btn prepend-icon="mdi-plus" color="primary" @click="showAddDialog = true">
-                {{ t('buyer.addBuyer') }}
-            </v-btn>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+                <v-btn prepend-icon="mdi-refresh" variant="tonal" :loading="syncingAll" @click="refreshAllBuyers">
+                    {{ t('buyer.refreshAllBuyers') }}
+                </v-btn>
+                <v-btn prepend-icon="mdi-lightning-bolt" variant="tonal" color="warning" :loading="syncingAllFast"
+                    @click="fastRefreshAllBuyers">
+                    {{ t('buyer.fastRefreshAllBuyers') }}
+                </v-btn>
+                <v-btn prepend-icon="mdi-plus" color="primary" @click="showAddDialog = true">
+                    {{ t('buyer.addBuyer') }}
+                </v-btn>
+            </div>
         </div>
 
         <v-divider class="mt-2 mb-4" thickness="3" />

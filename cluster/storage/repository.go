@@ -617,6 +617,13 @@ func (r *Repository) DeleteBuyerMapping(ctx context.Context, accountID, logicalB
 	return err
 }
 
+// PruneOrphanedLogicalBuyers deletes logical_buyers rows that have no
+// remaining entries in account_buyer_mappings.
+func (r *Repository) PruneOrphanedLogicalBuyers(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM logical_buyers WHERE id NOT IN (SELECT logical_buyer_id FROM account_buyer_mappings)`)
+	return err
+}
+
 // DeleteBuyerAllMappings removes all account mappings for a logical buyer,
 // then deletes the logical buyer record itself.
 func (r *Repository) DeleteBuyerAllMappings(ctx context.Context, logicalBuyerID string) error {

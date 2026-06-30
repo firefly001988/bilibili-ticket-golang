@@ -29,6 +29,7 @@ type Repository interface {
 	ListBuyerMappings(context.Context) ([]domain.AccountBuyerMapping, error)
 	DeleteBuyerMapping(context.Context, string, string) error
 	DeleteBuyerAllMappings(context.Context, string) error
+	PruneOrphanedLogicalBuyers(context.Context) error
 	ListAccounts(context.Context) ([]domain.Account, error)
 }
 
@@ -256,9 +257,10 @@ func (m *Manager) SyncAllBuyers(ctx context.Context) ([]domain.Buyer, error) {
 // buyerAccEntry records a buyer's ID on a specific account together with
 // the account credentials (refreshed from the API) for later persistence.
 type buyerAccEntry struct {
-	AccountID   string
-	BuyerID     int64
-	Credentials domain.Credentials
+	AccountID      string
+	LogicalBuyerID string
+	BuyerID        int64
+	Credentials    domain.Credentials
 }
 
 // SyncAllBuyersFast performs a multi-account buyer sync that minimises
@@ -436,6 +438,34 @@ func (m *Manager) SyncAllBuyersFast(ctx context.Context) ([]domain.Buyer, error)
 		}
 	}
 
+	// Recompute logical buyer IDs now that we have unmasked data from
+	// Phase 3.  This prevents duplicates when the same person was
+	// initially grouped under a masked-data-derived key and later
+	// synced (or re-synced) with an unmasked-data-derived key.
+	rebased := make(map[dedupKey]*groupedEntry, len(grouped))
+	for _, ge := range grouped {
+		if ge.buyer.IDCard == "" || isMasked(ge.buyer.IDCard) {
+			continue // still masked, skip
+		}
+		newID := logicalBuyerID(ge.buyer)
+		newKey := dedupKey{logicalID: newID}
+		if existing, ok := rebased[newKey]; ok {
+			// Merge groups that converged onto the same unmasked ID.
+			existing.buyer = mergeBuyer(existing.buyer, ge.buyer)
+			existing.entries = append(existing.entries, ge.entries...)
+			if !existing.hasUnmasked {
+				existing.hasUnmasked = ge.hasUnmasked
+			}
+		} else {
+			ge.buyer.LogicalID = newID
+			for i := range ge.entries {
+				ge.entries[i].LogicalBuyerID = newID
+			}
+			rebased[newKey] = ge
+		}
+	}
+	grouped = rebased
+
 	// ── Phase 4: persist ─────────────────────────────────────────────
 	var firstErr error
 	seenLogical := make(map[string]bool)
@@ -511,6 +541,35 @@ func (m *Manager) SyncAllBuyersFast(ctx context.Context) ([]domain.Buyer, error)
 	if firstErr != nil {
 		return nil, firstErr
 	}
+
+	// ── Cleanup: remove stale duplicate mappings ────────────────────
+	// Previous runs of SyncAllBuyersFast (before the rebase step was
+	// added) may have written logical buyer records with masked-derived
+	// IDs.  Now that we have the correct unmasked-derived IDs, the old
+	// records become duplicates.  Delete any mapping whose (accountID,
+	// buyerID) pair is already covered by a mapping in seenLogical.
+	allMappings, listErr := m.repository.ListBuyerMappings(ctx)
+	if listErr == nil {
+		for _, old := range allMappings {
+			if seenLogical[old.LogicalBuyerID] {
+				continue // already correct
+			}
+			// Check if any new mapping covers the same (accountID, buyerID).
+			for _, ge := range grouped {
+				for _, entry := range ge.entries {
+					if entry.AccountID == old.AccountID && entry.BuyerID == old.BuyerID {
+						log.Printf("[accounts] fast sync: removing stale mapping %s→%s (replaced by %s)",
+							old.AccountID, old.LogicalBuyerID, entry.LogicalBuyerID)
+						_ = m.repository.DeleteBuyerMapping(ctx, old.AccountID, old.LogicalBuyerID)
+						break
+					}
+				}
+			}
+		}
+		// Remove logical buyers that now have zero mappings.
+		_ = m.repository.PruneOrphanedLogicalBuyers(ctx)
+	}
+
 	return m.repository.ListLogicalBuyers(ctx)
 }
 
