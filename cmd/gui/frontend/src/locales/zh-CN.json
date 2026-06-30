@@ -151,6 +151,8 @@
         "deployNeedSSH": "请填写 {host} 的 SSH 用户名",
         "deployNeedSSHPassword": "请填写 {host} 的 SSH 密码",
         "deployNeedSSHKey": "请选择或填写 {host} 的 SSH 私钥路径",
+        "deployNeedSSHPortRange": "{host} 的 SSH 端口必须在 1-65535 之间",
+        "deployNeedWorkerPortRange": "{host} 的 Worker 端口必须在 1-65535 之间",
         "deployNeedLocalBinary": "请选择或填写本地 worker 二进制路径",
         "deployNeedLocalPackage": "请选择或填写本地 worker 文件路径",
         "deployNeedDownloadUrl": "请填写远程下载地址",
@@ -159,6 +161,8 @@
         "deployCancelFailed": "取消部署失败: {error}",
         "deploySelectBinaryFailed": "选择文件失败: {error}",
         "deploySelectKeyFailed": "选择私钥失败: {error}",
+        "portMustBeInteger": "必须为纯数字整数",
+        "portInvalid": "端口不合法",
         "deployStage": {
             "pending": "等待中",
             "connecting": "连接 SSH",

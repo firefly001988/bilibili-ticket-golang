@@ -253,6 +253,12 @@ func validateDeployRequest(req RemoteWorkerDeployRequest) error {
 		if target.Username == "" {
 			return fmt.Errorf("target %s SSH username is required", target.Host)
 		}
+		if target.SSHPort < 1 || target.SSHPort > 65535 {
+			return fmt.Errorf("target %s SSH port must be 1-65535", target.Host)
+		}
+		if target.WorkerPort < 1 || target.WorkerPort > 65535 {
+			return fmt.Errorf("target %s worker port must be 1-65535", target.Host)
+		}
 		switch target.AuthType {
 		case "password":
 			if target.Password == "" {
@@ -260,7 +266,7 @@ func validateDeployRequest(req RemoteWorkerDeployRequest) error {
 			}
 		case "key":
 			if target.PrivateKeyPath == "" {
-				return fmt.Errorf("target %s SSH private key path is required", target.Host)
+				return fmt.Errorf("target %s SSH private key is required", target.Host)
 			}
 		default:
 			return fmt.Errorf("target %s unsupported SSH auth type %q", target.Host, target.AuthType)
@@ -481,11 +487,12 @@ func deploySSHAuthMethods(target RemoteWorkerDeployTarget) ([]ssh.AuthMethod, er
 		}
 		return []ssh.AuthMethod{ssh.Password(target.Password)}, nil
 	case "key":
-		keyBytes, err := os.ReadFile(target.PrivateKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("read SSH private key: %w", err)
+		keyBytes := []byte(target.PrivateKeyPath)
+		if len(keyBytes) == 0 {
+			return nil, fmt.Errorf("SSH private key is required")
 		}
 		var signer ssh.Signer
+		var err error
 		if target.PrivateKeyPassphrase != "" {
 			signer, err = ssh.ParsePrivateKeyWithPassphrase(keyBytes, []byte(target.PrivateKeyPassphrase))
 		} else {

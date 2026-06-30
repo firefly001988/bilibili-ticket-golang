@@ -151,6 +151,8 @@
         "deployNeedSSH": "Please enter SSH username for {host}",
         "deployNeedSSHPassword": "Please enter SSH password for {host}",
         "deployNeedSSHKey": "Please select or enter an SSH private key path for {host}",
+        "deployNeedSSHPortRange": "SSH port for {host} must be 1-65535",
+        "deployNeedWorkerPortRange": "Worker port for {host} must be 1-65535",
         "deployNeedLocalBinary": "Please select or enter a local worker binary path",
         "deployNeedLocalPackage": "Please select or enter a local worker file path",
         "deployNeedDownloadUrl": "Please enter a remote download URL",
@@ -159,6 +161,8 @@
         "deployCancelFailed": "Failed to cancel deployment: {error}",
         "deploySelectBinaryFailed": "Failed to select file: {error}",
         "deploySelectKeyFailed": "Failed to select private key: {error}",
+        "portMustBeInteger": "Must be an integer",
+        "portInvalid": "Invalid port",
         "deployStage": {
             "pending": "Pending",
             "connecting": "SSH Connect",
