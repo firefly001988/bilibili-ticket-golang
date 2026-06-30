@@ -8,6 +8,7 @@ package proto
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -30,6 +31,8 @@ const (
 	WorkerService_ListBuyers_FullMethodName            = "/worker.WorkerService/ListBuyers"
 	WorkerService_CreateBuyer_FullMethodName           = "/worker.WorkerService/CreateBuyer"
 	WorkerService_GetBuyerSensitiveData_FullMethodName = "/worker.WorkerService/GetBuyerSensitiveData"
+	WorkerService_ListBuyersMasked_FullMethodName      = "/worker.WorkerService/ListBuyersMasked"
+	WorkerService_DeleteBuyer_FullMethodName           = "/worker.WorkerService/DeleteBuyer"
 )
 
 // WorkerServiceClient is the client API for WorkerService service.
@@ -78,6 +81,14 @@ type WorkerServiceClient interface {
 	// information (ID card number, phone, etc.) for a specific buyer
 	// already on a Bilibili account's real‑name list.
 	GetBuyerSensitiveData(ctx context.Context, in *GetBuyerSensitiveDataRequest, opts ...grpc.CallOption) (*GetBuyerSensitiveDataResponse, error)
+	// ListBuyersMasked fetches the buyer list without unmasking sensitive
+	// data.  ID cards and phone numbers may be returned with asterisks
+	// (masked).  Use this to quickly enumerate buyers from many accounts
+	// without rate-limiting, then call GetBuyerSensitiveData only for
+	// unique logical buyers that need full real‑name information.
+	ListBuyersMasked(ctx context.Context, in *ListBuyersRequest, opts ...grpc.CallOption) (*ListBuyersResponse, error)
+	// DeleteBuyer removes a real‑name buyer from a Bilibili account.
+	DeleteBuyer(ctx context.Context, in *DeleteBuyerRequest, opts ...grpc.CallOption) (*DeleteBuyerResponse, error)
 }
 
 type workerServiceClient struct {
@@ -201,6 +212,26 @@ func (c *workerServiceClient) GetBuyerSensitiveData(ctx context.Context, in *Get
 	return out, nil
 }
 
+func (c *workerServiceClient) ListBuyersMasked(ctx context.Context, in *ListBuyersRequest, opts ...grpc.CallOption) (*ListBuyersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBuyersResponse)
+	err := c.cc.Invoke(ctx, WorkerService_ListBuyersMasked_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workerServiceClient) DeleteBuyer(ctx context.Context, in *DeleteBuyerRequest, opts ...grpc.CallOption) (*DeleteBuyerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteBuyerResponse)
+	err := c.cc.Invoke(ctx, WorkerService_DeleteBuyer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkerServiceServer is the server API for WorkerService service.
 // All implementations must embed UnimplementedWorkerServiceServer
 // for forward compatibility.
@@ -247,6 +278,14 @@ type WorkerServiceServer interface {
 	// information (ID card number, phone, etc.) for a specific buyer
 	// already on a Bilibili account's real‑name list.
 	GetBuyerSensitiveData(context.Context, *GetBuyerSensitiveDataRequest) (*GetBuyerSensitiveDataResponse, error)
+	// ListBuyersMasked fetches the buyer list without unmasking sensitive
+	// data.  ID cards and phone numbers may be returned with asterisks
+	// (masked).  Use this to quickly enumerate buyers from many accounts
+	// without rate-limiting, then call GetBuyerSensitiveData only for
+	// unique logical buyers that need full real‑name information.
+	ListBuyersMasked(context.Context, *ListBuyersRequest) (*ListBuyersResponse, error)
+	// DeleteBuyer removes a real‑name buyer from a Bilibili account.
+	DeleteBuyer(context.Context, *DeleteBuyerRequest) (*DeleteBuyerResponse, error)
 	mustEmbedUnimplementedWorkerServiceServer()
 }
 
@@ -289,6 +328,12 @@ func (UnimplementedWorkerServiceServer) CreateBuyer(context.Context, *CreateBuye
 }
 func (UnimplementedWorkerServiceServer) GetBuyerSensitiveData(context.Context, *GetBuyerSensitiveDataRequest) (*GetBuyerSensitiveDataResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetBuyerSensitiveData not implemented")
+}
+func (UnimplementedWorkerServiceServer) ListBuyersMasked(context.Context, *ListBuyersRequest) (*ListBuyersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBuyersMasked not implemented")
+}
+func (UnimplementedWorkerServiceServer) DeleteBuyer(context.Context, *DeleteBuyerRequest) (*DeleteBuyerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteBuyer not implemented")
 }
 func (UnimplementedWorkerServiceServer) mustEmbedUnimplementedWorkerServiceServer() {}
 func (UnimplementedWorkerServiceServer) testEmbeddedByValue()                       {}
@@ -498,6 +543,42 @@ func _WorkerService_GetBuyerSensitiveData_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkerService_ListBuyersMasked_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBuyersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).ListBuyersMasked(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_ListBuyersMasked_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).ListBuyersMasked(ctx, req.(*ListBuyersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkerService_DeleteBuyer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteBuyerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).DeleteBuyer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_DeleteBuyer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).DeleteBuyer(ctx, req.(*DeleteBuyerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkerService_ServiceDesc is the grpc.ServiceDesc for WorkerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -544,6 +625,14 @@ var WorkerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetBuyerSensitiveData",
 			Handler:    _WorkerService_GetBuyerSensitiveData_Handler,
+		},
+		{
+			MethodName: "ListBuyersMasked",
+			Handler:    _WorkerService_ListBuyersMasked_Handler,
+		},
+		{
+			MethodName: "DeleteBuyer",
+			Handler:    _WorkerService_DeleteBuyer_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

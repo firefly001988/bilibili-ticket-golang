@@ -257,6 +257,13 @@ message GetBuyerSensitiveDataResponse {
   Buyer buyer = 1;
 }
 
+message DeleteBuyerRequest {
+  Credentials credentials = 1;
+  int64       buyer_id    = 2;
+}
+
+message DeleteBuyerResponse {}
+
 // =============================================================================
 // WorkerService
 // =============================================================================
@@ -314,4 +321,14 @@ service WorkerService {
   // information (ID card number, phone, etc.) for a specific buyer
   // already on a Bilibili account's real‑name list.
   rpc GetBuyerSensitiveData(GetBuyerSensitiveDataRequest) returns (GetBuyerSensitiveDataResponse);
+
+  // ListBuyersMasked fetches the buyer list without unmasking sensitive
+  // data.  ID cards and phone numbers may be returned with asterisks
+  // (masked).  Use this to quickly enumerate buyers from many accounts
+  // without rate-limiting, then call GetBuyerSensitiveData only for
+  // unique logical buyers that need full real‑name information.
+  rpc ListBuyersMasked(ListBuyersRequest) returns (ListBuyersResponse);
+
+  // DeleteBuyer removes a real‑name buyer from a Bilibili account.
+  rpc DeleteBuyer(DeleteBuyerRequest) returns (DeleteBuyerResponse);
 }

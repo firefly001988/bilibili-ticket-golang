@@ -557,3 +557,49 @@ func (c *BiliClient) GetTargetBuyerSensitiveData(buyerID int64) (error, api.Buye
 		VerifyStatus: apiResp.Data.VerifyStatus,
 	}
 }
+
+func (c *BiliClient) UpdateTargetBuyerSensitiveData(buyerID int64, name, tel string, idType int, personalID string) error {
+	form := map[string]any{
+		"id":         buyerID,
+		"name":       name,
+		"tel":        tel,
+		"idType":     idType,
+		"personalId": personalID,
+		"src":        "owner",
+	}
+	resp, err := c.client.R().SetBodyJsonMarshal(form).Post("https://show.bilibili.com/api/ticket/buyerinfo/update")
+	if err != nil {
+		return err
+	}
+	var apiResp api.ShowApiDataRoot[api.UpdateBuyerStruct]
+	err = resp.Unmarshal(&apiResp)
+	if err != nil {
+		return err
+	}
+	if apiResp.ErrTag != 0 || apiResp.Data.CodeType != 1 {
+		return fmt.Errorf("update buyer sensitive data failed: %s", apiResp.Data.CodeMsg)
+	}
+	if apiResp.Data.UpdateId != buyerID {
+		return fmt.Errorf("update buyer sensitive data failed: updateId mismatch, expected %d, got %d", buyerID, apiResp.Data.UpdateId)
+	}
+	return nil
+}
+
+func (c *BiliClient) DeleteTargetBuyer(buyerID int64) error {
+	form := map[string]any{
+		"id": buyerID,
+	}
+	resp, err := c.client.R().SetFormDataAnyType(form).Post("https://show.bilibili.com/api/ticket/buyerinfo/delete")
+	if err != nil {
+		return err
+	}
+	var apiResp api.ShowApiDataRoot[api.DeleteBuyerStruct]
+	err = resp.Unmarshal(&apiResp)
+	if err != nil {
+		return err
+	}
+	if apiResp.ErrTag != 0 || apiResp.Data.CodeType != 1 {
+		return fmt.Errorf("delete buyer failed: %s", apiResp.Data.CodeMsg)
+	}
+	return nil
+}

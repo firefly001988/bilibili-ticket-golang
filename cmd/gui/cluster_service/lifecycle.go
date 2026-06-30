@@ -90,6 +90,9 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 	// Restore persisted global configuration.
 	service.LoadGlobalConfig(context.Background())
 
+	// Configure buyer sync concurrency from the persisted worker pool.
+	service.accounts.SetSyncConcurrency(len(service.GetBuyerManagerWorkerIDs()))
+
 	return service
 }
 

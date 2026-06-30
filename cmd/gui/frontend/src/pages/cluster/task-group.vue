@@ -33,6 +33,11 @@ const groupConfigDirty = ref(false)
 const savingGroupConfig = ref(false)
 const lookupProjectId = ref(''); const lookupLoading = ref(false); const projectInfo = ref<any>(null); const tickets = ref<any[]>([])
 const selectedScreenId = ref(0); const selectedSkuId = ref(0); const addingMacro = ref(false); const showSkuList = ref(false)
+const customStartAt = ref('') // user-defined override for macro start time (ISO datetime)
+const customStartRef = ref<any>(null)
+function openDatetimePicker() {
+    ; (customStartRef.value?.$el?.querySelector('input') as HTMLInputElement)?.showPicker()
+}
 const deletingMacro = ref<Record<string, boolean>>({})
 const filterName = ref('')
 const filteredTickets = computed(() => { const kw = filterName.value.trim().toLowerCase(); if (!kw) return tickets.value; return tickets.value.filter((t: any) => (t.name || '').toLowerCase().includes(kw) || (t.desc || '').toLowerCase().includes(kw) || String(t.skuId).includes(kw)) })
@@ -187,9 +192,32 @@ onUnmounted(stopPolling)
 
 watch(() => route.params.id, (newId) => { if (newId) { loadAll(newId as string); startPolling(newId as string) } else { stopPolling() } }, { immediate: true })
 
+/** The currently selected ticket in the SKU list. */
+const selectedTicket = computed(() => {
+    if (!selectedScreenId.value || !selectedSkuId.value) return null
+    return (tickets.value as any[]).find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value) || null
+})
+
+/** When the user picks a ticket, sync its sale start into the picker. */
+watch(selectedTicket, (t) => {
+    const start = t?.saleStat?.start || ''
+    if (start) {
+        const d = new Date(start)
+        if (!isNaN(d.getTime())) customStartAt.value = formatDatetimeLocal(d)
+    } else {
+        customStartAt.value = ''
+    }
+})
+
 async function lookupProject() { const pid = lookupProjectId.value.trim(); if (!pid) { messages.add({ text: t('taskGroup.projectIdRequired'), color: 'warning' }); return } lookupLoading.value = true; projectInfo.value = null; tickets.value = []; selectedScreenId.value = 0; selectedSkuId.value = 0; try { const [info, tks] = await Promise.all([GetProjectInformationNew(pid), GetTicketSkuIDsByProjectIDNew(pid)]); if (!info) messages.add({ text: t('taskGroup.projectNotFound'), color: 'warning' }); else { projectInfo.value = info; tickets.value = tks || [] } } catch (e: any) { messages.add({ text: t('taskGroup.lookupFailed', { error: String(e) }), color: 'error' }) } lookupLoading.value = false }
 
-async function addMacro() { if (!projectInfo.value || !selectedScreenId.value || !selectedSkuId.value || !group.value) return; const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value); addingMacroInfo.value = { projectName: projectInfo.value.ProjectName || '', eventDay: ticket?.eventTime || projectInfo.value.StartTime || '', screenName: ticket?.name || '', skuName: ticket?.desc || '', price: ((ticket?.price || 0) / 100), buyLimit: ticket?.buyLimit || 1, saleStart: ticket?.saleStat?.start || '', saleEnd: ticket?.saleStat?.end || '', isRealName: projectInfo.value.IsForceRealName || false }; showAddConfirmDialog.value = true }
+async function addMacro() { if (!projectInfo.value || !selectedScreenId.value || !selectedSkuId.value || !group.value) return; const ticket = selectedTicket.value; addingMacroInfo.value = { projectName: projectInfo.value.ProjectName || '', eventDay: ticket?.eventTime || projectInfo.value.StartTime || '', screenName: ticket?.name || '', skuName: ticket?.desc || '', price: ((ticket?.price || 0) / 100), buyLimit: ticket?.buyLimit || 1, saleStart: customStartAt.value || ticket?.saleStat?.start || '', saleEnd: ticket?.saleStat?.end || '', isRealName: projectInfo.value.IsForceRealName || false }; showAddConfirmDialog.value = true }
+
+/** Format a Date as YYYY-MM-DDTHH:mm:ss for &lt;input type="datetime-local" step="1"&gt;. */
+function formatDatetimeLocal(d: Date): string {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
 
 async function confirmAddMacro() {
     if (!addingMacroInfo.value || !group.value) return
@@ -197,7 +225,9 @@ async function confirmAddMacro() {
     showAddConfirmDialog.value = false
     const info = addingMacroInfo.value
     const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value)
-    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: false, orderCapacity: ticket?.buyLimit || 1, startAt: ticket?.saleStat?.start || '', deadline: ticket?.saleStat?.end || '' })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
+    // Use custom start time if provided, otherwise fall back to the project sale start.
+    const startAt = customStartAt.value ? new Date(customStartAt.value).toISOString() : (ticket?.saleStat?.start || '')
+    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: false, orderCapacity: ticket?.buyLimit || 1, startAt, deadline: ticket?.saleStat?.end || '' })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; customStartAt.value = ''; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
     addingMacro.value = false
     addingMacroInfo.value = null
 }
@@ -205,6 +235,7 @@ async function confirmAddMacro() {
 function cancelAddMacro() {
     showAddConfirmDialog.value = false
     addingMacroInfo.value = null
+    customStartAt.value = ''
 }
 
 async function removeMacro(m: MacroSummary) { deletingMacro.value[m.id] = true; try { await DeleteMacro(m.id); await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroDeleted'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroDeleteFailed', { error: String(e) }), color: 'error' }) } deletingMacro.value[m.id] = false }
@@ -559,16 +590,18 @@ const allPurchaseGroups = computed(() => {
                         <v-col cols="12" md="4">
                             <v-text-field v-model.number="groupPaymentTimeoutMinutes"
                                 :label="t('taskGroup.paymentTimeoutMinutes')" type="number" min="1" variant="outlined"
-                                density="compact" :disabled="editingDisabled" @update:model-value="markGroupConfigDirty" />
+                                density="compact" :disabled="editingDisabled"
+                                @update:model-value="markGroupConfigDirty" />
                         </v-col>
                         <v-col cols="12" md="4">
                             <v-text-field v-model.number="groupWaveDurationMinutes"
                                 :label="t('taskGroup.waveDurationMinutes')" type="number" min="1" variant="outlined"
-                                density="compact" :disabled="editingDisabled" @update:model-value="markGroupConfigDirty" />
+                                density="compact" :disabled="editingDisabled"
+                                @update:model-value="markGroupConfigDirty" />
                         </v-col>
                         <v-col cols="12" md="4">
-                            <v-text-field v-model.number="groupMaxWaves" :label="t('taskGroup.maxWaves')"
-                                type="number" min="1" variant="outlined" density="compact" :disabled="editingDisabled"
+                            <v-text-field v-model.number="groupMaxWaves" :label="t('taskGroup.maxWaves')" type="number"
+                                min="1" variant="outlined" density="compact" :disabled="editingDisabled"
                                 @update:model-value="markGroupConfigDirty" />
                         </v-col>
                     </v-row>
@@ -605,14 +638,16 @@ const allPurchaseGroups = computed(() => {
                         <v-chip v-if="groupStats.failed > 0" size="small" color="error" variant="tonal">{{
                             t('taskGroup.failed', { count: groupStats.failed }) }}</v-chip>
                         <v-spacer />
-                        <v-btn v-if="!groupRunning" prepend-icon="mdi-play-circle-outline" color="success" variant="tonal"
-                            size="small" :loading="dispatchingAll"
-                            :disabled="dispatchableMacros.length === 0 || !workerPoolConfigured" @click="startAllMacros">
+                        <v-btn v-if="!groupRunning" prepend-icon="mdi-play-circle-outline" color="success"
+                            variant="tonal" size="small" :loading="dispatchingAll"
+                            :disabled="dispatchableMacros.length === 0 || !workerPoolConfigured"
+                            @click="startAllMacros">
                             {{ t('taskGroup.startAll') }}
                         </v-btn>
                         <v-btn v-if="!groupRunning" prepend-icon="mdi-fast-forward" color="warning" variant="tonal"
                             size="small" :loading="dispatchingAll"
-                            :disabled="dispatchableMacros.length === 0 || !workerPoolConfigured" @click="startReflowNow">
+                            :disabled="dispatchableMacros.length === 0 || !workerPoolConfigured"
+                            @click="startReflowNow">
                             {{ t('taskGroup.startReflowNow') }}
                         </v-btn>
                         <template v-else>
@@ -671,7 +706,8 @@ const allPurchaseGroups = computed(() => {
                                 :placeholder="t('taskGroup.projectIdPlaceholder')" variant="outlined" density="compact"
                                 hide-details :disabled="editingDisabled" @keydown.enter="lookupProject" /></v-col>
                         <v-col cols="3" class="d-flex align-center"><v-btn :loading="lookupLoading" color="primary"
-                                :disabled="editingDisabled" @click="lookupProject">{{ t('taskGroup.lookup') }}</v-btn></v-col>
+                                :disabled="editingDisabled" @click="lookupProject">{{ t('taskGroup.lookup')
+                                }}</v-btn></v-col>
                     </v-row>
                     <v-expand-transition>
                         <div v-if="projectInfo" class="mt-3">
@@ -746,6 +782,14 @@ const allPurchaseGroups = computed(() => {
                                     </div>
                                 </v-expand-transition>
                             </v-card>
+                            <v-row dense class="mt-3">
+                                <v-col cols="12">
+                                    <v-text-field ref="customStartRef" v-model="customStartAt"
+                                        :label="t('taskGroup.customStartAt')" :hint="t('taskGroup.customStartAtHint')"
+                                        type="datetime-local" step="1" variant="outlined" density="compact"
+                                        persistent-hint :disabled="editingDisabled" @click="openDatetimePicker" />
+                                </v-col>
+                            </v-row>
                             <v-btn class="mt-3" color="success" :loading="addingMacro"
                                 :disabled="editingDisabled || !selectedScreenId || !selectedSkuId" @click="addMacro">{{
                                     t('taskGroup.confirmAdd') }}</v-btn>
@@ -778,10 +822,17 @@ const allPurchaseGroups = computed(() => {
                                             {{ macroStatusLabel(m) }}
                                         </v-chip>
                                     </div>
-                                    <div class="text-caption text-medium-emphasis text-truncate mt-2">{{
+                                    <div class="d-flex align-center mt-2" style="gap:4px">
+                                        <v-icon size="16" color="info">mdi-clock-start</v-icon>
+                                        <span class="text-body-2" style="color:rgb(var(--v-theme-info))">{{
+                                            t('taskGroup.saleStartTime') }}:</span>
+                                        <span class="text-body-2" style="font-weight:600">{{ m.startAt ? new
+                                            Date(m.startAt).toLocaleString() : '—' }}</span>
+                                    </div>
+                                    <div class="text-caption text-medium-emphasis text-truncate mt-1">{{
                                         t('taskGroup.eventDay') }}: {{
                                             m.eventDay || '—' }}</div>
-                                    <div class="text-caption text-medium-emphasis text-truncate">{{
+                                    <div class="text-caption text-medium-emphasis text-truncate mt-1">{{
                                         t('taskGroup.saleTime') }}: {{ m.startAt || '—' }} ~ {{ m.deadline || '—' }}
                                     </div>
                                     <div v-if="isPendingAutoStart(m) && startBlockers(m).length > 0"
@@ -983,6 +1034,11 @@ const allPurchaseGroups = computed(() => {
                         <div class="info-row">
                             <span class="info-label">{{ t('taskGroup.price') }}</span>
                             <span class="info-value">¥{{ addingMacroInfo?.price?.toFixed(0) || '—' }}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">{{ t('taskGroup.saleStartTime') }}</span>
+                            <span class="info-value" style="color:rgb(var(--v-theme-info));font-weight:600">{{
+                                addingMacroInfo?.saleStart || '—' }}</span>
                         </div>
                         <div class="info-row" v-if="addingMacroInfo?.isRealName">
                             <span class="info-label"></span>

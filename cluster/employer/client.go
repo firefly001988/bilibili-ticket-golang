@@ -407,6 +407,27 @@ func (c *WorkerClient) ListBuyers(ctx context.Context, node domain.WorkerNode, c
 	return buyers, credentialsFromProto(resp.Credentials), nil
 }
 
+// ListBuyersMasked fetches the buyer list from a worker without unmasking
+// sensitive data.  ID cards and phone numbers may contain asterisks.
+// Use GetBuyerSensitiveData to retrieve full data for unique buyers.
+func (c *WorkerClient) ListBuyersMasked(ctx context.Context, node domain.WorkerNode, creds domain.Credentials) ([]domain.Buyer, domain.Credentials, error) {
+	cli, err := c.getClient(node)
+	if err != nil {
+		return nil, domain.Credentials{}, err
+	}
+	resp, err := cli.ListBuyersMasked(ctx, &pb.ListBuyersRequest{
+		Credentials: credentialsToProto(creds),
+	})
+	if err != nil {
+		return nil, domain.Credentials{}, err
+	}
+	buyers := make([]domain.Buyer, len(resp.Buyers))
+	for i, b := range resp.Buyers {
+		buyers[i] = buyerFromProto(b)
+	}
+	return buyers, credentialsFromProto(resp.Credentials), nil
+}
+
 // CreateBuyer creates a new real-name buyer on the target Bilibili account
 // via the worker. Returns the created buyer and refreshed credentials.
 func (c *WorkerClient) CreateBuyer(ctx context.Context, node domain.WorkerNode, creds domain.Credentials, buyer domain.Buyer) (domain.Buyer, domain.Credentials, error) {
@@ -438,6 +459,19 @@ func (c *WorkerClient) GetBuyerSensitiveData(ctx context.Context, node domain.Wo
 		return domain.Buyer{}, err
 	}
 	return buyerFromProto(resp.Buyer), nil
+}
+
+// DeleteBuyer removes a real-name buyer from a Bilibili account via a worker.
+func (c *WorkerClient) DeleteBuyer(ctx context.Context, node domain.WorkerNode, creds domain.Credentials, buyerID int64) error {
+	cli, err := c.getClient(node)
+	if err != nil {
+		return err
+	}
+	_, err = cli.DeleteBuyer(ctx, &pb.DeleteBuyerRequest{
+		Credentials: credentialsToProto(creds),
+		BuyerId:     buyerID,
+	})
+	return err
 }
 
 func (c *WorkerClient) Health(ctx context.Context, node domain.WorkerNode) (map[string]any, error) {

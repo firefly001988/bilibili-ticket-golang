@@ -5,6 +5,9 @@ import { useMessagesStore } from '@/stores/snackbar'
 import {
     Snapshot,
     ProvisionBuyer,
+    UpdateBuyerPhone,
+    RemoveBuyerFromAccount,
+    RemoveBuyerFromAllAccounts,
     SyncAllAccountBuyers,
     SyncBuyerToAccount,
     SyncBuyerToAllAccounts,
@@ -25,6 +28,7 @@ interface BuyerWithAccounts {
     buyerId: number
     name: string
     tel: string
+    tels: string[]
     idCard: string
     type: number
     accounts: BuyerAccountBadge[]
@@ -55,6 +59,18 @@ const syncing = ref<Record<string, boolean>>({})
 
 // Sync all accounts
 const syncingAll = ref(false)
+
+// Edit phone dialog
+const showPhoneDialog = ref(false)
+const phoneBuyer = ref<BuyerWithAccounts | null>(null)
+const phoneValue = ref('')
+const phoneSaving = ref(false)
+
+// Delete buyer dialog
+const showDeleteDialog = ref(false)
+const deleteBuyer = ref<BuyerWithAccounts | null>(null)
+const deleteTargetAccounts = ref<string[]>([])
+const deleting = ref(false)
 
 // Multi-select
 const selected = ref<Set<string>>(new Set())
@@ -206,6 +222,63 @@ async function refreshAllBuyers() {
     syncingAll.value = false
 }
 
+function openPhoneDialog(b: BuyerWithAccounts) {
+    phoneBuyer.value = b
+    phoneValue.value = b.tel || ''
+    showPhoneDialog.value = true
+}
+async function doSetPhone() {
+    if (!phoneBuyer.value || !phoneValue.value.trim()) return
+    phoneSaving.value = true
+    try {
+        await UpdateBuyerPhone(phoneBuyer.value.logicalId, phoneValue.value.trim())
+        showPhoneDialog.value = false
+        phoneBuyer.value = null
+        await load()
+        messages.add({ text: t('buyer.phoneUpdated'), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('buyer.phoneUpdateFailed', { error: String(e) }), color: 'error' })
+    }
+    phoneSaving.value = false
+}
+
+const deleteTargetAccountItems = computed(() => {
+    if (!deleteBuyer.value) return []
+    return (deleteBuyer.value.accounts || []).map(a => ({
+        title: `${a.accountName || a.uid || a.accountId} (${a.accountId})`,
+        value: a.accountId
+    }))
+})
+
+function openDeleteDialog(b: BuyerWithAccounts) {
+    deleteBuyer.value = b
+    deleteTargetAccounts.value = []
+    showDeleteDialog.value = true
+}
+async function doDeleteBuyer() {
+    if (!deleteBuyer.value) return
+    const key = deleteBuyer.value.logicalId
+    deleting.value = true
+    try {
+        const accountIds = deleteTargetAccounts.value
+        if (accountIds.length === 0) {
+            // Delete from all accounts
+            await RemoveBuyerFromAllAccounts(key)
+        } else {
+            for (const accountId of accountIds) {
+                await RemoveBuyerFromAccount(key, accountId)
+            }
+        }
+        showDeleteDialog.value = false
+        deleteBuyer.value = null
+        await load()
+        messages.add({ text: t('buyer.deleteSuccess'), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('buyer.deleteFailed', { error: String(e) }), color: 'error' })
+    }
+    deleting.value = false
+}
+
 // Batch sync to account dialog
 const showBatchSyncDialog = ref(false)
 const batchTargetAccounts = ref<string[]>([])
@@ -276,6 +349,7 @@ const filteredBuyers = computed(() => {
             if ((b.name || '').toLowerCase().includes(kw)) return true
             if ((b.tel || '').includes(kw)) return true
             if ((b.idCard || '').includes(kw)) return true
+            if ((b.tels || []).some(t => t.includes(kw))) return true
             return false
         })
     }
@@ -431,7 +505,20 @@ function accountSummary(accounts: BuyerAccountBadge[]) {
                         </div>
                     </td>
                     <td class="text-caption" style="max-width:140px">
-                        <div class="text-truncate">
+                        <v-tooltip v-if="b.tels && b.tels.length > 1" location="bottom">
+                            <template #activator="{ props }">
+                                <v-chip v-bind="props" size="x-small" color="info" variant="tonal">
+                                    {{ b.tels[0] }}
+                                    <span class="ml-1" style="opacity:0.7">+{{ b.tels.length - 1 }}</span>
+                                </v-chip>
+                            </template>
+                            <div class="d-flex flex-column" style="gap:2px">
+                                <div v-for="(ph, i) in b.tels" :key="i" class="text-caption">
+                                    {{ ph }}
+                                </div>
+                            </div>
+                        </v-tooltip>
+                        <div v-else class="text-truncate">
                             <template v-if="b.tel">{{ b.tel }}</template>
                             <span v-else class="text-medium-emphasis">—</span>
                         </div>
@@ -460,6 +547,10 @@ function accountSummary(accounts: BuyerAccountBadge[]) {
                     </td>
                     <td class="text-no-wrap" style="white-space:nowrap">
                         <div style="display:flex;gap:4px">
+                            <v-btn icon="mdi-cellphone-edit" size="small" variant="text" :title="t('buyer.editPhone')"
+                                @click="openPhoneDialog(b)" />
+                            <v-btn icon="mdi-delete-outline" size="small" variant="text" :title="t('buyer.deleteBuyer')"
+                                @click="openDeleteDialog(b)" />
                             <v-btn icon="mdi-account-plus" size="small" variant="text" :loading="syncing[b.logicalId]"
                                 :title="t('buyer.syncToAccount')" @click="openSync(b)" />
                             <v-btn icon="mdi-account-multiple-plus" size="small" variant="text"
@@ -524,7 +615,7 @@ function accountSummary(accounts: BuyerAccountBadge[]) {
         <v-dialog v-model="showSyncDialog" max-width="420">
             <v-card class="pa-4">
                 <v-card-title>{{ t('buyer.syncToTitle', { name: syncBuyer?.name || syncBuyer?.logicalId })
-                }}</v-card-title>
+                    }}</v-card-title>
                 <v-card-text>
                     <p class="text-body-2 text-medium-emphasis mb-3">
                         {{ t('buyer.syncToHint') }}
@@ -538,6 +629,51 @@ function accountSummary(accounts: BuyerAccountBadge[]) {
                     <v-btn color="primary" :disabled="syncTargetAccounts.length === 0"
                         :loading="!!syncBuyer && syncing[syncBuyer.logicalId]" @click="doSyncToAccount">
                         {{ t('buyer.syncBtn') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <!-- ═══ Edit Phone Dialog ═══ -->
+        <v-dialog v-model="showPhoneDialog" max-width="420">
+            <v-card class="pa-4">
+                <v-card-title>{{ t('buyer.editPhoneTitle', { name: phoneBuyer?.name || phoneBuyer?.logicalId })
+                }}</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 text-medium-emphasis mb-3">
+                        {{ t('buyer.editPhoneHint') }}
+                    </p>
+                    <v-text-field v-model="phoneValue" :label="t('buyer.telLabel')"
+                        :placeholder="t('buyer.telPlaceholder')" variant="outlined" density="compact" />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showPhoneDialog = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="primary" :disabled="!phoneValue.trim()" :loading="phoneSaving" @click="doSetPhone">
+                        {{ t('common.save') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <!-- ═══ Delete Buyer Dialog ═══ -->
+        <v-dialog v-model="showDeleteDialog" max-width="420">
+            <v-card class="pa-4">
+                <v-card-title>{{ t('buyer.deleteTitle', { name: deleteBuyer?.name || deleteBuyer?.logicalId })
+                }}</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 text-medium-emphasis mb-3">
+                        {{ t('buyer.deleteHint') }}
+                    </p>
+                    <v-select v-model="deleteTargetAccounts" :items="deleteTargetAccountItems"
+                        :label="t('buyer.deleteTargetLabel')" variant="outlined" density="compact" multiple chips
+                        :hint="t('buyer.deleteTargetHint')" persistent-hint />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showDeleteDialog = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="error" :loading="deleting" @click="doDeleteBuyer">
+                        {{ t('buyer.deleteBtn') }}
                     </v-btn>
                 </v-card-actions>
             </v-card>

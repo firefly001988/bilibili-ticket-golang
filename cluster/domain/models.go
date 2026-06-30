@@ -63,12 +63,13 @@ const (
 )
 
 type Buyer struct {
-	LogicalID string `json:"logicalId"`
-	BuyerID   int64  `json:"buyerId"`
-	Name      string `json:"name"`
-	Tel       string `json:"tel,omitempty"`
-	IDCard    string `json:"idCard,omitempty"`
-	Type      int    `json:"type"`
+	LogicalID string   `json:"logicalId"`
+	BuyerID   int64    `json:"buyerId"`
+	Name      string   `json:"name"`
+	Tel       string   `json:"tel,omitempty"`
+	Tels      []string `json:"tels,omitempty"`
+	IDCard    string   `json:"idCard,omitempty"`
+	Type      int      `json:"type"`
 }
 
 type BuyerDayKey struct {

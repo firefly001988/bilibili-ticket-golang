@@ -167,3 +167,15 @@ type OrderStatusStruct struct {
 		OrderExpire     string `json:"orderExpire"`
 	} `json:"payParam"`
 }
+
+type UpdateBuyerStruct struct {
+	CodeType  int         `json:"codeType"`
+	CodeMsg   string      `json:"codeMsg"`
+	ErrorList interface{} `json:"errorList,omitempty"`
+	UpdateId  int64       `json:"updateId"`
+}
+
+type DeleteBuyerStruct struct {
+	CodeType int    `json:"codeType"`
+	CodeMsg  string `json:"codeMsg"`
+}

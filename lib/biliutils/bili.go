@@ -151,7 +151,7 @@ func newBiliClient(jar http.CookieJar, profile *DeviceProfile) (*BiliClient, err
 			} else if req.URL.Host == "show.bilibili.com" {
 				req.SetHeader("x-requested-with", "tv.danmaku.bili")
 				ua = fmt.Sprintf(
-					`Mozilla/5.0 (Linux; Android 12; %s; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36 BiliApp/%d mobi_app/android isNotchWindow/0 NotchHeight=24 mallVersion/%d mVersion/312 disable_rcmd/0 magent/BILI_H5_ANDROID_12_%s_%d`,
+					`Mozilla/5.0 (Linux; Android 12; %s; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36 BiliApp/%d mobi_app/android isNotchWindow/0 NotchHeight=24 mallVersion/%d mVersion/361 disable_rcmd/0 magent/BILI_H5_ANDROID_12_%s_%d`,
 					model, biliClient.appVersion.Build, biliClient.appVersion.Build, biliClient.appVersion.Version, biliClient.appVersion.Build,
 				)
 				// Set show.bilibili.com specific cookies

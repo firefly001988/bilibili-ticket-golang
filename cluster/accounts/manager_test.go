@@ -19,6 +19,25 @@ func (p *provisioner) ListBuyers(_ context.Context, account domain.Account) ([]d
 	return p.buyers[account.ID], domain.Credentials{Version: account.Credentials.Version + 1}, nil
 }
 
+func (p *provisioner) ListBuyersMasked(ctx context.Context, account domain.Account) ([]domain.Buyer, domain.Credentials, error) {
+	return p.ListBuyers(ctx, account)
+}
+
+func (p *provisioner) GetBuyerSensitiveData(_ context.Context, _ domain.Account, buyerID int64) (domain.Buyer, error) {
+	for _, b := range p.buyers {
+		for _, bb := range b {
+			if bb.BuyerID == buyerID {
+				return bb, nil
+			}
+		}
+	}
+	return domain.Buyer{}, errors.New("buyer not found")
+}
+
+func (p *provisioner) DeleteBuyer(_ context.Context, _ domain.Account, buyerID int64) error {
+	return nil
+}
+
 func TestSyncBuyersCreatesOpaqueCrossAccountIdentity(t *testing.T) {
 	r, err := storage.Open(filepath.Join(t.TempDir(), "db.sqlite"))
 	if err != nil {

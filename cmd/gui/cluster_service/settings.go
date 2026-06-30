@@ -187,6 +187,10 @@ func (s *ClusterService) SetBuyerManagerWorkerIDs(workerIDs []string) {
 			log.Printf("[cluster] persist buyer manager workers failed: %v", err)
 		}
 	}
+	// Keep the accounts manager's sync concurrency in sync with the worker pool.
+	if s.accounts != nil {
+		s.accounts.SetSyncConcurrency(len(workerIDs))
+	}
 }
 
 // pushGlobalConfigToAll sends the current global config to every enabled

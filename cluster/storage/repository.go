@@ -477,6 +477,31 @@ func (r *Repository) PutLogicalBuyer(ctx context.Context, value domain.Buyer) er
 	return err
 }
 
+// SetBuyerPhone updates the primary phone number for a logical buyer.
+// The phone is set as the primary Tel and also added to Tels if not
+// already present.  Returns the updated buyer.
+func (r *Repository) SetBuyerPhone(ctx context.Context, logicalBuyerID, phone string) (domain.Buyer, error) {
+	buyer, err := r.LogicalBuyer(ctx, logicalBuyerID)
+	if err != nil {
+		return domain.Buyer{}, err
+	}
+	buyer.Tel = phone
+	found := false
+	for _, t := range buyer.Tels {
+		if t == phone {
+			found = true
+			break
+		}
+	}
+	if !found {
+		buyer.Tels = append(buyer.Tels, phone)
+	}
+	if err := r.PutLogicalBuyer(ctx, buyer); err != nil {
+		return domain.Buyer{}, err
+	}
+	return buyer, nil
+}
+
 func (r *Repository) LogicalBuyer(ctx context.Context, id string) (domain.Buyer, error) {
 	var payload []byte
 	if err := r.db.QueryRowContext(ctx, `SELECT payload FROM logical_buyers WHERE id=?`, id).Scan(&payload); err != nil {
@@ -495,6 +520,10 @@ func (r *Repository) LogicalBuyer(ctx context.Context, id string) (domain.Buyer,
 	}
 	if value.Tel != "" && strings.Contains(value.Tel, "*") {
 		return domain.Buyer{}, fmt.Errorf("logical buyer %s has masked phone number and cannot be used", id)
+	}
+	// Ensure Tels is never nil for JSON consistency.
+	if value.Tels == nil {
+		value.Tels = make([]string, 0)
 	}
 	return value, nil
 }
@@ -516,9 +545,14 @@ func (r *Repository) ListLogicalBuyers(ctx context.Context) ([]domain.Buyer, err
 			return nil, err
 		}
 		// Never expose a buyer whose real-name data is still masked.
-		if (buyer.IDCard != "" && strings.Contains(buyer.IDCard, "*")) ||
-			(buyer.Tel != "" && strings.Contains(buyer.Tel, "*")) {
+		hasMaskedTel := buyer.Tel != "" && strings.Contains(buyer.Tel, "*")
+		hasMaskedIDCard := buyer.IDCard != "" && strings.Contains(buyer.IDCard, "*")
+		if hasMaskedIDCard || hasMaskedTel {
 			continue
+		}
+		// Ensure Tels is never nil for JSON consistency.
+		if buyer.Tels == nil {
+			buyer.Tels = make([]string, 0)
 		}
 		result = append(result, buyer)
 	}
@@ -563,6 +597,29 @@ func (r *Repository) ListBuyerMappings(ctx context.Context) ([]domain.AccountBuy
 		result = append(result, value)
 	}
 	return result, rows.Err()
+}
+
+// DeleteBuyerMapping removes a single account-to-buyer mapping.
+func (r *Repository) DeleteBuyerMapping(ctx context.Context, accountID, logicalBuyerID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM account_buyer_mappings WHERE account_id=? AND logical_buyer_id=?`, accountID, logicalBuyerID)
+	return err
+}
+
+// DeleteBuyerAllMappings removes all account mappings for a logical buyer,
+// then deletes the logical buyer record itself.
+func (r *Repository) DeleteBuyerAllMappings(ctx context.Context, logicalBuyerID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM account_buyer_mappings WHERE logical_buyer_id=?`, logicalBuyerID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM logical_buyers WHERE id=?`, logicalBuyerID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) MarkIntentSucceeded(ctx context.Context, intent domain.LogicalOrderIntent, result domain.ExecutionResult) error {

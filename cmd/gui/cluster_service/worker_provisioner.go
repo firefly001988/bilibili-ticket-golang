@@ -74,6 +74,54 @@ func (p *WorkerProvisioner) ListBuyers(ctx context.Context, account domain.Accou
 	return buyers, creds, nil
 }
 
+// ListBuyersMasked fetches buyers from a Bilibili account via a worker
+// without unmasking sensitive data.  ID cards and phones may be asterisked.
+func (p *WorkerProvisioner) ListBuyersMasked(ctx context.Context, account domain.Account) ([]domain.Buyer, domain.Credentials, error) {
+	node, err := p.acquireWorker(ctx, account.ID)
+	if err != nil {
+		return nil, account.Credentials, err
+	}
+	defer p.release(account.ID)
+
+	buyers, creds, err := p.client.ListBuyersMasked(ctx, node, account.Credentials)
+	if err != nil {
+		return nil, account.Credentials, fmt.Errorf("worker %s list buyers masked for account %s: %w", node.ID, account.ID, err)
+	}
+	log.Printf("[worker-provisioner] listed %d masked buyers on account %s via worker %s", len(buyers), account.ID, node.ID)
+	return buyers, creds, nil
+}
+
+// GetBuyerSensitiveData fetches the unmasked real-name data for a single
+// buyer on a Bilibili account via a worker.
+func (p *WorkerProvisioner) GetBuyerSensitiveData(ctx context.Context, account domain.Account, buyerID int64) (domain.Buyer, error) {
+	node, err := p.acquireWorker(ctx, account.ID)
+	if err != nil {
+		return domain.Buyer{}, err
+	}
+	defer p.release(account.ID)
+
+	buyer, err := p.client.GetBuyerSensitiveData(ctx, node, account.Credentials, buyerID)
+	if err != nil {
+		return domain.Buyer{}, fmt.Errorf("worker %s get buyer sensitive data for %d on account %s: %w", node.ID, buyerID, account.ID, err)
+	}
+	return buyer, nil
+}
+
+// DeleteBuyer removes a real-name buyer from a Bilibili account via a worker.
+func (p *WorkerProvisioner) DeleteBuyer(ctx context.Context, account domain.Account, buyerID int64) error {
+	node, err := p.acquireWorker(ctx, account.ID)
+	if err != nil {
+		return err
+	}
+	defer p.release(account.ID)
+
+	if err := p.client.DeleteBuyer(ctx, node, account.Credentials, buyerID); err != nil {
+		return fmt.Errorf("worker %s delete buyer %d for account %s: %w", node.ID, buyerID, account.ID, err)
+	}
+	log.Printf("[worker-provisioner] deleted buyer %d on account %s via worker %s", buyerID, account.ID, node.ID)
+	return nil
+}
+
 // CreateBuyer creates a new real-name buyer on a Bilibili account via a
 // worker.  If all workers are busy the call retries for up to 30 seconds
 // with 1-second backoff.

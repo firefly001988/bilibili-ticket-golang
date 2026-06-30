@@ -453,7 +453,7 @@ func (ws *workerService) ListBuyers(_ context.Context, req *pb.ListBuyersRequest
 		return nil, status.Errorf(codes.Internal, "list buyers: %v", errVal)
 	}
 	buyers := make([]*pb.Buyer, 0, len(list))
-	for _, item := range list {
+	for i, item := range list {
 		b := &pb.Buyer{
 			BuyerId: item.Id,
 			Name:    item.Name,
@@ -478,6 +478,50 @@ func (ws *workerService) ListBuyers(_ context.Context, req *pb.ListBuyersRequest
 			}
 		}
 		buyers = append(buyers, b)
+		// Pause every 8 buyers to avoid rate‑limiting.
+		if (i+1)%8 == 0 && i+1 < len(list) {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	refreshed := backend.Credentials()
+	return &pb.ListBuyersResponse{
+		Buyers:      buyers,
+		Credentials: credentialsToProto(refreshed),
+	}, nil
+}
+
+// =============================================================================
+// ListBuyersMasked – fetch buyer list without unmasking sensitive data
+// =============================================================================
+
+func (ws *workerService) ListBuyersMasked(_ context.Context, req *pb.ListBuyersRequest) (*pb.ListBuyersResponse, error) {
+	if req.Credentials == nil {
+		return nil, status.Error(codes.InvalidArgument, "credentials are required")
+	}
+	creds := credentialsFromProto(req.Credentials)
+	backend, err := executor.NewBilibiliBackend(creds)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "initialize Bilibili client: %v", err)
+	}
+	client, _ := backend.ClientAndJar()
+	errVal, list := client.GetRealnameBuyerListNew()
+	if errVal != nil {
+		return nil, status.Errorf(codes.Internal, "list buyers: %v", errVal)
+	}
+	buyers := make([]*pb.Buyer, 0, len(list))
+	for i, item := range list {
+		b := &pb.Buyer{
+			BuyerId: item.Id,
+			Name:    item.Name,
+			Tel:     item.Tel,
+			IdCard:  item.IdCard,
+			Type:    int32(item.IdType),
+		}
+		buyers = append(buyers, b)
+		// Pause every 8 buyers to avoid rate‑limiting.
+		if (i+1)%8 == 0 && i+1 < len(list) {
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
 	refreshed := backend.Credentials()
 	return &pb.ListBuyersResponse{
@@ -581,6 +625,29 @@ func (ws *workerService) GetBuyerSensitiveData(_ context.Context, req *pb.GetBuy
 			Type:    int32(sensitive.IdType),
 		},
 	}, nil
+}
+
+// =============================================================================
+// DeleteBuyer – remove a real-name buyer from a Bilibili account
+// =============================================================================
+
+func (ws *workerService) DeleteBuyer(_ context.Context, req *pb.DeleteBuyerRequest) (*pb.DeleteBuyerResponse, error) {
+	if req.Credentials == nil {
+		return nil, status.Error(codes.InvalidArgument, "credentials are required")
+	}
+	if req.BuyerId <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "buyer_id is required")
+	}
+	creds := credentialsFromProto(req.Credentials)
+	backend, err := executor.NewBilibiliBackend(creds)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "initialize Bilibili client: %v", err)
+	}
+	client, _ := backend.ClientAndJar()
+	if errVal := client.DeleteTargetBuyer(req.BuyerId); errVal != nil {
+		return nil, status.Errorf(codes.Internal, "delete buyer: %v", errVal)
+	}
+	return &pb.DeleteBuyerResponse{}, nil
 }
 
 // Heartbeat
