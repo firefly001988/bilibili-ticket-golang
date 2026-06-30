@@ -263,9 +263,11 @@ func (d *Dispatcher) DisarmMacro(macroID string) {
 		if plan.Macro.ID != macroID {
 			continue
 		}
-		plan.Intent.Armed = false
-		plan.Intent.Terminal = true
-		plan.Intent.FailureReason = domain.FailureStopped
+		if !plan.Intent.Succeeded {
+			plan.Intent.Armed = false
+			plan.Intent.Terminal = true
+			plan.Intent.FailureReason = domain.FailureStopped
+		}
 		// Clear attempts for this intent
 		for attemptID, current := range d.attempts {
 			if current.planID == intentID {

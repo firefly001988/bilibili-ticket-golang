@@ -16,6 +16,8 @@ import (
 	"bilibili-ticket-golang/cluster/planner"
 )
 
+const startTaskGroupReflowNowToken = "__cluster_reflow_now__"
+
 // SaveMacro persists a macro task (create or update). Validates the
 // execution window and capacity constraints.
 func (s *ClusterService) SaveMacro(document string) error {
@@ -192,9 +194,22 @@ func (s *ClusterService) StartMacro(macroID string) error {
 	return fmt.Errorf("macro task cannot be started independently; start the task group instead")
 }
 
-// StartTaskGroup plans and dispatches all macros in a task group using the
-// given workers. workerIDsJSON is a JSON array of worker ID strings.
+// StartTaskGroup plans and dispatches all macros in a task group. The normal
+// path starts the punctual phase and lets the task-group wave controller manage
+// later reflow waves. Passing startTaskGroupReflowNowToken is an internal
+// compatibility path used by the frontend to start the reflow phase
+// immediately without adding a new Wails binding.
 func (s *ClusterService) StartTaskGroup(taskGroupID string, workerIDsJSON string) error {
+	if workerIDsJSON == startTaskGroupReflowNowToken {
+		return s.startTaskGroupPhase(taskGroupID, domain.PhaseReflow, true, "")
+	}
+	return s.startTaskGroupPhase(taskGroupID, domain.PhasePunctual, false, workerIDsJSON)
+}
+
+// startTaskGroupPhase plans and dispatches all macros in a task group using
+// the task group's reserved primary/standby worker pools. workerIDsJSON is kept
+// only for backwards compatibility with old frontend calls.
+func (s *ClusterService) startTaskGroupPhase(taskGroupID string, phase domain.Phase, reflowNow bool, workerIDsJSON string) error {
 	ctx := context.Background()
 	if err := s.refreshResources(ctx); err != nil {
 		return err
@@ -204,6 +219,11 @@ func (s *ClusterService) StartTaskGroup(taskGroupID string, workerIDsJSON string
 		return err
 	}
 	normalizeTaskGroupDefaults(&taskGroup)
+	if reflowNow {
+		if err := s.validateTaskGroupSaleStarted(ctx, taskGroupID); err != nil {
+			return err
+		}
+	}
 
 	primaryWorkerIDs := append([]string(nil), taskGroup.PrimaryWorkerIDs...)
 	standbyWorkerIDs := append([]string(nil), taskGroup.StandbyWorkerIDs...)
@@ -264,7 +284,7 @@ func (s *ClusterService) StartTaskGroup(taskGroupID string, workerIDsJSON string
 	started := 0
 	plannedIntentIDs := make(map[string]struct{})
 	for _, macro := range selected {
-		intentIDs, err := s.planMacro(ctx, macro.ID, domain.PhasePunctual)
+		intentIDs, err := s.planMacro(ctx, macro.ID, phase)
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", macro.ID, err))
 			continue
@@ -293,6 +313,7 @@ func (s *ClusterService) StartTaskGroup(taskGroupID string, workerIDsJSON string
 		rollback("no active attempt after reconcile")
 		return fmt.Errorf("task group was planned but no attempt started: check deadline, healthy workers, enabled accounts, and buyer mappings")
 	}
+	s.startTaskGroupWaveController(taskGroup, phase, reflowNow)
 	return nil
 }
 

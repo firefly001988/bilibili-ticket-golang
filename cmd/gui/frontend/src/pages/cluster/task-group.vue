@@ -8,6 +8,7 @@ import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGrou
 import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
 
 const route = useRoute(); const { t } = useI18n(); const messages = useMessagesStore()
+const START_REFLOW_NOW_TOKEN = '__cluster_reflow_now__'
 
 interface TaskGroupSummary { id: string; name: string; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; paymentTimeoutMinutes?: number; waveDurationMinutes?: number; maxWaves?: number; createdAt?: string }
 interface WorkerBrief { id: string; name: string; address: string; type: string; healthy: boolean; tags?: string[] }
@@ -386,6 +387,26 @@ async function startAllMacros() {
     dispatchingAll.value = false
 }
 
+async function startReflowNow() {
+    if (!group.value) return
+    if (groupConfigDirty.value) {
+        await saveGroupConfig()
+        if (groupConfigDirty.value) return
+    }
+    if (groupPrimaryWorkerIds.value.length + groupStandbyWorkerIds.value.length === 0) {
+        messages.add({ text: t('taskGroup.noWorkersConfigured'), color: 'warning' })
+        return
+    }
+    dispatchingAll.value = true
+    try {
+        await StartTaskGroup(group.value.id, START_REFLOW_NOW_TOKEN)
+        await loadAll(group.value.id)
+        messages.add({ text: t('taskGroup.reflowNowStarted'), color: 'success' })
+    }
+    catch (e: any) { messages.add({ text: t('taskGroup.reflowNowFailed', { error: String(e) }), color: 'error' }) }
+    dispatchingAll.value = false
+}
+
 async function stopAllMacros() {
     if (!group.value) return
     dispatchingAll.value = true
@@ -550,6 +571,11 @@ const allPurchaseGroups = computed(() => {
                             size="small" :loading="dispatchingAll"
                             :disabled="dispatchableMacros.length === 0 || !workerPoolConfigured" @click="startAllMacros">
                             {{ t('taskGroup.startAll') }}
+                        </v-btn>
+                        <v-btn v-if="!anyRunning" prepend-icon="mdi-fast-forward" color="warning" variant="tonal"
+                            size="small" :loading="dispatchingAll"
+                            :disabled="dispatchableMacros.length === 0 || !workerPoolConfigured" @click="startReflowNow">
+                            {{ t('taskGroup.startReflowNow') }}
                         </v-btn>
                         <template v-else>
                             <v-btn prepend-icon="mdi-stop-circle-outline" color="error" variant="tonal" size="small"

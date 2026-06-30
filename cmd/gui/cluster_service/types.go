@@ -165,6 +165,8 @@ type ClusterService struct {
 	provisioner     *WorkerProvisioner
 	local           employer.LocalWorkerManager
 	mu              sync.RWMutex
+	waveMu          sync.Mutex
+	waveCancels     map[string]context.CancelFunc
 	mainAccountMu   sync.Mutex
 	phases          map[string]domain.Phase
 	loginSessions   map[string]*accountLoginSession

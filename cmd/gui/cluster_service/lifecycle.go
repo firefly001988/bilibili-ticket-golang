@@ -35,6 +35,7 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 		client:        client,
 		provisioner:   provisioner,
 		phases:        make(map[string]domain.Phase),
+		waveCancels:   make(map[string]context.CancelFunc),
 		loginSessions: make(map[string]*accountLoginSession),
 		deployJobs:    make(map[string]*RemoteWorkerDeployJob),
 	}
@@ -421,6 +422,7 @@ func (s *ClusterService) Close() {
 	if s.cancel != nil {
 		s.cancel()
 	}
+	s.cancelAllTaskGroupWaves()
 	_ = s.local.Stop()
 	_ = s.repository.Close()
 }

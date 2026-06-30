@@ -45,6 +45,7 @@ func (s *ClusterService) StopMacro(macroID string) error {
 // StopTaskGroup stops all active attempts belonging to a task group, disarms
 // its intents, and releases the workers reserved by the task group.
 func (s *ClusterService) StopTaskGroup(taskGroupID string) error {
+	s.cancelTaskGroupWave(taskGroupID)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	activeTaskGroupID := s.dispatcher.ActiveTaskGroup()
@@ -58,6 +59,7 @@ func (s *ClusterService) StopTaskGroup(taskGroupID string) error {
 // task group is marked as active.  It also force-resets all macros so that
 // the group can be re-run after a successful order.
 func (s *ClusterService) ForceStopTaskGroup(taskGroupID string) error {
+	s.cancelTaskGroupWave(taskGroupID)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
