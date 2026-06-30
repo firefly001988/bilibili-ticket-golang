@@ -119,6 +119,8 @@
         "deployPrivateKeyPath": "Private key path",
         "deployPrivateKeyPassphrase": "Private key passphrase (optional)",
         "deployWorkerPort": "Worker Port",
+        "deployWorkerName": "Worker Name (leave blank to auto-generate)",
+        "deployWorkerId": "Worker ID (leave blank to auto-generate)",
         "deployAuto": "Auto",
         "deployAddTarget": "Add Server",
         "deployPackageType": "Worker file type",

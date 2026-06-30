@@ -119,6 +119,8 @@
         "deployPrivateKeyPath": "私钥路径",
         "deployPrivateKeyPassphrase": "私钥口令（可选）",
         "deployWorkerPort": "Worker 端口",
+        "deployWorkerName": "Worker 名称（留空自动生成）",
+        "deployWorkerId": "Worker ID（留空自动生成）",
         "deployAuto": "自动",
         "deployAddTarget": "添加服务器",
         "deployPackageType": "Worker 文件类型",
