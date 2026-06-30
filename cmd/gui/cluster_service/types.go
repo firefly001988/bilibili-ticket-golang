@@ -24,6 +24,7 @@ type ClusterSnapshot struct {
 	Macros          []MacroSummary      `json:"macros"`
 	Intents         []IntentSummary     `json:"intents"`
 	Attempts        []AttemptSummary    `json:"attempts"`
+	ActiveTaskGroup string              `json:"activeTaskGroup,omitempty"`
 	EmployerVersion string              `json:"employerVersion"` // employer build version (git commit hash)
 }
 
@@ -68,6 +69,7 @@ type WorkerSummary struct {
 	Name                 string             `json:"name"`
 	Address              string             `json:"address"`
 	Type                 domain.WorkerType  `json:"type"`
+	Tags                 []string           `json:"tags,omitempty"`
 	Enabled              bool               `json:"enabled"`
 	Healthy              bool               `json:"healthy"`
 	SkipVersionCheck     bool               `json:"skipVersionCheck"`

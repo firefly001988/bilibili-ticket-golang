@@ -145,9 +145,8 @@ func TestMacroWorkerPrimaryAndStandbyScope(t *testing.T) {
 	d := New(c, nil, nil)
 	accounts, workers := resourcesN(4)
 	d.SetResources(accounts, workers)
+	d.ReserveWorkerPools("g", []string{"w2"}, []string{"w4"})
 	macro := dispatchMacro("m", 0)
-	macro.PrimaryWorkerIDs = []string{"w2"}
-	macro.StandbyWorkerIDs = []string{"w4"}
 	d.Add(IntentPlan{Macro: macro, Intent: dispatchIntent("i", "m", 10, "buyer")})
 	if err := d.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)

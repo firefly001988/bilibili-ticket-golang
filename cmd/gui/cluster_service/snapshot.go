@@ -63,7 +63,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		}
 		buyersWithAccounts[i] = BuyerWithAccounts{Buyer: b, Accounts: accs}
 	}
-	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyersWithAccounts, EmployerVersion: global.GitCommit}
+	result := ClusterSnapshot{TaskGroups: taskGroups, Buyers: buyersWithAccounts, ActiveTaskGroup: s.dispatcher.ActiveTaskGroup(), EmployerVersion: global.GitCommit}
 
 	for _, account := range accountList {
 		summary := AccountSummary{ID: account.ID, Name: account.Name, Enabled: account.Enabled, VipStatus: account.VipStatus, CredentialVersion: account.Credentials.Version}
@@ -82,6 +82,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 			Name:             node.Name,
 			Address:          node.Address,
 			Type:             node.Type,
+			Tags:             workerEffectiveTags(node),
 			Enabled:          node.Enabled,
 			SkipVersionCheck: node.SkipVersionCheck,
 		}

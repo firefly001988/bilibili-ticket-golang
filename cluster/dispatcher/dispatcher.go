@@ -69,9 +69,10 @@ type Dispatcher struct {
 	onSuccess           func(domain.LogicalOrderIntent, domain.ExecutionResult)
 	stoppedPhases       map[domain.Phase]bool
 	workerReservations  map[string]string // workerID → taskGroupID
-	activeTaskGroup     string            // current active task group ID (only one at a time)
-	retryIntervalMs     int64             // global retry interval (0 = use default 500ms)
-	startDelayMs        int64             // global start delay (0 = no early start)
+	workerRoles         map[string]domain.ResourceRole
+	activeTaskGroup     string // current active task group ID (only one at a time)
+	retryIntervalMs     int64  // global retry interval (0 = use default 500ms)
+	startDelayMs        int64  // global start delay (0 = no early start)
 }
 
 func (d *Dispatcher) SetSuccessHandler(handler func(domain.LogicalOrderIntent, domain.ExecutionResult)) {
@@ -81,7 +82,7 @@ func (d *Dispatcher) SetSuccessHandler(handler func(domain.LogicalOrderIntent, d
 }
 
 func New(client WorkerClient, repository Repository, resolver MappingResolver) *Dispatcher {
-	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), workerCooldown: make(map[string]time.Time), stoppedPhases: make(map[domain.Phase]bool), workerReservations: make(map[string]string), now: time.Now}
+	return &Dispatcher{client: client, repository: repository, resolver: resolver, plans: make(map[string]*IntentPlan), attempts: make(map[string]*attempt), accounts: make(map[string]domain.Account), workers: make(map[string]domain.WorkerNode), accountBusy: make(map[string]string), workerBusy: make(map[string]string), failedWorkers: make(map[string]time.Time), quarantinedAccounts: make(map[string]time.Time), workerCooldown: make(map[string]time.Time), stoppedPhases: make(map[domain.Phase]bool), workerReservations: make(map[string]string), workerRoles: make(map[string]domain.ResourceRole), now: time.Now}
 }
 
 // SetGlobalConfig updates the dispatcher's runtime configuration. Values
@@ -111,11 +112,27 @@ func (d *Dispatcher) SetResources(accounts []domain.Account, workers []domain.Wo
 // task group's workers may be picked during Reconcile.  Passing an empty
 // set releases all reservations.
 func (d *Dispatcher) ReserveWorkers(taskGroupID string, workerIDs []string) {
+	d.ReserveWorkerPools(taskGroupID, workerIDs, nil)
+}
+
+// ReserveWorkerPools locks primary and standby worker pools for a task group.
+// Standby workers are reserved by the task group immediately, but are only
+// selected after no primary worker is currently available for the plan.
+func (d *Dispatcher) ReserveWorkerPools(taskGroupID string, primaryWorkerIDs, standbyWorkerIDs []string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.workerReservations = make(map[string]string, len(workerIDs))
-	for _, id := range workerIDs {
+	d.workerReservations = make(map[string]string, len(primaryWorkerIDs)+len(standbyWorkerIDs))
+	d.workerRoles = make(map[string]domain.ResourceRole, len(primaryWorkerIDs)+len(standbyWorkerIDs))
+	for _, id := range primaryWorkerIDs {
 		d.workerReservations[id] = taskGroupID
+		d.workerRoles[id] = domain.RolePrimary
+	}
+	for _, id := range standbyWorkerIDs {
+		if _, exists := d.workerReservations[id]; exists {
+			continue
+		}
+		d.workerReservations[id] = taskGroupID
+		d.workerRoles[id] = domain.RoleStandby
 	}
 	d.activeTaskGroup = taskGroupID
 }
@@ -125,6 +142,7 @@ func (d *Dispatcher) ReleaseWorkers() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.workerReservations = make(map[string]string)
+	d.workerRoles = make(map[string]domain.ResourceRole)
 	d.activeTaskGroup = ""
 }
 
@@ -758,7 +776,7 @@ func (d *Dispatcher) pickResources(ctx context.Context, plan *IntentPlan) (domai
 		if !d.workerAvailableForPlan(value, plan) {
 			continue
 		}
-		if d.isStandbyWorker(plan.Macro, value.ID) {
+		if d.workerRoles[value.ID] == domain.RoleStandby {
 			standbyWorkers = append(standbyWorkers, value)
 		} else {
 			primaryWorkers = append(primaryWorkers, value)
@@ -850,30 +868,7 @@ func (d *Dispatcher) workerAvailableForPlan(worker domain.WorkerNode, plan *Inte
 			return false
 		}
 	}
-	return d.workerAllowedByMacro(plan.Macro, worker.ID)
-}
-
-func (d *Dispatcher) workerAllowedByMacro(macro domain.MacroTask, workerID string) bool {
-	if len(macro.PrimaryWorkerIDs) > 0 {
-		return containsString(macro.PrimaryWorkerIDs, workerID) || containsString(macro.StandbyWorkerIDs, workerID)
-	}
 	return true
-}
-
-func (d *Dispatcher) isStandbyWorker(macro domain.MacroTask, workerID string) bool {
-	if containsString(macro.PrimaryWorkerIDs, workerID) {
-		return false
-	}
-	return containsString(macro.StandbyWorkerIDs, workerID)
-}
-
-func containsString(values []string, needle string) bool {
-	for _, value := range values {
-		if value == needle {
-			return true
-		}
-	}
-	return false
 }
 
 func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account domain.Account, worker domain.WorkerNode) error {

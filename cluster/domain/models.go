@@ -79,9 +79,14 @@ type BuyerDayKey struct {
 func (k BuyerDayKey) String() string { return k.BuyerID + "@" + k.EventDay }
 
 type TaskGroup struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID                    string    `json:"id"`
+	Name                  string    `json:"name"`
+	PrimaryWorkerIDs      []string  `json:"primaryWorkerIds,omitempty"`
+	StandbyWorkerIDs      []string  `json:"standbyWorkerIds,omitempty"`
+	PaymentTimeoutMinutes int       `json:"paymentTimeoutMinutes,omitempty"`
+	WaveDurationMinutes   int       `json:"waveDurationMinutes,omitempty"`
+	MaxWaves              int       `json:"maxWaves,omitempty"`
+	CreatedAt             time.Time `json:"createdAt"`
 }
 
 type CapacitySource string
@@ -241,6 +246,7 @@ type WorkerNode struct {
 	Name             string     `json:"name"`
 	Address          string     `json:"address"`
 	Type             WorkerType `json:"type"`
+	Tags             []string   `json:"tags,omitempty"`
 	Version          string     `json:"version,omitempty"`
 	Enabled          bool       `json:"enabled"`
 	TLSServerName    string     `json:"tlsServerName,omitempty"`

@@ -18,6 +18,26 @@ import (
 	"bilibili-ticket-golang/lib/global"
 )
 
+// SetWorkerTags updates user-managed tags for any worker.  The system
+// local/remote tag is derived from WorkerNode.Type and is never persisted as a
+// user tag.
+func (s *ClusterService) SetWorkerTags(workerID string, tagsJSON string) error {
+	var tags []string
+	if err := json.Unmarshal([]byte(tagsJSON), &tags); err != nil {
+		return err
+	}
+	ctx := context.Background()
+	node, err := s.repository.Worker(ctx, workerID)
+	if err != nil {
+		return fmt.Errorf("worker %s not found: %w", workerID, err)
+	}
+	node.Tags = normalizeWorkerTags(tags, node.Type)
+	if err := s.repository.PutWorker(ctx, node); err != nil {
+		return err
+	}
+	return s.refreshResources(ctx)
+}
+
 // AddWorker registers a new remote worker and verifies connectivity.
 func (s *ClusterService) AddWorker(document string) error {
 	var input struct {
@@ -110,6 +130,11 @@ func (s *ClusterService) UpdateWorker(document string) error {
 	if input.ID == "local" {
 		return fmt.Errorf("the automatically managed local worker cannot be edited")
 	}
+	ctx := context.Background()
+	existing, existingErr := s.repository.Worker(ctx, input.ID)
+	if existingErr != nil && !errors.Is(existingErr, sql.ErrNoRows) {
+		return existingErr
+	}
 	// Block if the worker is executing an active attempt.
 	for _, attempt := range s.dispatcher.Attempts() {
 		if attempt.WorkerID == input.ID && !attempt.State.Terminal() {
@@ -124,7 +149,10 @@ func (s *ClusterService) UpdateWorker(document string) error {
 		Enabled:       true,
 		TLSServerName: input.TLSServerName,
 	}
-	ctx := context.Background()
+	if existingErr == nil {
+		node.Tags = normalizeWorkerTags(existing.Tags, node.Type)
+		node.SkipVersionCheck = existing.SkipVersionCheck
+	}
 	tlsConfig := domain.WorkerTLSConfig{
 		CACertPEM:     []byte(input.CACert),
 		ClientCertPEM: []byte(input.ClientCert),

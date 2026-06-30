@@ -23,11 +23,15 @@ func (s *ClusterService) SaveMacro(document string) error {
 	if err := json.Unmarshal([]byte(document), &value); err != nil {
 		return err
 	}
+	ctx := context.Background()
 	if value.ID == "" {
 		value.ID = randomClusterID("macro")
 	}
 	if value.TaskGroupID == "" {
 		return fmt.Errorf("taskGroupId is required")
+	}
+	if s.taskGroupActive(ctx, value.TaskGroupID) {
+		return fmt.Errorf("macro task cannot be edited while its task group is running")
 	}
 	if s.dispatcher.MacroActive(value.ID) {
 		return fmt.Errorf("macro task cannot be edited while an attempt is active")
@@ -44,15 +48,25 @@ func (s *ClusterService) SaveMacro(document string) error {
 	if err := s.invalidateMacroConfiguration(value.ID); err != nil {
 		return err
 	}
-	return s.repository.PutMacroTask(context.Background(), value)
+	return s.repository.PutMacroTask(ctx, value)
 }
 
 // DeleteMacro removes a macro task and cascades to intents/attempts.
 func (s *ClusterService) DeleteMacro(macroID string) error {
+	ctx := context.Background()
+	macros, err := s.repository.ListMacroTasks(ctx)
+	if err != nil {
+		return err
+	}
+	for _, macro := range macros {
+		if macro.ID == macroID && s.taskGroupActive(ctx, macro.TaskGroupID) {
+			return fmt.Errorf("macro task cannot be deleted while its task group is running")
+		}
+	}
 	if s.dispatcher.MacroActive(macroID) {
 		return fmt.Errorf("macro task cannot be deleted while an attempt is active")
 	}
-	if err := s.repository.DeleteMacroTask(context.Background(), macroID); err != nil {
+	if err := s.repository.DeleteMacroTask(ctx, macroID); err != nil {
 		return err
 	}
 	if err := s.dispatcher.RemoveMacro(macroID); err != nil {
@@ -70,12 +84,13 @@ func (s *ClusterService) SavePurchaseGroup(document string) error {
 	if err := json.Unmarshal([]byte(document), &value); err != nil {
 		return err
 	}
+	ctx := context.Background()
 	if value.MacroTaskID == "" {
 		return fmt.Errorf("macroTaskId is required")
 	}
 	if value.ID == "" {
 		value.ID = randomClusterID("purchase")
-	} else if existing, existingErr := s.repository.PurchaseGroup(context.Background(), value.ID); existingErr == nil {
+	} else if existing, existingErr := s.repository.PurchaseGroup(ctx, value.ID); existingErr == nil {
 		if existing.MacroTaskID != value.MacroTaskID {
 			return fmt.Errorf("purchase group belongs to another macro task")
 		}
@@ -85,19 +100,24 @@ func (s *ClusterService) SavePurchaseGroup(document string) error {
 	} else if !errors.Is(existingErr, sql.ErrNoRows) {
 		return existingErr
 	}
-	macros, err := s.repository.ListMacroTasks(context.Background())
+	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
 		return err
 	}
 	capacity := 0
+	taskGroupID := ""
 	for _, macro := range macros {
 		if macro.ID == value.MacroTaskID {
 			capacity = macro.EffectiveCapacity()
+			taskGroupID = macro.TaskGroupID
 			break
 		}
 	}
 	if capacity == 0 {
 		return fmt.Errorf("macro task not found")
+	}
+	if s.taskGroupActive(ctx, taskGroupID) {
+		return fmt.Errorf("purchase group cannot be edited while its task group is running")
 	}
 	// Normalize Weight and Priority.
 	if value.Weight <= 0 {
@@ -123,25 +143,35 @@ func (s *ClusterService) SavePurchaseGroup(document string) error {
 	if err := s.invalidateMacroConfiguration(value.MacroTaskID); err != nil {
 		return err
 	}
-	return s.repository.PutPurchaseGroup(context.Background(), value)
+	return s.repository.PutPurchaseGroup(ctx, value)
 }
 
 // DeletePurchaseGroup removes a purchase group from a macro.
 func (s *ClusterService) DeletePurchaseGroup(macroID, purchaseGroupID string) error {
+	ctx := context.Background()
 	if strings.TrimSpace(macroID) == "" || strings.TrimSpace(purchaseGroupID) == "" {
 		return fmt.Errorf("macroId and purchaseGroupId are required")
 	}
-	group, err := s.repository.PurchaseGroup(context.Background(), purchaseGroupID)
+	group, err := s.repository.PurchaseGroup(ctx, purchaseGroupID)
 	if err != nil {
 		return err
 	}
 	if group.MacroTaskID != macroID {
 		return fmt.Errorf("purchase group belongs to another macro task")
 	}
+	macros, err := s.repository.ListMacroTasks(ctx)
+	if err != nil {
+		return err
+	}
+	for _, macro := range macros {
+		if macro.ID == macroID && s.taskGroupActive(ctx, macro.TaskGroupID) {
+			return fmt.Errorf("purchase group cannot be deleted while its task group is running")
+		}
+	}
 	if err := s.invalidateMacroConfiguration(macroID); err != nil {
 		return err
 	}
-	return s.repository.DeletePurchaseGroup(context.Background(), purchaseGroupID, macroID)
+	return s.repository.DeletePurchaseGroup(ctx, purchaseGroupID, macroID)
 }
 
 func (s *ClusterService) invalidateMacroConfiguration(macroID string) error {
@@ -169,20 +199,35 @@ func (s *ClusterService) StartTaskGroup(taskGroupID string, workerIDsJSON string
 	if err := s.refreshResources(ctx); err != nil {
 		return err
 	}
-	// Parse worker IDs.
-	var workerIDs []string
+	taskGroup, err := s.taskGroupByID(ctx, taskGroupID)
+	if err != nil {
+		return err
+	}
+	normalizeTaskGroupDefaults(&taskGroup)
+
+	primaryWorkerIDs := append([]string(nil), taskGroup.PrimaryWorkerIDs...)
+	standbyWorkerIDs := append([]string(nil), taskGroup.StandbyWorkerIDs...)
+	// Compatibility path: older frontend calls pass a single worker ID list.
+	// Treat it as a primary-only one-shot override.
 	if workerIDsJSON != "" {
+		var workerIDs []string
 		if err := json.Unmarshal([]byte(workerIDsJSON), &workerIDs); err != nil {
 			return fmt.Errorf("parse worker IDs: %w", err)
 		}
+		if len(workerIDs) > 0 {
+			primaryWorkerIDs = workerIDs
+			standbyWorkerIDs = nil
+		}
 	}
-	if len(workerIDs) == 0 {
-		return fmt.Errorf("at least one worker must be selected")
+	primaryWorkerIDs = uniqueStrings(primaryWorkerIDs)
+	standbyWorkerIDs = removeStrings(uniqueStrings(standbyWorkerIDs), primaryWorkerIDs)
+	if len(primaryWorkerIDs)+len(standbyWorkerIDs) == 0 {
+		return fmt.Errorf("at least one task-group worker must be selected")
 	}
 
 	// Reserve workers before planning so Reconcile only sees allowed workers.
-	s.dispatcher.ReserveWorkers(taskGroupID, workerIDs)
-	log.Printf("[cluster] reserved %d workers for task group %s", len(workerIDs), taskGroupID)
+	s.dispatcher.ReserveWorkerPools(taskGroupID, primaryWorkerIDs, standbyWorkerIDs)
+	log.Printf("[cluster] reserved %d primary and %d standby workers for task group %s", len(primaryWorkerIDs), len(standbyWorkerIDs), taskGroupID)
 
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
