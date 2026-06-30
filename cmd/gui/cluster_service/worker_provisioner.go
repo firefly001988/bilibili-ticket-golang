@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
@@ -148,25 +149,47 @@ func (s *ClusterService) pickWorkerForAccount(accountID string) (domain.WorkerNo
 	for _, wid := range s.accountBindings {
 		busy[wid] = true
 	}
+	allowed := make(map[string]bool)
+	for _, id := range s.GetBuyerManagerWorkerIDs() {
+		allowed[id] = true
+	}
 
-	// Separate free healthy workers: local first, then remotes.
+	// Separate free healthy workers. If only the local worker is allowed it
+	// can serve unlimited buyer-management RPCs; otherwise workers are treated
+	// as one-account-at-a-time to distribute a bulk sync across the pool.
 	var localNode *domain.WorkerNode
 	var freeRemotes []domain.WorkerNode
 	for _, w := range s.workers {
-		if !w.Enabled || busy[w.ID] {
+		if !w.Enabled || !allowed[w.ID] {
 			continue
 		}
 		if w.Type == domain.WorkerTypeLocal {
 			n := w
-			localNode = &n
+			if !busy[w.ID] {
+				localNode = &n
+			}
+			continue
+		}
+		if busy[w.ID] {
 			continue
 		}
 		if s.client.IsHealthy(w.ID) {
 			freeRemotes = append(freeRemotes, w)
 		}
 	}
+	sort.Slice(freeRemotes, func(i, j int) bool { return freeRemotes[i].ID < freeRemotes[j].ID })
 
-	// No remote workers: local worker can serve unlimited accounts.
+	// Only local is configured: allow it to serve multiple account operations.
+	if len(allowed) == 1 && allowed["local"] {
+		for _, w := range s.workers {
+			if w.ID == "local" && w.Enabled {
+				s.accountBindings[accountID] = w.ID
+				return w, nil
+			}
+		}
+	}
+
+	// No remote workers: fall back to local if selected and currently free.
 	if len(freeRemotes) == 0 {
 		if localNode != nil {
 			s.accountBindings[accountID] = localNode.ID
@@ -177,9 +200,13 @@ func (s *ClusterService) pickWorkerForAccount(accountID string) (domain.WorkerNo
 
 	// Pick any free remote worker, preferring the one with the fewest
 	// current bindings (spread the load evenly).
-	best := freeRemotes[0]
+	candidates := freeRemotes
+	if localNode != nil {
+		candidates = append([]domain.WorkerNode{*localNode}, candidates...)
+	}
+	best := candidates[0]
 	bestLoad := s.bindingCount(best.ID)
-	for _, w := range freeRemotes[1:] {
+	for _, w := range candidates[1:] {
 		if n := s.bindingCount(w.ID); n < bestLoad {
 			best, bestLoad = w, n
 		}

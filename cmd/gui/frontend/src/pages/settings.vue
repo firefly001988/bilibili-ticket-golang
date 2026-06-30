@@ -2,9 +2,12 @@
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
+import WorkerPicker from '@/components/cluster/WorkerPicker.vue'
 import {
     GetRetryInterval, SetRetryInterval,
     GetStartDelay, SetStartDelay,
+    GetBuyerManagerWorkerIDs, SetBuyerManagerWorkerIDs,
+    Snapshot,
 } from '../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t, locale } = useI18n()
@@ -24,9 +27,12 @@ function changeLocale(lang: string) {
 // ── State ──────────────────────────────────────────────
 const intervalMs = ref(500)
 const startDelayMs = ref(50)
+const buyerManagerWorkerIds = ref<string[]>(['local'])
+const workers = ref<Array<{ id: string; name: string; address: string; type: string; healthy: boolean; tags?: string[] }>>([])
 const loading = ref(false)
 const savingInterval = ref(false)
 const savingDelay = ref(false)
+const savingBuyerWorkers = ref(false)
 
 // ── Data loading ───────────────────────────────────────
 async function load() {
@@ -38,6 +44,12 @@ async function load() {
         ])
         intervalMs.value = iv
         startDelayMs.value = sd
+        const [buyerWorkers, snap] = await Promise.all([
+            GetBuyerManagerWorkerIDs(),
+            Snapshot(),
+        ])
+        buyerManagerWorkerIds.value = (buyerWorkers && buyerWorkers.length > 0) ? buyerWorkers : ['local']
+        workers.value = (snap.workers || []) as any[]
     } catch (e: any) {
         console.error('Load settings failed:', e)
         messages.add({ text: t('settings.loadFailed', { error: String(e) }), color: 'error', timeout: 4000 })
@@ -68,6 +80,20 @@ async function saveStartDelay() {
         messages.add({ text: t('settings.saveFailed', { error: String(e) }), color: 'error', timeout: 4000 })
     } finally {
         savingDelay.value = false
+    }
+}
+
+async function saveBuyerManagerWorkers() {
+    savingBuyerWorkers.value = true
+    try {
+        const ids = buyerManagerWorkerIds.value.length > 0 ? buyerManagerWorkerIds.value : ['local']
+        await SetBuyerManagerWorkerIDs(ids)
+        buyerManagerWorkerIds.value = ids
+        messages.add({ text: t('settings.saveBuyerManagerWorkers'), color: 'success', timeout: 2000 })
+    } catch (e: any) {
+        messages.add({ text: t('settings.saveFailed', { error: String(e) }), color: 'error', timeout: 4000 })
+    } finally {
+        savingBuyerWorkers.value = false
     }
 }
 
@@ -182,6 +208,33 @@ onMounted(async () => {
             <v-card-actions class="px-4 pb-4">
                 <v-spacer />
                 <v-btn color="secondary" variant="tonal" :loading="savingDelay" @click="saveStartDelay">
+                    {{ t('settings.saveSettings') }}
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+
+        <!-- Buyer management workers -->
+        <v-card variant="outlined" :loading="loading" class="mt-4">
+            <v-card-title class="text-body-1 py-3 px-4">
+                <v-icon start size="20" color="primary">mdi-account-hard-hat</v-icon>
+                {{ t('settings.buyerManagerWorkers') }}
+            </v-card-title>
+            <v-divider />
+            <v-card-text class="pa-4">
+                <p class="text-body-2 text-medium-emphasis mb-4">
+                    {{ t('settings.buyerManagerWorkersDesc') }}
+                </p>
+                <WorkerPicker :model-value="buyerManagerWorkerIds"
+                    @update:model-value="buyerManagerWorkerIds = $event.length > 0 ? $event : ['local']"
+                    :workers="workers" :label="t('settings.buyerManagerWorkers')" />
+                <v-alert type="info" variant="tonal" density="compact" class="mt-4">
+                    {{ t('settings.buyerManagerWorkersHint') }}
+                </v-alert>
+            </v-card-text>
+            <v-card-actions class="px-4 pb-4">
+                <v-spacer />
+                <v-btn color="primary" variant="tonal" :loading="savingBuyerWorkers"
+                    @click="saveBuyerManagerWorkers">
                     {{ t('settings.saveSettings') }}
                 </v-btn>
             </v-card-actions>

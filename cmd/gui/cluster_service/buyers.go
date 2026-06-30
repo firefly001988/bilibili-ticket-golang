@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 
 	"bilibili-ticket-golang/cluster/dispatcher"
 	"bilibili-ticket-golang/cluster/domain"
@@ -44,27 +46,55 @@ func (s *ClusterService) SyncBuyerToAccount(logicalBuyerID, targetAccountID stri
 // Bilibili account that does not already have it. Accounts that already
 // contain the buyer are skipped without any remote calls.
 func (s *ClusterService) SyncBuyerToAllAccounts(logicalBuyerID string) error {
-	buyer, err := s.repository.LogicalBuyer(context.Background(), logicalBuyerID)
+	ctx := context.Background()
+	buyer, err := s.repository.LogicalBuyer(ctx, logicalBuyerID)
 	if err != nil {
 		return fmt.Errorf("logical buyer %s: %w", logicalBuyerID, err)
 	}
-	accounts, err := s.repository.ListAccounts(context.Background())
+	accounts, err := s.repository.ListAccounts(ctx)
 	if err != nil {
 		return err
 	}
+	workerCount := len(s.GetBuyerManagerWorkerIDs())
+	if workerCount <= 0 {
+		workerCount = 1
+	}
+	sem := make(chan struct{}, workerCount)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var failures []string
 	for _, account := range accounts {
 		if !account.Enabled {
 			continue
 		}
-		if _, err := s.repository.BuyerMapping(context.Background(), account.ID, logicalBuyerID); err == nil {
+		if _, err := s.repository.BuyerMapping(ctx, account.ID, logicalBuyerID); err == nil {
 			// Already provisioned on this account — skip.
 			continue
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			failures = append(failures, fmt.Sprintf("%s: %v", account.ID, err))
+			continue
 		}
-		if _, err := s.accounts.EnsureBuyer(context.Background(), account.ID, buyer, true); err != nil {
-			return err
-		}
+		accountID := account.ID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if _, err := s.accounts.EnsureBuyer(ctx, accountID, buyer, true); err != nil {
+				mu.Lock()
+				failures = append(failures, fmt.Sprintf("%s: %v", accountID, err))
+				mu.Unlock()
+			}
+		}()
 	}
-	return s.refreshResources(context.Background())
+	wg.Wait()
+	if err := s.refreshResources(ctx); err != nil {
+		return err
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("sync buyer to accounts partially failed: %s", strings.Join(failures, "; "))
+	}
+	return nil
 }
 
 type buyerResolver struct {

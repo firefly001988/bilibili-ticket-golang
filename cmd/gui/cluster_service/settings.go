@@ -13,8 +13,9 @@ import (
 // globalConfig holds the employer-side runtime configuration that is
 // pushed to all connected workers. The zero value means "use defaults".
 type globalConfig struct {
-	RetryIntervalMs int64 `json:"retryIntervalMs"`
-	StartDelayMs    int64 `json:"startDelayMs"`
+	RetryIntervalMs       int64    `json:"retryIntervalMs"`
+	StartDelayMs          int64    `json:"startDelayMs"`
+	BuyerManagerWorkerIDs []string `json:"buyerManagerWorkerIds,omitempty"`
 }
 
 // EffectiveRetryInterval returns the retry interval to use, falling back
@@ -43,7 +44,7 @@ func (s *ClusterService) LoadGlobalConfig(ctx context.Context) {
 	if s.repository == nil {
 		return
 	}
-	retryMs, startMs, err := s.repository.GlobalConfig(ctx)
+	retryMs, startMs, buyerWorkerIDs, err := s.repository.GlobalConfig(ctx)
 	if err != nil {
 		log.Printf("[cluster] load global config failed: %v", err)
 		return
@@ -59,6 +60,7 @@ func (s *ClusterService) LoadGlobalConfig(ctx context.Context) {
 	s.mu.Lock()
 	s.globalCfg.RetryIntervalMs = retryMs
 	s.globalCfg.StartDelayMs = startMs
+	s.globalCfg.BuyerManagerWorkerIDs = normalizeBuyerManagerWorkerIDs(buyerWorkerIDs)
 	s.mu.Unlock()
 
 	if s.dispatcher != nil {
@@ -67,7 +69,7 @@ func (s *ClusterService) LoadGlobalConfig(ctx context.Context) {
 
 	// Persist the defaults so they survive restarts.
 	if s.repository != nil {
-		_ = s.repository.PutGlobalConfig(ctx, retryMs, startMs)
+		_ = s.repository.PutGlobalConfig(ctx, retryMs, startMs, s.GetBuyerManagerWorkerIDs())
 	}
 
 	log.Printf("[cluster] loaded global config: retryInterval=%dms startDelay=%dms", retryMs, startMs)
@@ -96,7 +98,7 @@ func (s *ClusterService) SetRetryInterval(ms int) {
 
 	// Persist to disk.
 	if s.repository != nil {
-		if err := s.repository.PutGlobalConfig(context.Background(), int64(ms), startMs); err != nil {
+		if err := s.repository.PutGlobalConfig(context.Background(), int64(ms), startMs, s.GetBuyerManagerWorkerIDs()); err != nil {
 			log.Printf("[cluster] persist retry interval failed: %v", err)
 		}
 	}
@@ -139,7 +141,7 @@ func (s *ClusterService) SetStartDelay(ms int) {
 
 	// Persist to disk.
 	if s.repository != nil {
-		if err := s.repository.PutGlobalConfig(context.Background(), retryMs, int64(ms)); err != nil {
+		if err := s.repository.PutGlobalConfig(context.Background(), retryMs, int64(ms), s.GetBuyerManagerWorkerIDs()); err != nil {
 			log.Printf("[cluster] persist start delay failed: %v", err)
 		}
 	}
@@ -153,6 +155,38 @@ func (s *ClusterService) SetStartDelay(ms int) {
 
 	// Push to all connected healthy workers asynchronously.
 	go s.pushGlobalConfigToAll(context.Background())
+}
+
+func normalizeBuyerManagerWorkerIDs(workerIDs []string) []string {
+	ids := uniqueStrings(workerIDs)
+	if len(ids) == 0 {
+		return []string{"local"}
+	}
+	return ids
+}
+
+// GetBuyerManagerWorkerIDs returns the worker pool used for account buyer
+// management operations. The default is the automatically managed local worker.
+func (s *ClusterService) GetBuyerManagerWorkerIDs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), normalizeBuyerManagerWorkerIDs(s.globalCfg.BuyerManagerWorkerIDs)...)
+}
+
+// SetBuyerManagerWorkerIDs updates the worker pool used for account buyer
+// management operations such as syncing a buyer to many accounts.
+func (s *ClusterService) SetBuyerManagerWorkerIDs(workerIDs []string) {
+	workerIDs = normalizeBuyerManagerWorkerIDs(workerIDs)
+	s.mu.Lock()
+	s.globalCfg.BuyerManagerWorkerIDs = workerIDs
+	retryMs := s.globalCfg.RetryIntervalMs
+	startMs := s.globalCfg.StartDelayMs
+	s.mu.Unlock()
+	if s.repository != nil {
+		if err := s.repository.PutGlobalConfig(context.Background(), retryMs, startMs, workerIDs); err != nil {
+			log.Printf("[cluster] persist buyer manager workers failed: %v", err)
+		}
+	}
 }
 
 // pushGlobalConfigToAll sends the current global config to every enabled

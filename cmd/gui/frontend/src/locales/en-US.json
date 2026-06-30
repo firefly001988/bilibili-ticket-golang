@@ -551,6 +551,7 @@
         "colAccounts": "Accounts",
         "colActions": "Actions",
         "noAccounts": "No accounts",
+        "accountSummary": "{name} and {count} accounts",
         "unnamed": "Unnamed",
         "batchSelected": "{count} selected",
         "batchSyncAll": "Sync to All",
@@ -768,6 +769,10 @@
         "saveFailed": "Save failed: {error}",
         "saveRetryInterval": "Retry interval saved",
         "saveStartDelay": "Start delay saved",
+        "buyerManagerWorkers": "Buyer Management Workers",
+        "buyerManagerWorkersDesc": "These workers are used to read account buyers and sync one buyer to multiple accounts. Selecting multiple workers allows multi-account sync to run in parallel.",
+        "buyerManagerWorkersHint": "Defaults to the local Worker. Remote Workers must be online and healthy to handle buyer-management RPCs.",
+        "saveBuyerManagerWorkers": "Buyer management workers saved",
         "loadFailed": "Failed to load settings: {error}"
     },
     "update": {

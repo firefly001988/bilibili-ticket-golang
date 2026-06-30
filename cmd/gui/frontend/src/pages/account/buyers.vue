@@ -139,12 +139,13 @@ async function doSyncToAccount() {
     if (!syncBuyer.value || syncTargetAccounts.value.length === 0) return
     const key = syncBuyer.value.logicalId
     syncing.value[key] = true
+    const results = await Promise.allSettled(syncTargetAccounts.value.map(accountId =>
+        SyncBuyerToAccount(key, accountId)
+    ))
     let ok = 0; let fail = 0
-    for (const accountId of syncTargetAccounts.value) {
-        try {
-            await SyncBuyerToAccount(key, accountId)
-            ok++
-        } catch { fail++ }
+    for (const result of results) {
+        if (result.status === 'fulfilled') ok++
+        else fail++
     }
     showSyncDialog.value = false
     syncBuyer.value = null
@@ -212,14 +213,15 @@ const batchTargetAccounts = ref<string[]>([])
 async function doBatchSyncToAccount() {
     if (batchTargetAccounts.value.length === 0) return
     batchSyncing.value = true
-    let ok = 0; let fail = 0
+    const jobs: Promise<void>[] = []
     for (const b of batchSelectedBuyers.value) {
-        for (const accountId of batchTargetAccounts.value) {
-            try {
-                await SyncBuyerToAccount(b.logicalId, accountId)
-                ok++
-            } catch { fail++ }
-        }
+        for (const accountId of batchTargetAccounts.value) jobs.push(SyncBuyerToAccount(b.logicalId, accountId))
+    }
+    const results = await Promise.allSettled(jobs)
+    let ok = 0; let fail = 0
+    for (const result of results) {
+        if (result.status === 'fulfilled') ok++
+        else fail++
     }
     showBatchSyncDialog.value = false
     batchTargetAccounts.value = []
@@ -292,6 +294,16 @@ const filterAccountItems = computed(() => {
     }
     return items
 })
+
+function accountDisplayName(acc: BuyerAccountBadge) {
+    return acc.accountName || acc.uid || acc.accountId
+}
+
+function accountSummary(accounts: BuyerAccountBadge[]) {
+    if (!accounts || accounts.length === 0) return ''
+    if (accounts.length === 1) return accountDisplayName(accounts[0])
+    return t('buyer.accountSummary', { name: accountDisplayName(accounts[0]), count: accounts.length })
+}
 </script>
 
 <template>
@@ -425,16 +437,23 @@ const filterAccountItems = computed(() => {
                         </div>
                     </td>
                     <td style="max-width:200px">
-                        <div v-if="b.accounts && b.accounts.length > 0"
-                            style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
-                            <v-chip v-for="(acc, i) in b.accounts.slice(0, 3)" :key="acc.accountId" size="x-small"
-                                color="primary" variant="tonal" class="mr-1">
-                                {{ acc.accountName || acc.uid }}
-                            </v-chip>
-                            <v-chip v-if="b.accounts.length > 3" size="x-small" variant="tonal" class="mr-1">
-                                +{{ b.accounts.length - 3 }}
-                            </v-chip>
-                        </div>
+                        <v-tooltip v-if="b.accounts && b.accounts.length > 1" location="bottom">
+                            <template #activator="{ props }">
+                                <v-chip v-bind="props" size="x-small" color="primary" variant="tonal">
+                                    {{ accountSummary(b.accounts) }}
+                                </v-chip>
+                            </template>
+                            <div class="d-flex flex-column" style="gap:4px">
+                                <div v-for="acc in b.accounts" :key="acc.accountId" class="text-caption">
+                                    {{ accountDisplayName(acc) }}
+                                    <span class="text-medium-emphasis">({{ acc.accountId }})</span>
+                                </div>
+                            </div>
+                        </v-tooltip>
+                        <v-chip v-else-if="b.accounts && b.accounts.length === 1" size="x-small" color="primary"
+                            variant="tonal">
+                            {{ accountDisplayName(b.accounts[0]) }}
+                        </v-chip>
                         <span v-else class="text-caption text-medium-emphasis">
                             {{ t('buyer.noAccounts') }}
                         </span>

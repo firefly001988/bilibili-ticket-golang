@@ -551,6 +551,7 @@
         "colAccounts": "所属账号",
         "colActions": "操作",
         "noAccounts": "未关联账号",
+        "accountSummary": "{name} 等 {count} 个账号",
         "unnamed": "未命名",
         "batchSelected": "已选 {count} 个购票人",
         "batchSyncAll": "同步到全部账号",
@@ -768,6 +769,10 @@
         "saveFailed": "保存失败: {error}",
         "saveRetryInterval": "重试间隔已保存",
         "saveStartDelay": "启动延时已保存",
+        "buyerManagerWorkers": "参与购票人管理的 Worker",
+        "buyerManagerWorkersDesc": "这些 Worker 会用于读取账号购票人、以及把一个购票人同步到多个账号。选择多个 Worker 后，多账号同步可以并行执行。",
+        "buyerManagerWorkersHint": "默认使用本机 local Worker。远程 Worker 必须在线且健康，才会参与购票人管理 RPC。",
+        "saveBuyerManagerWorkers": "购票人管理 Worker 已保存",
         "loadFailed": "加载设置失败: {error}"
     },
     "update": {

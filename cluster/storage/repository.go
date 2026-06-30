@@ -743,11 +743,12 @@ func (r *Repository) ListIntents(ctx context.Context) ([]domain.LogicalOrderInte
 // PutGlobalConfig stores the global configuration as a JSON blob in the
 // schema_meta table. This is used by the cluster service to persist
 // retry interval and start delay across restarts.
-func (r *Repository) PutGlobalConfig(ctx context.Context, retryIntervalMs, startDelayMs int64) error {
+func (r *Repository) PutGlobalConfig(ctx context.Context, retryIntervalMs, startDelayMs int64, buyerManagerWorkerIDs []string) error {
 	cfg := struct {
-		RetryIntervalMs int64 `json:"retryIntervalMs"`
-		StartDelayMs    int64 `json:"startDelayMs"`
-	}{retryIntervalMs, startDelayMs}
+		RetryIntervalMs       int64    `json:"retryIntervalMs"`
+		StartDelayMs          int64    `json:"startDelayMs"`
+		BuyerManagerWorkerIDs []string `json:"buyerManagerWorkerIds,omitempty"`
+	}{retryIntervalMs, startDelayMs, buyerManagerWorkerIDs}
 	b, err := marshal(cfg)
 	if err != nil {
 		return err
@@ -758,22 +759,23 @@ func (r *Repository) PutGlobalConfig(ctx context.Context, retryIntervalMs, start
 
 // GlobalConfig returns the stored global configuration. When no config
 // has been saved yet, both returned values are 0.
-func (r *Repository) GlobalConfig(ctx context.Context) (retryIntervalMs int64, startDelayMs int64, err error) {
+func (r *Repository) GlobalConfig(ctx context.Context) (retryIntervalMs int64, startDelayMs int64, buyerManagerWorkerIDs []string, err error) {
 	var raw string
 	if err := r.db.QueryRowContext(ctx, `SELECT value FROM schema_meta WHERE key='global_config'`).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return 0, 0, nil
+			return 0, 0, nil, nil
 		}
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 	var cfg struct {
-		RetryIntervalMs int64 `json:"retryIntervalMs"`
-		StartDelayMs    int64 `json:"startDelayMs"`
+		RetryIntervalMs       int64    `json:"retryIntervalMs"`
+		StartDelayMs          int64    `json:"startDelayMs"`
+		BuyerManagerWorkerIDs []string `json:"buyerManagerWorkerIds,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
-	return cfg.RetryIntervalMs, cfg.StartDelayMs, nil
+	return cfg.RetryIntervalMs, cfg.StartDelayMs, cfg.BuyerManagerWorkerIDs, nil
 }
 
 func (r *Repository) HasMigration(ctx context.Context, name string) (bool, error) {
