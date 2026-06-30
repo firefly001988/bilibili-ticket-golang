@@ -179,6 +179,24 @@ func TestClusterServicePlansTaskGroupAndRequiresHealthyWorker(t *testing.T) {
 	}
 }
 
+func TestClusterServiceRejectsStartingAnotherActiveTaskGroup(t *testing.T) {
+	service := testClusterService(t)
+	ctx := context.Background()
+	if err := service.SaveTaskGroup(`{"id":"group-a","name":"A"}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SaveTaskGroup(`{"id":"group-b","name":"B","primaryWorkerIds":["w"]}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.repository.PutWorker(ctx, domain.WorkerNode{ID: "w", Name: "worker", Type: domain.WorkerTypeLocal, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	service.dispatcher.ReserveWorkerPools("group-a", []string{"w"}, nil)
+	if err := service.StartTaskGroup("group-b", ""); err == nil {
+		t.Fatal("starting another task group while one is active must be rejected")
+	}
+}
+
 func TestClusterServiceDeletesIdleResources(t *testing.T) {
 	service := testClusterService(t)
 	ctx := context.Background()

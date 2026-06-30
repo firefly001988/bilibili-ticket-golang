@@ -214,6 +214,15 @@ func (s *ClusterService) startTaskGroupPhase(taskGroupID string, phase domain.Ph
 	if err := s.refreshResources(ctx); err != nil {
 		return err
 	}
+	if activeTaskGroup := s.dispatcher.ActiveTaskGroup(); activeTaskGroup != "" {
+		if activeTaskGroup == taskGroupID {
+			return fmt.Errorf("task group %s is already running; stop it before starting again", taskGroupID)
+		}
+		return fmt.Errorf("task group %s is already running; stop it before starting task group %s", activeTaskGroup, taskGroupID)
+	}
+	if s.taskGroupActive(ctx, taskGroupID) {
+		return fmt.Errorf("task group %s is already running; stop it before starting again", taskGroupID)
+	}
 	taskGroup, err := s.taskGroupByID(ctx, taskGroupID)
 	if err != nil {
 		return err
