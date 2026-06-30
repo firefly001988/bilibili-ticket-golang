@@ -407,6 +407,7 @@
         "macroStopFailed": "停止失败: {error}",
         "phaseRunning": "正在运行",
         "phaseReflow": "回流中",
+        "waitingNextWave": "休息中/等待下一波",
         "pendingAutoStart": "等待手动启动",
         "pendingConfig": "待配置",
         "dispatchStatus": "调度状态",

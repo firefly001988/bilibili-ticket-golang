@@ -407,6 +407,7 @@
         "macroStopFailed": "Stop failed: {error}",
         "phaseRunning": "Running",
         "phaseReflow": "Reflow",
+        "waitingNextWave": "Resting / waiting next wave",
         "pendingAutoStart": "Pending Manual Start",
         "pendingConfig": "Pending Config",
         "dispatchStatus": "Dispatch Status",

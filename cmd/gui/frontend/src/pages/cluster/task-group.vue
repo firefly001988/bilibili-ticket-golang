@@ -256,7 +256,9 @@ async function loadBuyersOnce() { if (allBuyers.value.length > 0) return; try { 
 function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRandomValues(arr); return prefix + '-' + Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('') }
 
 // ── Dispatch ─────────────────────────────────────────────────
-const hasIntent = (m: MacroSummary) => m.phase === 'punctual' || m.phase === 'reflow'
+const macroIntents = (m: MacroSummary) => intents.value.filter(i => i.macroTaskId === m.id)
+const hasIntent = (m: MacroSummary) => macroIntents(m).length > 0
+const hasLiveIntent = (m: MacroSummary) => macroIntents(m).some(i => i.armed && !i.terminal && !i.succeeded)
 const isRunning = (m: MacroSummary) => (dispatching.value[m.id] || hasIntent(m))
 
 // ── Task status helpers ──────────────────────────────────────
@@ -301,13 +303,14 @@ const startBlockers = (m: MacroSummary): string[] => {
 /** Human-readable status label for a macro */
 const macroStatusLabel = (m: MacroSummary): string => {
     if (hasIntent(m)) {
-        if (m.phase === 'reflow') return t('taskGroup.phaseReflow')
         const ds = dispatchStats(m)
+        if (macroIntents(m).some(i => i.phase === 'reflow')) return t('taskGroup.phaseReflow')
         if (ds.succeeded > 0) return t('taskGroup.succeeded', { count: ds.succeeded })
         if (ds.running > 0) return t('taskGroup.running', { count: ds.running })
         if (ds.deficit > 0) return t('taskGroup.queued', { count: ds.deficit })
         return t('taskGroup.phaseRunning')
     }
+    if (groupRunning.value) return t('taskGroup.waitingNextWave')
     if (isPendingAutoStart(m)) return t('taskGroup.pendingAutoStart')
     return t('taskGroup.pendingConfig')
 }
@@ -315,13 +318,14 @@ const macroStatusLabel = (m: MacroSummary): string => {
 /** Color for macro status chip */
 const macroStatusColor = (m: MacroSummary): string => {
     if (hasIntent(m)) {
-        if (m.phase === 'reflow') return 'warning'
+        if (macroIntents(m).some(i => i.phase === 'reflow')) return 'warning'
         const ds = dispatchStats(m)
         if (ds.succeeded > 0) return 'success'
         if (ds.running > 0) return 'info'
         if (ds.deficit > 0) return 'warning'
         return 'info'
     }
+    if (groupRunning.value) return 'info'
     if (isPendingAutoStart(m)) return 'warning'
     return 'grey'
 }
@@ -458,7 +462,7 @@ async function stopSingleIntent(intentID: string) {
 }
 
 const dispatchableMacros = computed(() => macros.value.filter(m => m.purchaseGroups && m.purchaseGroups.length > 0))
-const anyRunning = computed(() => dispatchableMacros.value.some(m => hasIntent(m)))
+const anyRunning = computed(() => dispatchableMacros.value.some(m => hasLiveIntent(m)))
 const groupRunning = computed(() => anyRunning.value || (!!group.value && activeTaskGroup.value === group.value.id))
 const editingDisabled = computed(() => groupRunning.value || dispatchingAll.value)
 const workerPoolConfigured = computed(() => groupPrimaryWorkerIds.value.length + groupStandbyWorkerIds.value.length > 0)
@@ -567,12 +571,12 @@ const allPurchaseGroups = computed(() => {
                         <v-chip v-if="groupStats.failed > 0" size="small" color="error" variant="tonal">{{
                             t('taskGroup.failed', { count: groupStats.failed }) }}</v-chip>
                         <v-spacer />
-                        <v-btn v-if="!anyRunning" prepend-icon="mdi-play-circle-outline" color="success" variant="tonal"
+                        <v-btn v-if="!groupRunning" prepend-icon="mdi-play-circle-outline" color="success" variant="tonal"
                             size="small" :loading="dispatchingAll"
                             :disabled="dispatchableMacros.length === 0 || !workerPoolConfigured" @click="startAllMacros">
                             {{ t('taskGroup.startAll') }}
                         </v-btn>
-                        <v-btn v-if="!anyRunning" prepend-icon="mdi-fast-forward" color="warning" variant="tonal"
+                        <v-btn v-if="!groupRunning" prepend-icon="mdi-fast-forward" color="warning" variant="tonal"
                             size="small" :loading="dispatchingAll"
                             :disabled="dispatchableMacros.length === 0 || !workerPoolConfigured" @click="startReflowNow">
                             {{ t('taskGroup.startReflowNow') }}
