@@ -80,8 +80,8 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 	client.SetOnCompletedTask(func(workerID string, result domain.ExecutionResult) {
 		log.Printf("[cluster] heartbeat push received: worker=%s attempt=%s success=%v orderID=%s paymentURL=%q",
 			workerID, result.AttemptID, result.Success, result.OrderID, result.PaymentURL)
+		result = service.dispatcher.ProcessCompletedTask(workerID, result)
 		service.RecordTaskCompleted(workerID, result)
-		service.dispatcher.ProcessCompletedTask(workerID, result)
 	})
 
 	// Restore persisted global configuration.

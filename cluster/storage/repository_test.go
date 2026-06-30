@@ -93,6 +93,14 @@ func TestSuccessTransactionOccupiesAllBuyerDays(t *testing.T) {
 	if err := r.db.QueryRow(`SELECT count(*) FROM buyer_day_occupancy`).Scan(&count); err != nil || count != 2 {
 		t.Fatalf("count=%d err=%v", count, err)
 	}
+	occupied, err := r.BuyerDayOccupied(ctx, []domain.BuyerDayKey{{BuyerID: "a", EventDay: "2026-07-01"}})
+	if err != nil || !occupied {
+		t.Fatalf("occupied=%v err=%v", occupied, err)
+	}
+	occupied, err = r.BuyerDayOccupied(ctx, []domain.BuyerDayKey{{BuyerID: "c", EventDay: "2026-07-01"}})
+	if err != nil || occupied {
+		t.Fatalf("occupied=%v err=%v", occupied, err)
+	}
 }
 
 func TestClusterEventsCanBeClearedAndOrderRecordsListed(t *testing.T) {

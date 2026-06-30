@@ -942,6 +942,8 @@
         "kindWorkerUnhealthy": "异常",
         "kindTaskCompleted": "任务完成",
         "kindTaskFailed": "任务失败",
+        "kindTaskSuperseded": "竞速结束",
+        "kindTaskStopped": "已停止",
         "kindHeartbeatTimeout": "心跳超时",
         "kindHeartbeatLatency": "心跳延迟",
         "kindWorkerInfo": "Worker 信息",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
@@ -91,7 +92,13 @@ func (s *ClusterService) RecordHeartbeatLatency(workerID string, latencyMs int64
 func (s *ClusterService) RecordTaskCompleted(workerID string, result domain.ExecutionResult) {
 	kind := EventTaskCompleted
 	stage := "complete"
-	if !result.Success {
+	if !result.Success && taskSupersededByWinner(result) {
+		kind = EventTaskSuperseded
+		stage = "superseded"
+	} else if !result.Success && taskStopped(result) {
+		kind = EventTaskStopped
+		stage = "stopped"
+	} else if !result.Success {
 		kind = EventTaskFailed
 		stage = "failed"
 	}
@@ -109,6 +116,17 @@ func (s *ClusterService) RecordTaskCompleted(workerID string, result domain.Exec
 		ev.Message += ": " + result.Message
 	}
 	s.recordEvent(ev)
+}
+
+func taskSupersededByWinner(result domain.ExecutionResult) bool {
+	return result.Reason == domain.FailureStopped && strings.Contains(strings.ToLower(result.Message), "winning attempt")
+}
+
+func taskStopped(result domain.ExecutionResult) bool {
+	if result.State == domain.AttemptStopped || result.Reason == domain.FailureStopped {
+		return true
+	}
+	return strings.Contains(strings.ToLower(result.Message), "context canceled")
 }
 
 // RecordWorkerInfo logs miscellaneous worker info (clock offsets etc.).

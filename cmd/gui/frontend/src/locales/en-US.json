@@ -942,6 +942,8 @@
         "kindWorkerUnhealthy": "Unhealthy",
         "kindTaskCompleted": "Task Completed",
         "kindTaskFailed": "Task Failed",
+        "kindTaskSuperseded": "Race Ended",
+        "kindTaskStopped": "Stopped",
         "kindHeartbeatTimeout": "Heartbeat Timeout",
         "kindHeartbeatLatency": "Heartbeat Latency",
         "kindWorkerInfo": "Worker Info",

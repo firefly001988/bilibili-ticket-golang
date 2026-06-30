@@ -60,6 +60,7 @@ func (c *client) Stop(ctx context.Context, _ domain.WorkerNode, id string) error
 type repo struct {
 	intents  []domain.LogicalOrderIntent
 	attempts []domain.ExecutionAttempt
+	occupied bool
 }
 
 func (r *repo) PutAttempt(_ context.Context, attempt domain.ExecutionAttempt) error {
@@ -73,6 +74,9 @@ func (r *repo) PutIntent(_ context.Context, intent domain.LogicalOrderIntent) er
 func (r *repo) PutAccount(context.Context, domain.Account, *int64) error { return nil }
 func (r *repo) MarkIntentSucceeded(context.Context, domain.LogicalOrderIntent, domain.ExecutionResult) error {
 	return nil
+}
+func (r *repo) BuyerDayOccupied(context.Context, []domain.BuyerDayKey) (bool, error) {
+	return r.occupied, nil
 }
 
 func TestRemoveTerminalAttemptsKeepsNonTerminalAttempts(t *testing.T) {
@@ -98,6 +102,45 @@ func TestRemoveTerminalAttemptsKeepsNonTerminalAttempts(t *testing.T) {
 	}
 	if d.accountBusy["a2"] != "running" || d.workerBusy["w2"] != "running" {
 		t.Fatalf("non-terminal busy markers changed: accounts=%#v workers=%#v", d.accountBusy, d.workerBusy)
+	}
+}
+
+func TestDispatcherSkipsBuyerDayAlreadyOccupiedBySuccess(t *testing.T) {
+	c := &client{}
+	r := &repo{occupied: true}
+	d := New(c, r, nil)
+	accounts, workers := resources()
+	d.SetResources(accounts[:1], workers[:1])
+	intent := dispatchIntent("i", "m", 1, "buyer")
+	d.Add(IntentPlan{Macro: dispatchMacro("m", 1), Intent: intent})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.submitted) != 0 {
+		t.Fatalf("occupied intent was dispatched: %#v", c.submitted)
+	}
+	if len(r.intents) != 1 || !r.intents[0].Terminal {
+		t.Fatalf("occupied intent was not persisted terminal: %#v", r.intents)
+	}
+}
+
+func TestProcessCompletedTaskPreservesWinningAttemptMessage(t *testing.T) {
+	d := New(&client{}, &repo{}, nil)
+	d.attempts["a"] = &attempt{value: domain.ExecutionAttempt{
+		ID:       "a",
+		IntentID: "i",
+		State:    domain.AttemptStopping,
+		Result: domain.ExecutionResult{
+			AttemptID: "a",
+			IntentID:  "i",
+			State:     domain.AttemptStopping,
+			Reason:    domain.FailureStopped,
+			Message:   "cancelled by winning attempt winner",
+		},
+	}}
+	result := d.ProcessCompletedTask("w", domain.ExecutionResult{AttemptID: "a", IntentID: "i", State: domain.AttemptStopped, Reason: domain.FailureStopped, Message: "context canceled"})
+	if result.Message != "cancelled by winning attempt winner" {
+		t.Fatalf("message was not preserved: %#v", result)
 	}
 }
 

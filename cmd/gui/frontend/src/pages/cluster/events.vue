@@ -75,6 +75,8 @@ function kindLabel(k: string): string {
         worker_unhealthy: t('events.kindWorkerUnhealthy'),
         task_completed: t('events.kindTaskCompleted'),
         task_failed: t('events.kindTaskFailed'),
+        task_superseded: t('events.kindTaskSuperseded'),
+        task_stopped: t('events.kindTaskStopped'),
         heartbeat_timeout: t('events.kindHeartbeatTimeout'),
         heartbeat_latency: t('events.kindHeartbeatLatency'),
         worker_info: t('events.kindWorkerInfo'),
@@ -92,6 +94,8 @@ function kindColor(k: string): string {
         case 'worker_disconnected':
         case 'task_failed':
         case 'worker_unhealthy': return 'error'
+        case 'task_superseded': return 'info'
+        case 'task_stopped': return 'grey'
         case 'heartbeat_timeout':
         case 'heartbeat_latency':
         case 'dispatch_warning': return 'warning'

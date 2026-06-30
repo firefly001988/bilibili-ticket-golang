@@ -611,6 +611,21 @@ func (r *Repository) ListBuyerMappings(ctx context.Context) ([]domain.AccountBuy
 	return result, rows.Err()
 }
 
+func (r *Repository) BuyerDayOccupied(ctx context.Context, keys []domain.BuyerDayKey) (bool, error) {
+	for _, key := range keys {
+		var n int
+		err := r.db.QueryRowContext(ctx, `SELECT 1 FROM buyer_day_occupancy WHERE buyer_id=? AND event_day=? LIMIT 1`, key.BuyerID, key.EventDay).Scan(&n)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 // DeleteBuyerMapping removes a single account-to-buyer mapping.
 func (r *Repository) DeleteBuyerMapping(ctx context.Context, accountID, logicalBuyerID string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM account_buyer_mappings WHERE account_id=? AND logical_buyer_id=?`, accountID, logicalBuyerID)

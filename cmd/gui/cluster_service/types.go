@@ -113,6 +113,8 @@ const (
 	EventWorkerUnhealthy    ClusterEventKind = "worker_unhealthy"
 	EventTaskCompleted      ClusterEventKind = "task_completed"
 	EventTaskFailed         ClusterEventKind = "task_failed"
+	EventTaskSuperseded     ClusterEventKind = "task_superseded"
+	EventTaskStopped        ClusterEventKind = "task_stopped"
 	EventHeartbeatTimeout   ClusterEventKind = "heartbeat_timeout"
 	EventHeartbeatLatency   ClusterEventKind = "heartbeat_latency"
 	EventWorkerInfo         ClusterEventKind = "worker_info"

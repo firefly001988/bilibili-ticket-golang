@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,7 @@ type Repository interface {
 	PutIntent(context.Context, domain.LogicalOrderIntent) error
 	PutAccount(context.Context, domain.Account, *int64) error
 	MarkIntentSucceeded(context.Context, domain.LogicalOrderIntent, domain.ExecutionResult) error
+	BuyerDayOccupied(context.Context, []domain.BuyerDayKey) (bool, error)
 }
 
 type MappingResolver interface {
@@ -490,6 +492,9 @@ func (d *Dispatcher) dispatchablePlans(ctx context.Context) []*IntentPlan {
 			}
 			continue
 		}
+		if d.occupiedBySuccess(ctx, plan) {
+			continue
+		}
 		if d.conflicted(plan) {
 			continue
 		}
@@ -499,6 +504,25 @@ func (d *Dispatcher) dispatchablePlans(ctx context.Context) []*IntentPlan {
 		return planOrderLess(ordered[i], ordered[j])
 	})
 	return ordered
+}
+
+func (d *Dispatcher) occupiedBySuccess(ctx context.Context, plan *IntentPlan) bool {
+	if d.repository == nil || len(plan.Intent.BuyerDays) == 0 {
+		return false
+	}
+	occupied, err := d.repository.BuyerDayOccupied(ctx, plan.Intent.BuyerDays)
+	if err != nil {
+		log.Printf("[dispatcher] check buyer-day occupancy failed for intent=%s: %v", plan.Intent.ID, err)
+		return false
+	}
+	if !occupied {
+		return false
+	}
+	plan.Intent.Terminal, plan.Intent.FailureReason = true, domain.FailureUnrecoverable
+	if err := d.repository.PutIntent(ctx, plan.Intent); err != nil {
+		log.Printf("[dispatcher] persist occupied intent failed for intent=%s: %v", plan.Intent.ID, err)
+	}
+	return true
 }
 
 func (d *Dispatcher) totalSlotCount(plans []*IntentPlan) int {
@@ -665,7 +689,20 @@ func (d *Dispatcher) win(ctx context.Context, winner *attempt, result domain.Exe
 			rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
 			_ = d.client.Stop(rpcCtx, d.workers[sibling.value.WorkerID], sibling.value.ID)
 			cancel()
-			sibling.value.State = domain.AttemptStopping
+			now := d.now()
+			sibling.value.State, sibling.value.UpdatedAt = domain.AttemptStopping, now
+			sibling.value.Result = domain.ExecutionResult{
+				AttemptID:  sibling.value.ID,
+				IntentID:   sibling.value.IntentID,
+				SpecHash:   sibling.value.SpecHash,
+				State:      domain.AttemptStopping,
+				Reason:     domain.FailureStopped,
+				Message:    "cancelled by winning attempt " + winner.value.ID,
+				FinishedAt: now,
+			}
+			if d.repository != nil {
+				_ = d.repository.PutAttempt(ctx, sibling.value)
+			}
 		}
 	}
 	return nil
@@ -758,7 +795,7 @@ func effectiveWeight(intent domain.LogicalOrderIntent) int {
 // bidirectional heartbeat stream.  It updates the attempt, releases
 // resources, and triggers reconciliation immediately instead of waiting
 // for the periodic poll cycle.
-func (d *Dispatcher) ProcessCompletedTask(workerID string, result domain.ExecutionResult) {
+func (d *Dispatcher) ProcessCompletedTask(workerID string, result domain.ExecutionResult) domain.ExecutionResult {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -768,13 +805,16 @@ func (d *Dispatcher) ProcessCompletedTask(workerID string, result domain.Executi
 			log.Printf("[dispatcher] ProcessCompletedTask SKIP: attempt %s not found (worker=%s, resultState=%s, success=%v)",
 				result.AttemptID, workerID, result.State, result.Success)
 		}
-		return
+		return result
 	}
 
 	log.Printf("[dispatcher] ProcessCompletedTask: attempt=%s worker=%s state=%s success=%v orderID=%s paymentURL=%q",
 		result.AttemptID, workerID, result.State, result.Success, result.OrderID, result.PaymentURL)
 
 	now := d.now()
+	if !result.Success && result.Reason == domain.FailureStopped && strings.Contains(strings.ToLower(attempt.value.Result.Message), "winning attempt") {
+		result.Message = attempt.value.Result.Message
+	}
 	attempt.value.State, attempt.value.UpdatedAt = result.State, now
 	attempt.value.Result = result
 	attempt.value.Result.Credentials = domain.Credentials{}
@@ -785,7 +825,7 @@ func (d *Dispatcher) ProcessCompletedTask(workerID string, result domain.Executi
 	}
 
 	if !result.State.Terminal() {
-		return
+		return result
 	}
 
 	delete(d.accountBusy, attempt.value.AccountID)
@@ -816,6 +856,7 @@ func (d *Dispatcher) ProcessCompletedTask(workerID string, result domain.Executi
 	// goroutine to avoid deadlock (ProcessCompletedTask holds d.mu, and
 	// Reconcile also acquires d.mu).
 	go d.Reconcile(context.Background())
+	return result
 }
 
 func (d *Dispatcher) pickResources(ctx context.Context, plan *IntentPlan) (domain.Account, domain.WorkerNode, bool, error) {
