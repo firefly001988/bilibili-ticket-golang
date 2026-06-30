@@ -511,6 +511,19 @@ function confirmAddFromConfig() {
     showImportDialog.value = true
 }
 
+function portRule(v: any) {
+    if (v === '' || v === undefined || v === null) return true
+    const s = String(v)
+    if (!/^\d+$/.test(s)) return t('worker.portMustBeInteger')
+    const n = Number(s)
+    if (n < 1 || n > 65535) return '1-65535'
+    return true
+}
+
+function isPortInvalid(target: DeployTarget) {
+    return portRule(target.sshPort) !== true || portRule(target.workerPort) !== true
+}
+
 // ── Computed ──────────────────────────────────────────────────
 
 const isLocalWorker = (w: WorkerSummary) => w.type === 'local'
@@ -656,15 +669,19 @@ async function chooseWorkerBinary() {
     }
 }
 
-async function chooseSSHPrivateKey(index: number) {
-    try {
-        const path = await SelectWorkerBinary()
-        if (path && deployTargets.value[index]) {
-            deployTargets.value[index].privateKeyPath = path
+function handleSSHKeyFile(index: number, files: File | File[]) {
+    const file = Array.isArray(files) ? files[0] : files
+    if (!file || !deployTargets.value[index]) return
+    const reader = new FileReader()
+    reader.onload = () => {
+        if (deployTargets.value[index]) {
+            deployTargets.value[index].privateKeyPath = reader.result as string
         }
-    } catch (e: any) {
-        messages.add({ text: t('worker.deploySelectKeyFailed', { error: String(e) }), color: 'error' })
     }
+    reader.onerror = () => {
+        messages.add({ text: t('worker.deploySelectKeyFailed', { error: 'Failed to read file' }), color: 'error' })
+    }
+    reader.readAsText(file)
 }
 
 function deployStageText(stage: string) {
@@ -722,6 +739,16 @@ function validateDeployForm(): boolean {
     for (const { target } of targets) {
         if (!target.username.trim()) {
             messages.add({ text: t('worker.deployNeedSSH', { host: target.host || '-' }), color: 'warning' })
+            return false
+        }
+        const sshPort = Number(target.sshPort)
+        if (!sshPort || sshPort < 1 || sshPort > 65535) {
+            messages.add({ text: t('worker.deployNeedSSHPortRange', { host: target.host || '-' }), color: 'warning' })
+            return false
+        }
+        const workerPort = Number(target.workerPort)
+        if (!workerPort || workerPort < 1 || workerPort > 65535) {
+            messages.add({ text: t('worker.deployNeedWorkerPortRange', { host: target.host || '-' }), color: 'warning' })
             return false
         }
         if (target.authType === 'key') {
@@ -868,19 +895,16 @@ async function cancelBatchDeploy() {
                 <v-spacer />
                 <v-btn size="small" prepend-icon="mdi-link-off" variant="tonal"
                     :disabled="batchDisconnectTargets.length === 0 || batchWorking"
-                    :loading="batchAction === 'disconnect'"
-                    @click="runBatchAction('disconnect')">
+                    :loading="batchAction === 'disconnect'" @click="runBatchAction('disconnect')">
                     {{ t('worker.batchDisconnect', { count: batchDisconnectTargets.length }) }}
                 </v-btn>
                 <v-btn size="small" prepend-icon="mdi-link" variant="tonal" color="success"
                     :disabled="batchReconnectTargets.length === 0 || batchWorking"
-                    :loading="batchAction === 'reconnect'"
-                    @click="runBatchAction('reconnect')">
+                    :loading="batchAction === 'reconnect'" @click="runBatchAction('reconnect')">
                     {{ t('worker.batchReconnect', { count: batchReconnectTargets.length }) }}
                 </v-btn>
                 <v-btn size="small" prepend-icon="mdi-delete" variant="tonal" color="error"
-                    :disabled="batchDeleteTargets.length === 0 || batchWorking"
-                    @click="promptBatchDelete">
+                    :disabled="batchDeleteTargets.length === 0 || batchWorking" @click="promptBatchDelete">
                     {{ t('worker.batchDelete', { count: batchDeleteTargets.length }) }}
                 </v-btn>
                 <v-btn size="small" variant="text" @click="clearWorkerSelection">
@@ -929,13 +953,13 @@ async function cancelBatchDeploy() {
                         </td>
                         <td class="text-center">
                             <v-icon size="small">{{ expandedWorkers.has(w.id) ? 'mdi-chevron-down' : 'mdi-chevron-right'
-                            }}</v-icon>
+                                }}</v-icon>
                         </td>
                         <td style="max-width:200px">
                             <div class="d-flex align-center text-truncate" style="min-width:0">
                                 <v-icon start size="small" class="mr-1 flex-shrink-0">mdi-server-network</v-icon>
                                 <span class="text-truncate font-weight-bold" style="min-width:0">{{ w.name || w.id
-                                }}</span>
+                                    }}</span>
                                 <v-chip v-if="isLocalWorker(w)" size="x-small" color="info" variant="tonal"
                                     class="ml-1 flex-shrink-0">
                                     {{ systemTagForWorker(w) }}
@@ -960,7 +984,7 @@ async function cancelBatchDeploy() {
                             </v-chip>
                             <v-chip v-else :color="w.healthy ? 'success' : 'error'" size="small" variant="tonal">
                                 <v-icon start size="x-small">{{ w.healthy ? 'mdi-check-circle' : 'mdi-close-circle'
-                                }}</v-icon>
+                                    }}</v-icon>
                                 {{ w.healthy ? t('worker.online') : t('worker.offline') }}
                             </v-chip>
                             <template v-if="w.healthy">
@@ -998,7 +1022,7 @@ async function cancelBatchDeploy() {
                                     <v-list-item density="compact" disabled>
                                         <div style="font-size:0.8rem;line-height:1.4">
                                             <div class="text-caption text-medium-emphasis">{{ t('worker.workerVersion')
-                                            }}</div>
+                                                }}</div>
                                             <div class="text-warning font-weight-bold">{{ w.version || '—' }}</div>
                                         </div>
                                     </v-list-item>
@@ -1010,7 +1034,7 @@ async function cancelBatchDeploy() {
                                         </template>
                                         <template #title>
                                             <span class="text-error font-weight-bold">{{ t('worker.forceReconnectTitle')
-                                                }}</span>
+                                            }}</span>
                                         </template>
                                     </v-list-item>
                                 </v-list>
@@ -1127,7 +1151,7 @@ async function cancelBatchDeploy() {
                                         <v-divider class="my-1" />
                                         <div class="text-caption text-medium-emphasis mt-1">{{
                                             t('worker.clockOffsetTitle')
-                                            }}</div>
+                                        }}</div>
                                     </v-col>
                                     <v-col cols="6" md="3">
                                         <div class="text-caption text-medium-emphasis">Bilibili API</div>
@@ -1168,7 +1192,7 @@ async function cancelBatchDeploy() {
                                     <v-col cols="6" md="3">
                                         <div class="text-caption text-medium-emphasis">总冷却时长</div>
                                         <div class="text-body-2">{{ Math.round((w.cooldown.totalDurationMs || 0) / 1000)
-                                        }}s</div>
+                                            }}s</div>
                                     </v-col>
                                     <v-col cols="6" md="3">
                                         <div class="text-caption text-medium-emphasis">剩余</div>
@@ -1199,7 +1223,15 @@ async function cancelBatchDeploy() {
                         {{ t('worker.batchDeployHint') }}
                     </v-alert>
 
-                    <div class="text-subtitle-2 mb-2">{{ t('worker.deployTargets') }}</div>
+                    <div class="text-subtitle-2 justify-start align-center" style="display: flex; gap: .5rem;">
+                        <div>
+                            {{ t('worker.deployTargets') }}
+                        </div>
+                        <v-btn prepend-icon="mdi-plus" variant="tonal" size="small" @click="addDeployTarget">
+                            {{ t('worker.deployAddTarget') }}
+                        </v-btn>
+                    </div>
+                    <!--
                     <v-table density="compact" class="mb-3">
                         <thead>
                             <tr>
@@ -1217,7 +1249,8 @@ async function cancelBatchDeploy() {
                         <tbody>
                             <tr v-for="(target, index) in deployTargets" :key="index">
                                 <td><v-text-field v-model="target.host" density="compact" hide-details
-                                        placeholder="1.2.3.4" /></td>
+                                        placeholder="1.2.3.4" />
+                                </td>
                                 <td><v-text-field v-model.number="target.sshPort" type="number" density="compact"
                                         hide-details class="no-spin" /></td>
                                 <td><v-text-field v-model="target.username" density="compact" hide-details /></td>
@@ -1230,7 +1263,8 @@ async function cancelBatchDeploy() {
                                         <v-text-field v-model="target.privateKeyPath" density="compact" hide-details
                                             :placeholder="t('worker.deployPrivateKeyPath')" class="mb-1">
                                             <template #append>
-                                                <v-btn variant="tonal" size="x-small" @click="chooseSSHPrivateKey(index)">
+                                                <v-btn variant="tonal" size="x-small"
+                                                    @click="chooseSSHPrivateKey(index)">
                                                     {{ t('worker.deployBrowse') }}
                                                 </v-btn>
                                             </template>
@@ -1255,9 +1289,87 @@ async function cancelBatchDeploy() {
                             </tr>
                         </tbody>
                     </v-table>
-                    <v-btn prepend-icon="mdi-plus" variant="tonal" size="small" class="mb-5" @click="addDeployTarget">
-                        {{ t('worker.deployAddTarget') }}
-                    </v-btn>
+                    -->
+                    <v-divider class="mb-2 mt-1" />
+                    <!-- deploy targets -->
+                    <div>
+                        <v-expansion-panels>
+                            <v-expansion-panel v-for="(setting, index) in deployTargets" :key="index">
+                                <v-expansion-panel-title style="display:flex;align-items:center;width:100%;">
+                                    <div>
+                                        {{ setting.name ? setting.name : t('worker.deployAuto') }} | {{ setting.username
+                                        }}@{{
+                                            setting.host ?
+                                                setting.host
+                                                : "Unknown" }}:{{ setting.sshPort }} | {{ setting.authType === 'key' ?
+                                            t('worker.deployAuthKey') : t('worker.deployAuthPassword') }}
+                                        <template v-if="isPortInvalid(setting)">
+                                            |
+                                            <span v-if="isPortInvalid(setting)" class="text-error font-weight-bold">
+                                                ⚠ {{ t('worker.portInvalid') }}
+                                            </span>
+                                        </template>
+                                    </div>
+                                    <v-spacer />
+                                    <v-btn icon="mdi-delete" size="x-small" variant="text" color="error"
+                                        @click.stop="removeDeployTarget(index)" />
+                                </v-expansion-panel-title>
+                                <v-expansion-panel-text>
+                                    <v-form style="display:flex;flex-direction:column;gap:.5rem">
+                                        <div style="display:flex;gap:4px">
+                                            <v-text-field v-model="setting.name" density="compact" hide-details
+                                                placeholder="My Worker" :label="t('worker.deployWorkerName')"
+                                                style="flex:1;min-width:0" />
+                                            <v-text-field v-model="setting.workerId" density="compact" hide-details
+                                                placeholder="My Worker ID" :label="t('worker.deployWorkerId')"
+                                                style="flex:1;min-width:0" />
+                                            <v-text-field v-model="setting.workerPort" density="compact" hide-details
+                                                min="1" max="65535" :rules="[portRule]"
+                                                :label="t('worker.deployWorkerPort')"
+                                                style="max-width:110px;flex-shrink:0" />
+                                        </div>
+                                        <div style="display:flex;align-items:center;gap:4px">
+                                            <v-text-field v-model="setting.username" density="compact" hide-details
+                                                placeholder="root" :label="t('worker.deployUsername')"
+                                                style="max-width:130px;flex-shrink:0" />
+                                            <span style="font-size:1.2rem;font-weight:bold;margin-top:8px">@</span>
+                                            <v-text-field v-model="setting.host" density="compact" hide-details
+                                                placeholder="1.1.1.1" :label="t('worker.deployHost')"
+                                                style="flex:1;min-width:0" />
+                                            <span style="font-size:1.2rem;font-weight:bold;margin-top:8px">:</span>
+                                            <v-text-field v-model="setting.sshPort" density="compact" hide-details
+                                                min="1" max="65535" :rules="[portRule]" placeholder="22"
+                                                :label="t('worker.deploySSHPort')"
+                                                style="max-width:90px;flex-shrink:0" />
+                                        </div>
+                                        <div style="display:flex;align-items:center;gap:4px">
+                                            <v-select v-model="setting.authType" density="compact" hide-details
+                                                style="min-width:90px;max-width:110px;flex-shrink:0" :items="[
+                                                    { title: t('worker.deployAuthPassword'), value: 'password' },
+                                                    { title: t('worker.deployAuthKey'), value: 'key' }
+                                                ]" />
+                                            <div style="flex:1;min-width:0">
+                                                <template v-if="setting.authType === 'key'">
+                                                    <v-file-input density="compact" hide-details
+                                                        :placeholder="t('worker.deployPrivateKeyPath')" class="mb-1"
+                                                        @update:model-value="(files: any) => handleSSHKeyFile(index, files)" />
+                                                    <v-text-field v-model="setting.privateKeyPassphrase" type="password"
+                                                        density="compact" hide-details
+                                                        :placeholder="t('worker.deployPrivateKeyPassphrase')" />
+                                                </template>
+                                                <template v-else>
+                                                    <v-text-field v-model="setting.password" type="password"
+                                                        density="compact" hide-details
+                                                        :placeholder="t('worker.deployPassword')" />
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </v-form>
+                                </v-expansion-panel-text>
+                            </v-expansion-panel>
+                        </v-expansion-panels>
+                    </div>
+                    <v-divider class="mb-2 mt-2" />
 
                     <v-row dense>
                         <v-col cols="12" md="3">
@@ -1296,20 +1408,18 @@ async function cancelBatchDeploy() {
                             <v-expansion-panel-text>
                                 <v-row dense>
                                     <v-col cols="12" md="6">
-                                        <v-text-field v-model="deployInstallDir"
-                                            :label="t('worker.deployInstallDir')" variant="outlined"
-                                            density="compact" />
+                                        <v-text-field v-model="deployInstallDir" :label="t('worker.deployInstallDir')"
+                                            variant="outlined" density="compact" />
                                     </v-col>
                                     <v-col cols="12" md="3">
                                         <v-select v-model="deployStartMode"
                                             :items="[{ title: 'nohup', value: 'nohup' }, { title: 'systemd --user', value: 'systemd-user' }]"
-                                            :label="t('worker.deployStartMode')" variant="outlined"
-                                            density="compact" />
+                                            :label="t('worker.deployStartMode')" variant="outlined" density="compact" />
                                     </v-col>
                                     <v-col cols="12" md="3">
                                         <v-text-field v-model.number="deployConcurrency" type="number"
-                                            :label="t('worker.deployConcurrency')" variant="outlined"
-                                            density="compact" min="1" max="10" :hint="t('worker.deployConcurrencyHint')"
+                                            :label="t('worker.deployConcurrency')" variant="outlined" density="compact"
+                                            min="1" max="10" :hint="t('worker.deployConcurrencyHint')"
                                             persistent-hint />
                                     </v-col>
                                     <v-col cols="12" md="6">
