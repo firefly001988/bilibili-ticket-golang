@@ -438,6 +438,13 @@ func (d *Dispatcher) Reconcile(ctx context.Context) error {
 			di := targets[ordered[i].Intent.ID] - d.activeCount(ordered[i].Intent.ID)
 			dj := targets[ordered[j].Intent.ID] - d.activeCount(ordered[j].Intent.ID)
 			if di == dj {
+				if ordered[i].Intent.Priority == ordered[j].Intent.Priority {
+					ai := d.activeCount(ordered[i].Intent.ID)
+					aj := d.activeCount(ordered[j].Intent.ID)
+					if ai != aj {
+						return ai < aj
+					}
+				}
 				return planOrderLess(ordered[i], ordered[j])
 			}
 			return di > dj
