@@ -48,13 +48,16 @@ type RemoteWorkerDeployRequest struct {
 }
 
 type RemoteWorkerDeployTarget struct {
-	Host       string `json:"host"`
-	SSHPort    int    `json:"sshPort,omitempty"`
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-	WorkerPort int    `json:"workerPort,omitempty"`
-	Name       string `json:"name,omitempty"`
-	WorkerID   string `json:"workerId,omitempty"`
+	Host                 string `json:"host"`
+	SSHPort              int    `json:"sshPort,omitempty"`
+	Username             string `json:"username"`
+	AuthType             string `json:"authType,omitempty"` // password | key
+	Password             string `json:"password,omitempty"`
+	PrivateKeyPath       string `json:"privateKeyPath,omitempty"`
+	PrivateKeyPassphrase string `json:"privateKeyPassphrase,omitempty"`
+	WorkerPort           int    `json:"workerPort,omitempty"`
+	Name                 string `json:"name,omitempty"`
+	WorkerID             string `json:"workerId,omitempty"`
 }
 
 type RemoteWorkerDeployJob struct {
@@ -88,7 +91,7 @@ func (s *ClusterService) SelectWorkerBinary() (string, error) {
 		return "", fmt.Errorf("file dialog is not available")
 	}
 	return s.wailsApp.Dialog.OpenFile().
-		SetTitle("选择 ticket-worker 文件").
+		SetTitle("选择本地文件").
 		CanChooseFiles(true).
 		CanChooseDirectories(false).
 		PromptForSingleSelection()
@@ -201,6 +204,11 @@ func normalizeDeployRequest(req *RemoteWorkerDeployRequest) {
 		t := &req.Targets[i]
 		t.Host = strings.TrimSpace(t.Host)
 		t.Username = strings.TrimSpace(t.Username)
+		t.AuthType = strings.TrimSpace(strings.ToLower(t.AuthType))
+		if t.AuthType == "" {
+			t.AuthType = "password"
+		}
+		t.PrivateKeyPath = strings.TrimSpace(t.PrivateKeyPath)
 		t.Name = strings.TrimSpace(t.Name)
 		t.WorkerID = strings.TrimSpace(t.WorkerID)
 		if t.SSHPort <= 0 {
@@ -245,8 +253,17 @@ func validateDeployRequest(req RemoteWorkerDeployRequest) error {
 		if target.Username == "" {
 			return fmt.Errorf("target %s SSH username is required", target.Host)
 		}
-		if target.Password == "" {
-			return fmt.Errorf("target %s SSH password is required", target.Host)
+		switch target.AuthType {
+		case "password":
+			if target.Password == "" {
+				return fmt.Errorf("target %s SSH password is required", target.Host)
+			}
+		case "key":
+			if target.PrivateKeyPath == "" {
+				return fmt.Errorf("target %s SSH private key path is required", target.Host)
+			}
+		default:
+			return fmt.Errorf("target %s unsupported SSH auth type %q", target.Host, target.AuthType)
 		}
 		if target.WorkerID == "local" {
 			return fmt.Errorf("target %s workerId cannot be local", target.Host)
@@ -443,13 +460,44 @@ func gzipTarSingleFile(ctx context.Context, sourcePath, entryName string) (io.Re
 }
 
 func dialDeploySSH(target RemoteWorkerDeployTarget, timeout time.Duration) (*ssh.Client, error) {
+	auth, err := deploySSHAuthMethods(target)
+	if err != nil {
+		return nil, err
+	}
 	config := &ssh.ClientConfig{
 		User:            target.Username,
-		Auth:            []ssh.AuthMethod{ssh.Password(target.Password)},
+		Auth:            auth,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         timeout,
 	}
 	return ssh.Dial("tcp", net.JoinHostPort(target.Host, strconv.Itoa(target.SSHPort)), config)
+}
+
+func deploySSHAuthMethods(target RemoteWorkerDeployTarget) ([]ssh.AuthMethod, error) {
+	switch target.AuthType {
+	case "", "password":
+		if target.Password == "" {
+			return nil, fmt.Errorf("SSH password is required")
+		}
+		return []ssh.AuthMethod{ssh.Password(target.Password)}, nil
+	case "key":
+		keyBytes, err := os.ReadFile(target.PrivateKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("read SSH private key: %w", err)
+		}
+		var signer ssh.Signer
+		if target.PrivateKeyPassphrase != "" {
+			signer, err = ssh.ParsePrivateKeyWithPassphrase(keyBytes, []byte(target.PrivateKeyPassphrase))
+		} else {
+			signer, err = ssh.ParsePrivateKey(keyBytes)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("parse SSH private key: %w", err)
+		}
+		return []ssh.AuthMethod{ssh.PublicKeys(signer)}, nil
+	default:
+		return nil, fmt.Errorf("unsupported SSH auth type %q", target.AuthType)
+	}
 }
 
 func runDeployScript(ctx context.Context, client *ssh.Client, script string, stdin io.Reader, timeout time.Duration) error {
@@ -787,6 +835,12 @@ func redactDeployError(err error, target RemoteWorkerDeployTarget) string {
 	msg := err.Error()
 	if target.Password != "" {
 		msg = strings.ReplaceAll(msg, target.Password, "******")
+	}
+	if target.PrivateKeyPassphrase != "" {
+		msg = strings.ReplaceAll(msg, target.PrivateKeyPassphrase, "******")
+	}
+	if target.PrivateKeyPath != "" {
+		msg = strings.ReplaceAll(msg, target.PrivateKeyPath, "<private-key>")
 	}
 	return msg
 }

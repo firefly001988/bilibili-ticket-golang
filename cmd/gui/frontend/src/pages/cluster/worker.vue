@@ -61,7 +61,10 @@ interface DeployTarget {
     host: string
     sshPort: number
     username: string
+    authType: 'password' | 'key'
     password: string
+    privateKeyPath: string
+    privateKeyPassphrase: string
     workerPort: number
     name: string
     workerId: string
@@ -566,7 +569,10 @@ function defaultDeployTarget(): DeployTarget {
         host: '',
         sshPort: 22,
         username: 'root',
+        authType: 'password',
         password: '',
+        privateKeyPath: '',
+        privateKeyPassphrase: '',
         workerPort: 37900,
         name: '',
         workerId: '',
@@ -598,6 +604,17 @@ async function chooseWorkerBinary() {
         if (path) deployLocalBinaryPath.value = path
     } catch (e: any) {
         messages.add({ text: t('worker.deploySelectBinaryFailed', { error: String(e) }), color: 'error' })
+    }
+}
+
+async function chooseSSHPrivateKey(index: number) {
+    try {
+        const path = await SelectWorkerBinary()
+        if (path && deployTargets.value[index]) {
+            deployTargets.value[index].privateKeyPath = path
+        }
+    } catch (e: any) {
+        messages.add({ text: t('worker.deploySelectKeyFailed', { error: String(e) }), color: 'error' })
     }
 }
 
@@ -654,8 +671,17 @@ function validateDeployForm(): boolean {
         return false
     }
     for (const { target } of targets) {
-        if (!target.username.trim() || !target.password) {
+        if (!target.username.trim()) {
             messages.add({ text: t('worker.deployNeedSSH', { host: target.host || '-' }), color: 'warning' })
+            return false
+        }
+        if (target.authType === 'key') {
+            if (!target.privateKeyPath.trim()) {
+                messages.add({ text: t('worker.deployNeedSSHKey', { host: target.host || '-' }), color: 'warning' })
+                return false
+            }
+        } else if (!target.password) {
+            messages.add({ text: t('worker.deployNeedSSHPassword', { host: target.host || '-' }), color: 'warning' })
             return false
         }
     }
@@ -682,7 +708,10 @@ async function startBatchDeploy() {
                 host: t.host.trim(),
                 sshPort: Number(t.sshPort) || 22,
                 username: t.username.trim(),
+                authType: t.authType || 'password',
                 password: t.password,
+                privateKeyPath: t.privateKeyPath.trim(),
+                privateKeyPassphrase: t.privateKeyPassphrase,
                 workerPort: Number(t.workerPort) || 37900,
                 name: t.name.trim(),
                 workerId: t.workerId.trim(),
@@ -1084,7 +1113,7 @@ async function cancelBatchDeploy() {
         </v-table>
 
         <!-- ═══ Batch Deploy Remote Workers Dialog ═══ -->
-        <v-dialog v-model="showBatchDeployDialog" max-width="1280" persistent scrollable>
+        <v-dialog v-model="showBatchDeployDialog" max-width="1440" persistent scrollable>
             <v-card class="pa-4">
                 <v-card-title class="d-flex align-center">
                     <v-icon start>mdi-cloud-upload-outline</v-icon>
@@ -1106,7 +1135,8 @@ async function cancelBatchDeploy() {
                                 <th>{{ t('worker.deployHost') }}</th>
                                 <th style="width:90px">{{ t('worker.deploySSHPort') }}</th>
                                 <th>{{ t('worker.deployUsername') }}</th>
-                                <th>{{ t('worker.deployPassword') }}</th>
+                                <th style="width:130px">{{ t('worker.deployAuthType') }}</th>
+                                <th style="min-width:260px">{{ t('worker.deployCredential') }}</th>
                                 <th style="width:110px">{{ t('worker.deployWorkerPort') }}</th>
                                 <th>{{ t('worker.colName') }}</th>
                                 <th>{{ t('worker.colId') }}</th>
@@ -1120,8 +1150,27 @@ async function cancelBatchDeploy() {
                                 <td><v-text-field v-model.number="target.sshPort" type="number" density="compact"
                                         hide-details class="no-spin" /></td>
                                 <td><v-text-field v-model="target.username" density="compact" hide-details /></td>
-                                <td><v-text-field v-model="target.password" type="password" density="compact"
-                                        hide-details /></td>
+                                <td>
+                                    <v-select v-model="target.authType" density="compact" hide-details
+                                        :items="[{ title: t('worker.deployAuthPassword'), value: 'password' }, { title: t('worker.deployAuthKey'), value: 'key' }]" />
+                                </td>
+                                <td>
+                                    <template v-if="target.authType === 'key'">
+                                        <v-text-field v-model="target.privateKeyPath" density="compact" hide-details
+                                            :placeholder="t('worker.deployPrivateKeyPath')" class="mb-1">
+                                            <template #append>
+                                                <v-btn variant="tonal" size="x-small" @click="chooseSSHPrivateKey(index)">
+                                                    {{ t('worker.deployBrowse') }}
+                                                </v-btn>
+                                            </template>
+                                        </v-text-field>
+                                        <v-text-field v-model="target.privateKeyPassphrase" type="password"
+                                            density="compact" hide-details
+                                            :placeholder="t('worker.deployPrivateKeyPassphrase')" />
+                                    </template>
+                                    <v-text-field v-else v-model="target.password" type="password" density="compact"
+                                        hide-details :placeholder="t('worker.deployPassword')" />
+                                </td>
                                 <td><v-text-field v-model.number="target.workerPort" type="number" density="compact"
                                         hide-details class="no-spin" /></td>
                                 <td><v-text-field v-model="target.name" density="compact" hide-details
