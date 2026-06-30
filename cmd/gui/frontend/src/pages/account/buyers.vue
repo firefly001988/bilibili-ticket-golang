@@ -347,10 +347,9 @@ const accountItems = computed(() =>
 // ── Filters ──────────────────────────────────────────────────
 const filterName = ref('')
 const filterAccount = ref('')
-const filterAccountMode = ref<'has' | 'hasNot' | 'any'>('any')
+const filterAccountMode = ref<'has' | 'hasNot'>('has')
 
 const filterAccountModeItems = computed(() => [
-    { title: t('buyer.filterAny'), value: 'any' },
     { title: t('buyer.filterHas'), value: 'has' },
     { title: t('buyer.filterHasNot'), value: 'hasNot' },
 ])
@@ -367,7 +366,7 @@ const filteredBuyers = computed(() => {
             return false
         })
     }
-    if (filterAccount.value && filterAccountMode.value !== 'any') {
+    if (filterAccount.value) {
         const targetId = filterAccount.value
         const hasAccount = (b: BuyerWithAccounts) => (b.accounts || []).some(a => a.accountId === targetId)
         list = list.filter(b => filterAccountMode.value === 'has' ? hasAccount(b) : !hasAccount(b))
@@ -416,24 +415,18 @@ function accountSummary(accounts: BuyerAccountBadge[]) {
         <v-divider class="mt-2 mb-4" thickness="3" />
 
         <!-- Filter bar -->
-        <v-row v-if="!loading && buyers.length > 0" class="mb-2">
-            <v-col cols="12" sm="5">
-                <v-text-field v-model="filterName" :label="t('buyer.filterName')" prepend-inner-icon="mdi-magnify"
-                    variant="outlined" density="compact" hide-details clearable />
-            </v-col>
-            <v-col cols="12" sm="4">
-                <v-select v-model="filterAccount" :items="filterAccountItems" :label="t('buyer.filterAccount')"
-                    variant="outlined" density="compact" hide-details clearable />
-            </v-col>
-            <v-col cols="12" sm="3" class="d-flex align-center">
-                <v-select v-model="filterAccountMode" :items="filterAccountModeItems" :label="t('buyer.filterMode')"
-                    variant="outlined" density="compact" hide-details style="min-width:100px" />
-                <v-chip v-if="filteredBuyers.length !== buyers.length" class="ml-2" size="small" color="info"
-                    variant="tonal">
-                    {{ t('buyer.filterCount', { filtered: filteredBuyers.length, total: buyers.length }) }}
-                </v-chip>
-            </v-col>
-        </v-row>
+        <div v-if="!loading && buyers.length > 0"
+            style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <v-text-field v-model="filterName" :label="t('buyer.filterName')" prepend-inner-icon="mdi-magnify"
+                variant="outlined" density="compact" hide-details clearable style="flex:1;min-width:200px" />
+            <v-select v-model="filterAccount" :items="filterAccountItems" :label="t('buyer.filterAccount')"
+                variant="outlined" density="compact" hide-details style="flex:1;min-width:180px" />
+            <v-select v-if="filterAccount" v-model="filterAccountMode" :items="filterAccountModeItems"
+                :label="t('buyer.filterMode')" variant="outlined" density="compact" hide-details style="width:120px" />
+            <v-chip v-if="filteredBuyers.length !== buyers.length" size="small" color="info" variant="tonal">
+                {{ t('buyer.filterCount', { filtered: filteredBuyers.length, total: buyers.length }) }}
+            </v-chip>
+        </div>
 
         <!-- Batch action bar -->
         <v-slide-y-transition>
