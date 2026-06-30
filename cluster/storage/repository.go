@@ -289,7 +289,9 @@ func (r *Repository) resetMacroExecution(ctx context.Context, macroID string, fo
 	}
 	// Reset intents instead of deleting — planner upserts will fill in
 	// the new payloads on restart, preserving the FK chain with attempts.
-	if _, err = tx.ExecContext(ctx, `UPDATE intents SET succeeded=0 WHERE macro_task_id=?`, macroID); err != nil {
+	// Both the SQL column AND the JSON payload must be reset, because
+	// ListIntents reads only from the payload column.
+	if _, err = tx.ExecContext(ctx, `UPDATE intents SET succeeded=0, payload=json_set(payload, '$.succeeded', json('false')) WHERE macro_task_id=?`, macroID); err != nil {
 		return err
 	}
 	return tx.Commit()
