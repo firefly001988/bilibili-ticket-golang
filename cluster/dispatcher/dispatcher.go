@@ -117,7 +117,8 @@ func (d *Dispatcher) ReserveWorkers(taskGroupID string, workerIDs []string) {
 
 // ReserveWorkerPools locks primary and standby worker pools for a task group.
 // Standby workers are reserved by the task group immediately, but are only
-// selected after no primary worker is currently available for the plan.
+// selected to replace failed primary workers.  If no primary pool is configured,
+// standby workers act as the only available pool.
 func (d *Dispatcher) ReserveWorkerPools(taskGroupID string, primaryWorkerIDs, standbyWorkerIDs []string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -780,6 +781,7 @@ func (d *Dispatcher) pickResources(ctx context.Context, plan *IntentPlan) (domai
 	accounts := d.availableAccounts()
 	primaryWorkers := make([]domain.WorkerNode, 0, len(d.workers))
 	standbyWorkers := make([]domain.WorkerNode, 0, len(d.workers))
+	standbySlots := d.availableStandbySlots()
 	for _, value := range d.workers {
 		if !d.workerAvailableForPlan(value, plan) {
 			continue
@@ -792,6 +794,9 @@ func (d *Dispatcher) pickResources(ctx context.Context, plan *IntentPlan) (domai
 	}
 	sort.Slice(primaryWorkers, func(i, j int) bool { return primaryWorkers[i].ID < primaryWorkers[j].ID })
 	sort.Slice(standbyWorkers, func(i, j int) bool { return standbyWorkers[i].ID < standbyWorkers[j].ID })
+	if len(standbyWorkers) > standbySlots {
+		standbyWorkers = standbyWorkers[:standbySlots]
+	}
 	workers := primaryWorkers
 	if len(workers) == 0 {
 		workers = standbyWorkers
@@ -844,10 +849,20 @@ func (d *Dispatcher) availableAccounts() []domain.Account {
 
 func (d *Dispatcher) availableWorkerCount(plans []*IntentPlan) int {
 	count := 0
+	standbySlots := d.availableStandbySlots()
+	countedStandby := 0
 	for _, worker := range d.workers {
+		if d.workerRoles[worker.ID] == domain.RoleStandby {
+			if countedStandby >= standbySlots {
+				continue
+			}
+		}
 		for _, plan := range plans {
 			if d.workerAvailableForPlan(worker, plan) {
 				count++
+				if d.workerRoles[worker.ID] == domain.RoleStandby {
+					countedStandby++
+				}
 				break
 			}
 		}
@@ -876,7 +891,42 @@ func (d *Dispatcher) workerAvailableForPlan(worker domain.WorkerNode, plan *Inte
 			return false
 		}
 	}
+	if d.workerRoles[worker.ID] == domain.RoleStandby && d.availableStandbySlots() <= 0 {
+		return false
+	}
 	return true
+}
+
+func (d *Dispatcher) availableStandbySlots() int {
+	hasPrimary := false
+	failedPrimary := 0
+	busyStandby := 0
+	now := d.now()
+	for workerID, role := range d.workerRoles {
+		switch role {
+		case domain.RolePrimary:
+			hasPrimary = true
+			if _, failed := d.failedWorkers[workerID]; !failed {
+				continue
+			}
+			if until, ok := d.workerCooldown[workerID]; ok && !until.After(now) {
+				continue
+			}
+			failedPrimary++
+		case domain.RoleStandby:
+			if d.workerBusy[workerID] != "" {
+				busyStandby++
+			}
+		}
+	}
+	if !hasPrimary {
+		return len(d.workerRoles)
+	}
+	slots := failedPrimary - busyStandby
+	if slots < 0 {
+		return 0
+	}
+	return slots
 }
 
 func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account domain.Account, worker domain.WorkerNode) error {

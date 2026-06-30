@@ -144,7 +144,7 @@ func TestPriorityBreaksEqualWeightRemaindersAscending(t *testing.T) {
 	}
 }
 
-func TestMacroWorkerPrimaryAndStandbyScope(t *testing.T) {
+func TestTaskGroupStandbyWorkersStayIdleUntilPrimaryFails(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	d := New(c, nil, nil)
 	accounts, workers := resourcesN(4)
@@ -155,10 +155,30 @@ func TestMacroWorkerPrimaryAndStandbyScope(t *testing.T) {
 	if err := d.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(c.submitWorkers) != 2 {
-		t.Fatalf("expected exactly primary+standby workers, got %#v", c.submitWorkers)
+	if len(c.submitWorkers) != 1 {
+		t.Fatalf("expected exactly primary worker, got %#v", c.submitWorkers)
 	}
-	if c.submitWorkers[0] != "w2" || c.submitWorkers[1] != "w4" {
+	if c.submitWorkers[0] != "w2" {
+		t.Fatalf("worker scope/order mismatch: %#v", c.submitWorkers)
+	}
+}
+
+func TestTaskGroupStandbyWorkersReplaceFailedPrimaryWorkers(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	d := New(c, nil, nil)
+	accounts, workers := resourcesN(5)
+	d.SetResources(accounts, workers)
+	d.ReserveWorkerPools("g", []string{"w1", "w2"}, []string{"w3", "w4", "w5"})
+	d.failedWorkers["w1"] = d.now()
+	macro := dispatchMacro("m", 0)
+	d.Add(IntentPlan{Macro: macro, Intent: dispatchIntent("i", "m", 10, "buyer")})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.submitWorkers) != 2 {
+		t.Fatalf("expected one healthy primary plus one standby replacement, got %#v", c.submitWorkers)
+	}
+	if c.submitWorkers[0] != "w2" || c.submitWorkers[1] != "w3" {
 		t.Fatalf("worker scope/order mismatch: %#v", c.submitWorkers)
 	}
 }
