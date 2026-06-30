@@ -479,6 +479,7 @@
         "loginSuccess": "登录成功",
         "loginStartFailed": "发起登录失败: {error}",
         "loginPollFailed": "轮询登录失败: {error}",
+        "loginEmptyQR": "B站返回了空的登录二维码，请稍后重试",
         "loadFailed": "加载账号列表失败: {error}",
         "deleteTitle": "删除账号",
         "deleteConfirm": "确定要删除账号「{name}」吗？",

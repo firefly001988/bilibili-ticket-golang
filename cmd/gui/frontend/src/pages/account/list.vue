@@ -1,7 +1,8 @@
 <script lang="ts" setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
+import VueQr from 'vue-qr'
 import {
     Snapshot,
     BeginAccountLogin,
@@ -37,6 +38,8 @@ const loginSessionID = ref('')
 const loginStatusMsg = ref('')
 const loginQRExpiry = ref(0)
 const loginPolling = ref(false)
+const loginStarting = ref(false)
+const loginErrorMsg = ref('')
 let loginTimer: ReturnType<typeof setInterval> | null = null
 
 // Import dialog
@@ -98,16 +101,28 @@ onUnmounted(() => {
 
 // ── QR Login ──────────────────────────────────────────────────
 async function startLogin() {
+    loginStarting.value = true
+    loginErrorMsg.value = ''
+    loginStatusMsg.value = ''
+    loginQR.value = ''
+    loginSessionID.value = ''
     try {
         const result = await BeginAccountLogin('')
+        if (!result?.url || !result?.sessionId) {
+            throw new Error(t('account.loginEmptyQR'))
+        }
         loginQR.value = result.url
         loginSessionID.value = result.sessionId
         loginStatusMsg.value = ''
         loginQRExpiry.value = Date.now() + 180000
+        qrExpirySeconds.value = Math.max(0, Math.floor((loginQRExpiry.value - Date.now()) / 1000))
         loginPolling.value = true
         startLoginPolling()
     } catch (e: any) {
-        messages.add({ text: t('account.loginStartFailed', { error: String(e) }), color: 'error' })
+        loginErrorMsg.value = t('account.loginStartFailed', { error: String(e) })
+        messages.add({ text: loginErrorMsg.value, color: 'error' })
+    } finally {
+        loginStarting.value = false
     }
 }
 
@@ -138,7 +153,8 @@ function startLoginPolling() {
             }
         } catch (e: any) {
             stopLoginPolling()
-            messages.add({ text: t('account.loginPollFailed', { error: String(e) }), color: 'error' })
+            loginErrorMsg.value = t('account.loginPollFailed', { error: String(e) })
+            messages.add({ text: loginErrorMsg.value, color: 'error' })
         }
     }, 1000)
 }
@@ -153,6 +169,7 @@ function cancelLogin() {
     loginQR.value = ''
     loginSessionID.value = ''
     loginStatusMsg.value = ''
+    loginErrorMsg.value = ''
 }
 
 function closeLoginDialog() {
@@ -161,6 +178,7 @@ function closeLoginDialog() {
     loginQR.value = ''
     loginSessionID.value = ''
     loginStatusMsg.value = ''
+    loginErrorMsg.value = ''
 }
 
 // ── Import ────────────────────────────────────────────────────
@@ -238,10 +256,6 @@ async function saveTags() {
 // ── Computed ──────────────────────────────────────────────────
 const qrExpirySeconds = ref(0)
 
-const loginQRCodeUrl = computed(() => {
-    if (!loginQR.value) return ''
-    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(loginQR.value)}`
-})
 </script>
 
 <template>
@@ -346,7 +360,8 @@ const loginQRCodeUrl = computed(() => {
                 <v-card-text>
                     <!-- QR code display -->
                     <div v-if="loginQR" class="text-center mt-4">
-                        <img :src="loginQRCodeUrl" alt="QR Login" style="max-width:200px" class="elevation-2" />
+                        <vue-qr :text="loginQR" :size="220" :margin="8" class="elevation-2"
+                            style="border-radius:8px;background:white" />
                         <p class="text-caption text-medium-emphasis mt-2">
                             {{ t('account.qrExpiresIn') }}
                             <strong>{{ qrExpirySeconds }}s</strong>
@@ -359,6 +374,10 @@ const loginQRCodeUrl = computed(() => {
                     <div v-else class="text-center py-6">
                         <v-icon size="48" class="mb-2">mdi-qrcode-scan</v-icon>
                         <p class="text-body-2 text-medium-emphasis">{{ t('account.qrHint') }}</p>
+                        <v-alert v-if="loginErrorMsg" type="error" variant="tonal" density="compact" class="mt-4"
+                            style="text-align:left">
+                            {{ loginErrorMsg }}
+                        </v-alert>
                     </div>
                 </v-card-text>
                 <v-card-actions>
@@ -366,7 +385,7 @@ const loginQRCodeUrl = computed(() => {
                     <v-btn v-if="!loginPolling" variant="text" @click="closeLoginDialog">
                         {{ t('common.cancel') }}
                     </v-btn>
-                    <v-btn v-if="!loginPolling" color="primary" @click="startLogin">
+                    <v-btn v-if="!loginPolling" color="primary" :loading="loginStarting" @click="startLogin">
                         {{ t('account.generateQR') }}
                     </v-btn>
                     <v-btn v-else variant="tonal" color="warning" @click="cancelLogin">

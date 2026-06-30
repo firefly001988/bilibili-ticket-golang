@@ -48,6 +48,9 @@ func (s *ClusterService) BeginAccountLogin(name string) (AccountLoginStart, erro
 	if err != nil {
 		return AccountLoginStart{}, err
 	}
+	if qr == nil || qr.URL == "" || qr.QRCodeKey == "" {
+		return AccountLoginStart{}, fmt.Errorf("bilibili returned an empty login QR code")
+	}
 	id := randomClusterID("login")
 	s.mu.Lock()
 	s.loginSessions[id] = &accountLoginSession{Client: client, Jar: jar, QRCodeKey: qr.QRCodeKey, Name: name, CreatedAt: time.Now()}

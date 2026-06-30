@@ -479,6 +479,7 @@
         "loginSuccess": "Login successful",
         "loginStartFailed": "Login start failed: {error}",
         "loginPollFailed": "Login polling failed: {error}",
+        "loginEmptyQR": "Bilibili returned an empty login QR code. Please retry later.",
         "loadFailed": "Failed to load accounts: {error}",
         "deleteTitle": "Delete Account",
         "deleteConfirm": "Are you sure you want to delete account \"{name}\"?",
