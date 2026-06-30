@@ -54,6 +54,10 @@ async function deleteSelected() {
     try {
         await DeleteTerminalAttempts(ids)
         selectedIds.value = []
+        if (ids.includes(selectedAttemptId.value)) {
+            selectedAttemptId.value = ''
+            logs.value = []
+        }
         messages.add({ text: t('logs.deleted', { count: ids.length }), color: 'success' })
         await loadAttempts()
     } catch (e: any) {

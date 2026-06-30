@@ -75,6 +75,32 @@ func (r *repo) MarkIntentSucceeded(context.Context, domain.LogicalOrderIntent, d
 	return nil
 }
 
+func TestRemoveTerminalAttemptsKeepsNonTerminalAttempts(t *testing.T) {
+	d := New(&client{}, &repo{}, nil)
+	d.attempts["done"] = &attempt{value: domain.ExecutionAttempt{ID: "done", AccountID: "a1", WorkerID: "w1", State: domain.AttemptSucceeded}}
+	d.attempts["running"] = &attempt{value: domain.ExecutionAttempt{ID: "running", AccountID: "a2", WorkerID: "w2", State: domain.AttemptRunning}}
+	d.accountBusy["a1"] = "done"
+	d.workerBusy["w1"] = "done"
+	d.accountBusy["a2"] = "running"
+	d.workerBusy["w2"] = "running"
+	removed := d.RemoveTerminalAttempts([]string{"done", "running"})
+	if len(removed) != 1 || removed[0] != "done" {
+		t.Fatalf("removed=%#v", removed)
+	}
+	if _, ok := d.attempts["done"]; ok {
+		t.Fatal("terminal attempt was not removed")
+	}
+	if _, ok := d.attempts["running"]; !ok {
+		t.Fatal("running attempt was removed")
+	}
+	if _, ok := d.accountBusy["a1"]; ok {
+		t.Fatal("terminal attempt account busy marker was not removed")
+	}
+	if d.accountBusy["a2"] != "running" || d.workerBusy["w2"] != "running" {
+		t.Fatalf("non-terminal busy markers changed: accounts=%#v workers=%#v", d.accountBusy, d.workerBusy)
+	}
+}
+
 func dispatchMacro(id string, priority int) domain.MacroTask {
 	return domain.MacroTask{ID: id, ProjectID: 1, ScreenID: 2, SKUID: 3, EventDay: "2026-07-01", EventDayConfirmed: true, Priority: priority, Deadline: time.Now().Add(time.Hour)}
 }

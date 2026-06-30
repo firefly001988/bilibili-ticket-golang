@@ -146,6 +146,8 @@ onMounted(async () => {
           prepend-icon="mdi-text-box-search-outline" />
         <v-list-item :title="t('nav.events')" value="cluster/events" @click="router.push('/cluster/events')"
           prepend-icon="mdi-monitor-dashboard" />
+        <v-list-item :title="t('nav.orders')" value="cluster/orders" @click="router.push('/cluster/orders')"
+          prepend-icon="mdi-receipt-text-check-outline" />
 
         <!-- Collapsible task group section -->
         <v-list-group value="task-groups">

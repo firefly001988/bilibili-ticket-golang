@@ -9,6 +9,7 @@ const routes = [
   { path: '/cluster/task-group/:id', component: () => import('@/pages/cluster/task-group.vue') },
   { path: '/cluster/logs', component: () => import('@/pages/cluster/logs.vue') },
   { path: '/cluster/events', component: () => import('@/pages/cluster/events.vue') },
+  { path: '/cluster/orders', component: () => import('@/pages/cluster/orders.vue') },
   { path: '/pay-qr', component: () => import('@/pages/pay-qr.vue') },
   { path: '/settings', component: () => import('@/pages/settings.vue') },
 ]

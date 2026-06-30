@@ -369,6 +369,30 @@ func (d *Dispatcher) Attempts() []domain.ExecutionAttempt {
 	return result
 }
 
+// RemoveTerminalAttempts removes terminal attempts from the dispatcher's
+// in-memory history. Non-terminal attempts are intentionally kept so the UI
+// cannot hide work that is still reserving resources or can still receive a
+// worker callback.
+func (d *Dispatcher) RemoveTerminalAttempts(ids []string) []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(ids) == 0 {
+		return nil
+	}
+	removed := make([]string, 0, len(ids))
+	for _, id := range ids {
+		current, ok := d.attempts[id]
+		if !ok || !current.value.State.Terminal() {
+			continue
+		}
+		delete(d.attempts, id)
+		delete(d.accountBusy, current.value.AccountID)
+		delete(d.workerBusy, current.value.WorkerID)
+		removed = append(removed, id)
+	}
+	return removed
+}
+
 // Plans returns all currently armed IntentPlans, including their macro
 // metadata so callers can map intents to macros for UI display.
 func (d *Dispatcher) Plans() []IntentPlan {

@@ -74,8 +74,12 @@ func (s *ClusterService) DeleteTerminalAttempts(attemptIDs []string) error {
 	if err := s.repository.DeleteAttempts(context.Background(), attemptIDs); err != nil {
 		return err
 	}
+	removed := s.dispatcher.RemoveTerminalAttempts(attemptIDs)
 	for _, id := range attemptIDs {
 		_ = removeCachedLogs(id)
+	}
+	if len(removed) > 0 {
+		s.RecordDispatchInfo("attempt-cleanup", fmt.Sprintf("removed %d terminal attempts from scheduler memory", len(removed)))
 	}
 	return nil
 }

@@ -1,6 +1,9 @@
 package cluster_service
 
 import (
+	"context"
+	"encoding/json"
+	"log"
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
@@ -21,6 +24,16 @@ func (s *ClusterService) recordEvent(e ClusterEvent) {
 		// Discard the oldest half to keep the buffer bounded.
 		cut := len(s.eventLog) - maxEventLogSize/2
 		s.eventLog = append([]ClusterEvent(nil), s.eventLog[cut:]...)
+	}
+	if s.repository != nil {
+		payload, err := json.Marshal(e)
+		if err != nil {
+			log.Printf("[cluster] marshal cluster event failed: %v", err)
+			return
+		}
+		if err := s.repository.PutClusterEvent(context.Background(), e.Time.UnixMilli(), payload); err != nil {
+			log.Printf("[cluster] persist cluster event failed: %v", err)
+		}
 	}
 }
 
@@ -109,12 +122,61 @@ func (s *ClusterService) RecordWorkerInfo(workerID, msg string) {
 	})
 }
 
+func (s *ClusterService) RecordDispatchInfo(stage, msg string) {
+	s.recordEvent(ClusterEvent{
+		Kind:    EventDispatchInfo,
+		Stage:   stage,
+		Message: msg,
+		Code:    0,
+	})
+}
+
+func (s *ClusterService) RecordDispatchWarning(stage, msg string) {
+	s.recordEvent(ClusterEvent{
+		Kind:    EventDispatchWarning,
+		Stage:   stage,
+		Message: msg,
+		Code:    1,
+	})
+}
+
 // GetClusterEventLog returns all buffered events for the unified log page.
 func (s *ClusterService) GetClusterEventLog() ClusterEventLog {
+	if s.repository != nil {
+		payloads, err := s.repository.ListClusterEvents(context.Background(), maxEventLogSize)
+		if err == nil {
+			events := make([]ClusterEvent, 0, len(payloads))
+			for _, payload := range payloads {
+				var event ClusterEvent
+				if decodeErr := json.Unmarshal(payload, &event); decodeErr == nil {
+					events = append(events, event)
+				}
+			}
+			return ClusterEventLog{Events: events}
+		}
+		log.Printf("[cluster] list persisted cluster events failed: %v", err)
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	// Return a copy to avoid races with background writes.
 	events := make([]ClusterEvent, len(s.eventLog))
 	copy(events, s.eventLog)
 	return ClusterEventLog{Events: events}
+}
+
+func (s *ClusterService) ClearClusterEventLog() (int64, error) {
+	var deleted int64
+	if s.repository != nil {
+		n, err := s.repository.ClearClusterEvents(context.Background())
+		if err != nil {
+			return 0, err
+		}
+		deleted = n
+	}
+	s.mu.Lock()
+	if s.repository == nil {
+		deleted = int64(len(s.eventLog))
+	}
+	s.eventLog = nil
+	s.mu.Unlock()
+	return deleted, nil
 }

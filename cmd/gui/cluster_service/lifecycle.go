@@ -6,10 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"bilibili-ticket-golang/cluster/accounts"
@@ -18,7 +16,6 @@ import (
 	"bilibili-ticket-golang/cluster/employer"
 	clusterstorage "bilibili-ticket-golang/cluster/storage"
 	clusterworker "bilibili-ticket-golang/cluster/worker"
-	"bilibili-ticket-golang/cmd/gui/payqr"
 	"bilibili-ticket-golang/lib/global"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -105,46 +102,12 @@ func (s *ClusterService) SetApp(app *application.App) { s.wailsApp = app }
 func (s *ClusterService) openPayQRWindow(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
 	log.Printf("[cluster] openPayQRWindow called: intent=%s success=%v orderID=%s paymentURL=%q wailsApp=%v",
 		intent.ID, result.Success, result.OrderID, result.PaymentURL, s.wailsApp != nil)
-	if s.wailsApp == nil {
-		log.Printf("[cluster] openPayQRWindow SKIP: wailsApp is nil (SetApp not called)")
+	record, err := s.saveOrderRecord(intent, result)
+	if err != nil {
+		log.Printf("[cluster] save order record failed: intent=%s orderID=%s: %v", intent.ID, result.OrderID, err)
 		return
 	}
-	if result.PaymentURL == "" {
-		log.Printf("[cluster] openPayQRWindow SKIP: PaymentURL is empty (orderID=%s)", result.OrderID)
-		return
-	}
-	var macro domain.MacroTask
-	if s.repository != nil {
-		if macros, err := s.repository.ListMacroTasks(context.Background()); err == nil {
-			for _, current := range macros {
-				if current.ID == intent.MacroTaskID {
-					macro = current
-					break
-				}
-			}
-		}
-	}
-	buyerNames := make([]string, 0, len(intent.Buyers))
-	for _, buyer := range intent.Buyers {
-		if buyer.Name != "" {
-			buyerNames = append(buyerNames, buyer.Name)
-		}
-	}
-	values := url.Values{}
-	values.Set("link", result.PaymentURL)
-	values.Set("title", "支付二维码")
-	values.Set("project", macro.ProjectName)
-	values.Set("screen", macro.ScreenName)
-	values.Set("sku", macro.SKUName)
-	values.Set("buyer", strings.Join(buyerNames, ", "))
-	if result.PaymentExpire > 0 {
-		values.Set("expire", fmt.Sprint(result.PaymentExpire))
-	}
-	if result.OrderTime > 0 {
-		values.Set("orderTime", fmt.Sprint(result.OrderTime))
-	}
-
-	payqr.OpenWindow(s.wailsApp, "支付二维码", values)
+	s.openOrderRecordPaymentWindow(record)
 }
 
 // Start brings the cluster online: loads persisted resources, refreshes

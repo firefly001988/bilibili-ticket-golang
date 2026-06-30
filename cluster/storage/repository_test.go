@@ -94,3 +94,49 @@ func TestSuccessTransactionOccupiesAllBuyerDays(t *testing.T) {
 		t.Fatalf("count=%d err=%v", count, err)
 	}
 }
+
+func TestClusterEventsCanBeClearedAndOrderRecordsListed(t *testing.T) {
+	r := openTestRepository(t)
+	ctx := context.Background()
+	if err := r.PutClusterEvent(ctx, 1, []byte(`{"message":"a"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.PutClusterEvent(ctx, 2, []byte(`{"message":"b"}`)); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := r.ClearClusterEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 2 {
+		t.Fatalf("deleted=%d", deleted)
+	}
+	events, err := r.ListClusterEvents(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("events were not cleared: %#v", events)
+	}
+	now := time.Now()
+	if err := r.PutOrderRecord(ctx, domain.OrderRecord{ID: "a", OrderID: "order-a", PaymentURL: "https://pay/a", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.PutOrderRecord(ctx, domain.OrderRecord{ID: "b", OrderID: "order-b", PaymentURL: "https://pay/b", CreatedAt: now.Add(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	records, err := r.ListOrderRecords(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 2 || records[0].ID != "b" || records[1].ID != "a" {
+		t.Fatalf("unexpected order records: %#v", records)
+	}
+	record, err := r.OrderRecord(ctx, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.PaymentURL != "https://pay/a" {
+		t.Fatalf("record=%#v", record)
+	}
+}

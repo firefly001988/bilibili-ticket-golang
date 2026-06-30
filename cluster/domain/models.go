@@ -345,3 +345,28 @@ type ExecutionResult struct {
 	StartedAt     time.Time     `json:"startedAt,omitempty"`
 	FinishedAt    time.Time     `json:"finishedAt,omitempty"`
 }
+
+// OrderRecord is the employer-side durable record for a successfully created
+// Bilibili order. It intentionally stores the payment link so the user can
+// reopen the payment QR window after the original popup is closed.
+type OrderRecord struct {
+	ID            string    `json:"id"`
+	OrderID       string    `json:"orderId"`
+	AttemptID     string    `json:"attemptId"`
+	IntentID      string    `json:"intentId"`
+	MacroTaskID   string    `json:"macroTaskId"`
+	TaskGroupID   string    `json:"taskGroupId,omitempty"`
+	AccountID     string    `json:"accountId,omitempty"`
+	WorkerID      string    `json:"workerId,omitempty"`
+	ProjectID     int64     `json:"projectId,omitempty"`
+	ProjectName   string    `json:"projectName,omitempty"`
+	ScreenID      int64     `json:"screenId,omitempty"`
+	ScreenName    string    `json:"screenName,omitempty"`
+	SKUID         int64     `json:"skuId,omitempty"`
+	SKUName       string    `json:"skuName,omitempty"`
+	BuyerNames    []string  `json:"buyerNames,omitempty"`
+	PaymentURL    string    `json:"paymentUrl"`
+	PaymentExpire int64     `json:"paymentExpire,omitempty"`
+	OrderTime     int64     `json:"orderTime,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+}

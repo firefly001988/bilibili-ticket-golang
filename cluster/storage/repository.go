@@ -15,7 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 4
+const schemaVersion = 6
 
 type Repository struct {
 	db   *sql.DB
@@ -64,6 +64,8 @@ func (r *Repository) init(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS leases (id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, account_id TEXT NOT NULL UNIQUE, worker_id TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS buyer_day_occupancy (buyer_id TEXT NOT NULL, event_day TEXT NOT NULL, intent_id TEXT NOT NULL, PRIMARY KEY(buyer_id, event_day))`,
 		`CREATE TABLE IF NOT EXISTS execution_results (attempt_id TEXT PRIMARY KEY, success INTEGER NOT NULL, payload BLOB NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS cluster_events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, payload BLOB NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS order_records (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, created_at INTEGER NOT NULL, payload BLOB NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS migration_versions (name TEXT PRIMARY KEY, version INTEGER NOT NULL, applied_at INTEGER NOT NULL)`,
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -99,6 +101,16 @@ func (r *Repository) init(ctx context.Context) error {
 	// mismatch has been manually overridden by the user.
 	if versionErr == nil && currentVersion < 4 {
 		if _, err := tx.ExecContext(ctx, `ALTER TABLE workers ADD COLUMN skip_version_check INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if versionErr == nil && currentVersion < 5 {
+		if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS cluster_events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, payload BLOB NOT NULL)`); err != nil {
+			return err
+		}
+	}
+	if versionErr == nil && currentVersion < 6 {
+		if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS order_records (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, created_at INTEGER NOT NULL, payload BLOB NOT NULL)`); err != nil {
 			return err
 		}
 	}
@@ -833,6 +845,85 @@ func (r *Repository) GlobalConfig(ctx context.Context) (retryIntervalMs int64, s
 		return 0, 0, nil, err
 	}
 	return cfg.RetryIntervalMs, cfg.StartDelayMs, cfg.BuyerManagerWorkerIDs, nil
+}
+
+func (r *Repository) PutClusterEvent(ctx context.Context, ts int64, payload []byte) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO cluster_events(ts,payload) VALUES(?,?)`, ts, payload)
+	return err
+}
+
+func (r *Repository) ListClusterEvents(ctx context.Context, limit int) ([][]byte, error) {
+	if limit <= 0 {
+		limit = 5000
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM cluster_events ORDER BY ts DESC, id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result [][]byte
+	for rows.Next() {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return nil, err
+		}
+		result = append(result, append([]byte(nil), payload...))
+	}
+	return result, rows.Err()
+}
+
+func (r *Repository) ClearClusterEvents(ctx context.Context) (int64, error) {
+	result, err := r.db.ExecContext(ctx, `DELETE FROM cluster_events`)
+	if err != nil {
+		return 0, err
+	}
+	affected, _ := result.RowsAffected()
+	return affected, nil
+}
+
+func (r *Repository) PutOrderRecord(ctx context.Context, value domain.OrderRecord) error {
+	b, err := marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO order_records(id,order_id,created_at,payload) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET order_id=excluded.order_id,created_at=excluded.created_at,payload=excluded.payload`, value.ID, value.OrderID, value.CreatedAt.UnixMilli(), b)
+	return err
+}
+
+func (r *Repository) OrderRecord(ctx context.Context, id string) (domain.OrderRecord, error) {
+	var payload []byte
+	if err := r.db.QueryRowContext(ctx, `SELECT payload FROM order_records WHERE id=?`, id).Scan(&payload); err != nil {
+		return domain.OrderRecord{}, err
+	}
+	var value domain.OrderRecord
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return domain.OrderRecord{}, err
+	}
+	return value, nil
+}
+
+func (r *Repository) ListOrderRecords(ctx context.Context, limit int) ([]domain.OrderRecord, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT payload FROM order_records ORDER BY created_at DESC, id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.OrderRecord
+	for rows.Next() {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return nil, err
+		}
+		var value domain.OrderRecord
+		if err := json.Unmarshal(payload, &value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+	return result, rows.Err()
 }
 
 func (r *Repository) HasMigration(ctx context.Context, name string) (bool, error) {

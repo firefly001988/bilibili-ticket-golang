@@ -116,6 +116,8 @@ const (
 	EventHeartbeatTimeout   ClusterEventKind = "heartbeat_timeout"
 	EventHeartbeatLatency   ClusterEventKind = "heartbeat_latency"
 	EventWorkerInfo         ClusterEventKind = "worker_info"
+	EventDispatchInfo       ClusterEventKind = "dispatch_info"
+	EventDispatchWarning    ClusterEventKind = "dispatch_warning"
 )
 
 // ClusterEvent is a single entry in the unified cluster event feed.
@@ -135,6 +137,11 @@ type ClusterEvent struct {
 // the frontend on demand.
 type ClusterEventLog struct {
 	Events []ClusterEvent `json:"events"`
+}
+
+// OrderRecordList is returned to the frontend order history page.
+type OrderRecordList struct {
+	Records []domain.OrderRecord `json:"records"`
 }
 
 // IntentSummary exposes an armed intent for the UI dispatch log.

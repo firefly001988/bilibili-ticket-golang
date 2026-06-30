@@ -1,9 +1,11 @@
 <script lang="ts" setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { GetClusterEventLog } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
+import { useMessagesStore } from '@/stores/snackbar'
+import { GetClusterEventLog, ClearClusterEventLog } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t } = useI18n()
+const messages = useMessagesStore()
 
 interface ClusterEvent {
     time: string
@@ -19,14 +21,32 @@ interface ClusterEvent {
 
 const events = ref<ClusterEvent[]>([])
 const loading = ref(true)
+const clearing = ref(false)
+const clearDialog = ref(false)
 let timer: ReturnType<typeof setInterval> | null = null
 
 async function load() {
     try {
         const resp = await GetClusterEventLog()
-        events.value = (resp.events || []) as ClusterEvent[]
+        events.value = ((resp.events || []) as ClusterEvent[]).slice().sort((a, b) => {
+            return new Date(b.time).getTime() - new Date(a.time).getTime()
+        })
     } catch { /* silent */ }
     loading.value = false
+}
+
+async function clearEvents() {
+    clearDialog.value = false
+    clearing.value = true
+    try {
+        const deleted = await ClearClusterEventLog()
+        events.value = []
+        await load()
+        messages.add({ text: t('events.clearSuccess', { count: deleted ?? 0 }), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('events.clearFailed', { error: String(e) }), color: 'error' })
+    }
+    clearing.value = false
 }
 
 onMounted(async () => {
@@ -58,6 +78,8 @@ function kindLabel(k: string): string {
         heartbeat_timeout: t('events.kindHeartbeatTimeout'),
         heartbeat_latency: t('events.kindHeartbeatLatency'),
         worker_info: t('events.kindWorkerInfo'),
+        dispatch_info: t('events.kindDispatchInfo'),
+        dispatch_warning: t('events.kindDispatchWarning'),
     }
     return m[k] || k
 }
@@ -71,14 +93,15 @@ function kindColor(k: string): string {
         case 'task_failed':
         case 'worker_unhealthy': return 'error'
         case 'heartbeat_timeout':
-        case 'heartbeat_latency': return 'warning'
+        case 'heartbeat_latency':
+        case 'dispatch_warning': return 'warning'
+        case 'dispatch_info': return 'info'
         default: return ''
     }
 }
 
 // ── Table ────────────────────────────────────────────────────
 const searchText = ref('')
-const logViewHeight = ref(400)
 
 const tableHeaders = computed(() => [
     { title: t('events.colTime'), key: 'time', width: 90, sortable: false },
@@ -104,13 +127,16 @@ const tableHeaders = computed(() => [
                         }})</span>
                 </template>
                 <template #append>
+                    <v-btn size="x-small" variant="text" color="error" :loading="clearing" prepend-icon="mdi-delete"
+                        class="mr-2" :disabled="events.length === 0" @click="clearDialog = true">
+                        {{ t('events.clear') }}
+                    </v-btn>
                     <v-btn size="x-small" variant="text" :loading="loading" icon="mdi-refresh" @click="load" />
                 </template>
             </v-card-item>
 
-            <v-data-table v-if="events.length > 0" :headers="tableHeaders" :items="events" :items-per-page="10"
-                :items-per-page-options="[10, 20, 30, 50]" density="compact" fixed-header :height="logViewHeight" hover
-                class="events-table" :search="searchText">
+            <v-data-table v-if="events.length > 0" :headers="tableHeaders" :items="events" :items-per-page="-1"
+                hide-default-footer density="compact" hover class="events-table" :search="searchText">
                 <template #top>
                     <v-text-field v-model="searchText" density="compact" variant="outlined" hide-details
                         :placeholder="t('events.searchPlaceholder')" prepend-inner-icon="mdi-magnify" clearable
@@ -148,6 +174,17 @@ const tableHeaders = computed(() => [
             </div>
 
         </v-card>
+        <v-dialog v-model="clearDialog" max-width="420">
+            <v-card>
+                <v-card-title>{{ t('events.clear') }}</v-card-title>
+                <v-card-text>{{ t('events.clearConfirm') }}</v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="clearDialog = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="error" :loading="clearing" @click="clearEvents">{{ t('events.clear') }}</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-container>
 </template>
 

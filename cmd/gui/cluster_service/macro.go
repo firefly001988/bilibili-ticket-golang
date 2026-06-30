@@ -263,6 +263,7 @@ func (s *ClusterService) startTaskGroupPhase(taskGroupID string, phase domain.Ph
 	s.dispatcher.ReserveAccounts(taskGroupID, accountIDs)
 	s.dispatcher.ReserveWorkerPools(taskGroupID, primaryWorkerIDs, standbyWorkerIDs)
 	log.Printf("[cluster] reserved %d accounts, %d primary and %d standby workers for task group %s", len(accountIDs), len(primaryWorkerIDs), len(standbyWorkerIDs), taskGroupID)
+	s.RecordDispatchInfo("reserve", fmt.Sprintf("task group %s reserved %d account(s), %d primary worker(s), %d standby worker(s)", taskGroupID, len(accountIDs), len(primaryWorkerIDs), len(standbyWorkerIDs)))
 
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
@@ -302,12 +303,14 @@ func (s *ClusterService) startTaskGroupPhase(taskGroupID string, phase domain.Ph
 		intentIDs, err := s.planMacro(ctx, macro.ID, phase)
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", macro.ID, err))
+			s.RecordDispatchWarning("plan", fmt.Sprintf("macro %s plan failed: %v", macro.ID, err))
 			continue
 		}
 		for id := range intentIDs {
 			plannedIntentIDs[id] = struct{}{}
 		}
 		started++
+		s.RecordDispatchInfo("plan", fmt.Sprintf("macro %s planned %d intent(s) for %s", macro.ID, len(intentIDs), phase))
 	}
 	if started == 0 {
 		rollback("no macro task planned")
@@ -325,11 +328,136 @@ func (s *ClusterService) startTaskGroupPhase(taskGroupID string, phase domain.Ph
 		return err
 	}
 	if s.dispatcher.ActiveAttemptsFor(plannedIntentIDs) == 0 {
-		rollback("no active attempt after reconcile")
-		return fmt.Errorf("task group was planned but no attempt started: check deadline, healthy workers, enabled accounts, and buyer mappings")
+		diagnosis := s.diagnoseNoAttemptStart(ctx, taskGroup, selected, plannedIntentIDs)
+		rollback("no active attempt after reconcile: " + diagnosis)
+		return fmt.Errorf("task group was planned but no attempt started: %s", diagnosis)
 	}
 	s.startTaskGroupWaveController(taskGroup, phase, reflowNow)
 	return nil
+}
+
+func (s *ClusterService) diagnoseNoAttemptStart(ctx context.Context, taskGroup domain.TaskGroup, macros []domain.MacroTask, plannedIntentIDs map[string]struct{}) string {
+	reasons := make([]string, 0)
+	now := time.Now()
+
+	accounts, err := s.repository.ListAccounts(ctx)
+	if err != nil {
+		reasons = append(reasons, "failed to list accounts: "+err.Error())
+	} else {
+		selectedAccounts := make(map[string]domain.Account)
+		for _, id := range taskGroup.AccountIDs {
+			for _, account := range accounts {
+				if account.ID == id {
+					selectedAccounts[id] = account
+					break
+				}
+			}
+		}
+		enabled := 0
+		for _, account := range selectedAccounts {
+			if account.Enabled && !account.CooldownUntil.After(now) {
+				enabled++
+			}
+		}
+		if len(selectedAccounts) == 0 {
+			reasons = append(reasons, "no selected account exists in account pool")
+		} else if enabled == 0 {
+			reasons = append(reasons, "no selected account is enabled and out of cooldown")
+		}
+	}
+
+	workers, err := s.repository.ListWorkers(ctx)
+	if err != nil {
+		reasons = append(reasons, "failed to list workers: "+err.Error())
+	} else {
+		allowedWorkers := append([]string(nil), taskGroup.PrimaryWorkerIDs...)
+		allowedWorkers = append(allowedWorkers, taskGroup.StandbyWorkerIDs...)
+		selectedWorkers := 0
+		enabledWorkers := 0
+		healthyWorkers := 0
+		for _, id := range uniqueStrings(allowedWorkers) {
+			for _, worker := range workers {
+				if worker.ID != id {
+					continue
+				}
+				selectedWorkers++
+				if worker.Enabled {
+					enabledWorkers++
+					if s.client == nil || s.client.IsHealthy(worker.ID) {
+						healthyWorkers++
+					}
+				}
+				break
+			}
+		}
+		if selectedWorkers == 0 {
+			reasons = append(reasons, "no selected worker exists in worker pool")
+		} else if enabledWorkers == 0 {
+			reasons = append(reasons, "all selected workers are disabled")
+		} else if healthyWorkers == 0 {
+			reasons = append(reasons, "all selected enabled workers are unhealthy or disconnected")
+		}
+	}
+
+	intents, err := s.repository.ListIntents(ctx)
+	if err != nil {
+		reasons = append(reasons, "failed to list intents: "+err.Error())
+	} else {
+		macrosByID := make(map[string]domain.MacroTask, len(macros))
+		for _, macro := range macros {
+			macrosByID[macro.ID] = macro
+		}
+		accountIDs := uniqueStrings(taskGroup.AccountIDs)
+		missingBuyerReasons := make([]string, 0)
+		deadlineCount := 0
+		for _, intent := range intents {
+			if _, ok := plannedIntentIDs[intent.ID]; !ok {
+				continue
+			}
+			if macro, ok := macrosByID[intent.MacroTaskID]; ok && now.After(macro.Deadline) {
+				deadlineCount++
+			}
+			for _, buyer := range intent.Buyers {
+				if buyer.LogicalID == "" {
+					missingBuyerReasons = append(missingBuyerReasons, "buyer without logicalId in intent "+intent.ID)
+					continue
+				}
+				if _, err := s.repository.LogicalBuyer(ctx, buyer.LogicalID); err != nil {
+					missingBuyerReasons = append(missingBuyerReasons, fmt.Sprintf("buyer %s is not usable: %v", buyer.LogicalID, err))
+					continue
+				}
+				mapped := 0
+				for _, accountID := range accountIDs {
+					if _, err := s.repository.BuyerMapping(ctx, accountID, buyer.LogicalID); err == nil {
+						mapped++
+					}
+				}
+				if mapped == 0 {
+					name := buyer.Name
+					if name == "" {
+						name = buyer.LogicalID
+					}
+					missingBuyerReasons = append(missingBuyerReasons, fmt.Sprintf("buyer %s has no mapping on selected accounts", name))
+				}
+			}
+		}
+		if deadlineCount > 0 {
+			reasons = append(reasons, fmt.Sprintf("%d planned intent(s) are past deadline", deadlineCount))
+		}
+		if len(missingBuyerReasons) > 0 {
+			if len(missingBuyerReasons) > 5 {
+				missingBuyerReasons = append(missingBuyerReasons[:5], fmt.Sprintf("...and %d more buyer mapping issue(s)", len(missingBuyerReasons)-5))
+			}
+			reasons = append(reasons, strings.Join(missingBuyerReasons, "; "))
+		}
+	}
+
+	if len(reasons) == 0 {
+		reasons = append(reasons, "no eligible account/worker pair after dispatcher reconciliation; check worker health, selected account pool, cooldowns, and buyer mappings")
+	}
+	message := strings.Join(reasons, "; ")
+	s.RecordDispatchWarning("diagnose", "task group "+taskGroup.ID+" planned but no attempt started: "+message)
+	return message
 }
 
 func (s *ClusterService) planMacro(ctx context.Context, macroID string, phase domain.Phase) (map[string]struct{}, error) {
