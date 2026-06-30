@@ -288,12 +288,6 @@ func (c *BiliClient) GetQRLoginState(qrcodeKey string) (*api.VerifyQRLoginStateS
 	if err != nil {
 		return nil, err
 	}
-	if err = r.CheckValid(); err != nil {
-		return nil, err
-	}
-	if r.Data == nil {
-		return nil, fmt.Errorf("bilibili returned an empty QR login state")
-	}
 	c.SetRefreshToken(r.Data.RefreshToken)
 	return r.Data, nil
 }
