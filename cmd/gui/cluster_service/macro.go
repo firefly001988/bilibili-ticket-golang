@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,51 @@ import (
 )
 
 const startTaskGroupReflowNowToken = "__cluster_reflow_now__"
+
+type flexibleInt int
+
+func (v *flexibleInt) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		*v = 0
+		return nil
+	}
+	if unquoted, err := strconv.Unquote(raw); err == nil {
+		raw = strings.TrimSpace(unquoted)
+		if raw == "" {
+			*v = 0
+			return nil
+		}
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid integer %q", raw)
+	}
+	*v = flexibleInt(n)
+	return nil
+}
+
+type purchaseGroupDocument struct {
+	ID          string         `json:"id"`
+	MacroTaskID string         `json:"macroTaskId"`
+	Buyers      []domain.Buyer `json:"buyers"`
+	AllowSplit  bool           `json:"allowSplit"`
+	Weight      flexibleInt    `json:"weight"`
+	Priority    flexibleInt    `json:"priority"`
+	CreatedAt   time.Time      `json:"createdAt"`
+}
+
+func (d purchaseGroupDocument) domainValue() domain.PurchaseGroup {
+	return domain.PurchaseGroup{
+		ID:          d.ID,
+		MacroTaskID: d.MacroTaskID,
+		Buyers:      d.Buyers,
+		AllowSplit:  d.AllowSplit,
+		Weight:      int(d.Weight),
+		Priority:    int(d.Priority),
+		CreatedAt:   d.CreatedAt,
+	}
+}
 
 // SaveMacro persists a macro task (create or update). Validates the
 // execution window and capacity constraints.
@@ -82,10 +128,11 @@ func (s *ClusterService) DeleteMacro(macroID string) error {
 
 // SavePurchaseGroup persists a purchase group (create or update).
 func (s *ClusterService) SavePurchaseGroup(document string) error {
-	var value domain.PurchaseGroup
-	if err := json.Unmarshal([]byte(document), &value); err != nil {
+	var input purchaseGroupDocument
+	if err := json.Unmarshal([]byte(document), &input); err != nil {
 		return err
 	}
+	value := input.domainValue()
 	ctx := context.Background()
 	if value.MacroTaskID == "" {
 		return fmt.Errorf("macroTaskId is required")

@@ -111,10 +111,7 @@ func TestClusterServiceEditsAndDeletesPurchaseGroups(t *testing.T) {
 	if err := service.SavePurchaseGroup(document(t, group)); err != nil {
 		t.Fatal(err)
 	}
-	group.Buyers = []domain.Buyer{{LogicalID: "b", Name: "B"}}
-	group.AllowSplit = true
-	group.CreatedAt = time.Time{} // Updates preserve the original stable sort key.
-	if err := service.SavePurchaseGroup(document(t, group)); err != nil {
+	if err := service.SavePurchaseGroup(`{"id":"purchase","macroTaskId":"macro","buyers":[{"logicalId":"b","name":"B"}],"allowSplit":true,"weight":"3","priority":"2"}`); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, err := service.Snapshot()
@@ -122,7 +119,7 @@ func TestClusterServiceEditsAndDeletesPurchaseGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	saved := snapshot.Macros[0].PurchaseGroups
-	if len(saved) != 1 || saved[0].Buyers[0].LogicalID != "b" || !saved[0].AllowSplit || !saved[0].CreatedAt.Equal(createdAt) {
+	if len(saved) != 1 || saved[0].Buyers[0].LogicalID != "b" || !saved[0].AllowSplit || saved[0].Weight != 3 || saved[0].Priority != 2 || !saved[0].CreatedAt.Equal(createdAt) {
 		t.Fatalf("purchase group was not updated in place: %#v", saved)
 	}
 	if err := service.DeletePurchaseGroup(macro.ID, group.ID); err != nil {

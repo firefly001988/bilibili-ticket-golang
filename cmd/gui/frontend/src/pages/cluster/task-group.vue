@@ -81,8 +81,8 @@ const expandedMacro = ref(0); const allBuyers = ref<Array<{ logicalId: string; n
 const selectedPgBuyerIds = ref<string[]>([]); const savedPgBuyerIds = ref(new Map<string, string[]>()); const savingPg = ref(false); const deletingPg = ref<Record<string, boolean>>({})
 const editingPgId = ref(''); const editingPgMacroId = ref('')
 const allowSplit = ref(false)
-const pgWeight = ref(1)
-const pgPriority = ref(0)
+const pgWeight = ref<number | string>(1)
+const pgPriority = ref<number | string>(0)
 
 // Remember the selection for the currently expanded macro so we can restore it later.
 let lastExpandedMacroId = ''
@@ -246,7 +246,7 @@ async function savePurchaseGroup(m: MacroSummary) {
     savingPg.value = true
     try {
         const buyers = selectedPgBuyerIds.value.map(id => { const b = allBuyers.value.find(x => x.logicalId === id)!; return { logicalId: id, name: b.name, idCard: b.idCard, tel: b.tel } })
-        await SavePurchaseGroup(JSON.stringify({ id: isEdit ? editingPgId.value : '', macroTaskId: m.id, buyers, allowSplit: allowSplit.value, weight: pgWeight.value || 1, priority: pgPriority.value || 0 }))
+        await SavePurchaseGroup(JSON.stringify({ id: isEdit ? editingPgId.value : '', macroTaskId: m.id, buyers, allowSplit: allowSplit.value, weight: normalizeInt(pgWeight.value, 1, 1), priority: normalizeInt(pgPriority.value, 0) }))
         editingPgId.value = ''; editingPgMacroId.value = ''
         allowSplit.value = false
         pgWeight.value = 1
@@ -258,6 +258,14 @@ async function savePurchaseGroup(m: MacroSummary) {
         messages.add({ text: isEdit ? t('taskGroup.pgUpdated') : t('taskGroup.pgAdded'), color: 'success' })
     } catch (e: any) { messages.add({ text: isEdit ? t('taskGroup.pgUpdateFailed', { error: String(e) }) : t('taskGroup.pgAddFailed', { error: String(e) }), color: 'error' }) }
     savingPg.value = false
+}
+
+function normalizeInt(value: unknown, fallback: number, min?: number): number {
+    const n = Number(value)
+    if (!Number.isFinite(n)) return fallback
+    const i = Math.trunc(n)
+    if (min !== undefined && i < min) return min
+    return i
 }
 
 function openEditPg(macroId: string, pg: any) {
@@ -965,13 +973,13 @@ const allPurchaseGroups = computed(() => {
                                             :disabled="editingDisabled" />
                                         <v-row dense class="mb-2">
                                             <v-col cols="6">
-                                                <v-text-field v-model="pgWeight" :label="t('taskGroup.pgWeight')"
+                                                <v-text-field v-model.number="pgWeight" :label="t('taskGroup.pgWeight')"
                                                     type="number" min="1" variant="outlined" density="compact"
                                                     hide-details :hint="t('taskGroup.pgWeightHint')" persistent-hint
                                                     :disabled="editingDisabled" />
                                             </v-col>
                                             <v-col cols="6">
-                                                <v-text-field v-model="pgPriority" :label="t('taskGroup.pgPriority')"
+                                                <v-text-field v-model.number="pgPriority" :label="t('taskGroup.pgPriority')"
                                                     type="number" variant="outlined" density="compact" hide-details
                                                     :hint="t('taskGroup.pgPriorityHint')" persistent-hint
                                                     :disabled="editingDisabled" />
