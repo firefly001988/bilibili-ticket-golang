@@ -35,13 +35,10 @@ const opening = ref<Record<string, boolean>>({})
 const search = ref('')
 
 const headers = computed(() => [
-    { title: t('orders.colTime'), key: 'createdAt', width: 150, sortable: false },
-    { title: t('orders.colOrder'), key: 'orderId', width: 150, sortable: false },
-    { title: t('orders.colItem'), key: 'item', sortable: false },
-    { title: t('orders.colBuyers'), key: 'buyers', width: 180, sortable: false },
-    { title: t('orders.colAccountWorker'), key: 'accountWorker', width: 210, sortable: false },
-    { title: t('orders.colExpire'), key: 'paymentExpire', width: 150, sortable: false },
-    { title: t('orders.colActions'), key: 'actions', width: 170, sortable: false },
+    { title: t('orders.colOrder'), key: 'summary', minWidth: 420, sortable: false },
+    { title: t('orders.colBuyers'), key: 'buyers', width: 150, sortable: false },
+    { title: t('orders.colTime'), key: 'time', width: 180, sortable: false },
+    { title: t('orders.colActions'), key: 'actions', width: 150, sortable: false },
 ])
 
 async function load() {
@@ -89,11 +86,9 @@ function fmtExpire(sec?: number): string {
     return fmtDate(sec)
 }
 
-function itemTitle(record: OrderRecord): string {
-    return [record.projectName || record.projectId, record.screenName || record.screenId, record.skuName || record.skuId]
-        .filter(v => v !== undefined && v !== null && String(v) !== '')
-        .map(String)
-        .join(' / ') || '—'
+function displayValue(value?: string | number): string {
+    if (value === undefined || value === null || String(value) === '') return '—'
+    return String(value)
 }
 
 function buyerText(record: OrderRecord): string {
@@ -131,36 +126,49 @@ onMounted(load)
                 :placeholder="t('orders.searchPlaceholder')" prepend-inner-icon="mdi-magnify" clearable
                 class="mx-4 mb-2" />
             <v-data-table v-if="records.length > 0" :headers="headers" :items="records" :search="search"
-                :items-per-page="20" :items-per-page-options="[10, 20, 50, 100]" density="compact">
-                <template #item.createdAt="{ item }">
-                    <span class="text-caption text-no-wrap">{{ fmtDate(item.createdAt) }}</span>
-                </template>
-                <template #item.orderId="{ item }">
-                    <span class="font-monospace text-caption text-primary">#{{ item.orderId || '—' }}</span>
-                </template>
-                <template #item.item="{ item }">
-                    <div class="text-caption">{{ itemTitle(item) }}</div>
-                    <div class="text-caption text-medium-emphasis">
-                        PID {{ item.projectId || '—' }} · Screen {{ item.screenId || '—' }} · SKU {{ item.skuId || '—' }}
+                :items-per-page="20" :items-per-page-options="[10, 20, 50, 100]" density="comfortable"
+                class="orders-table">
+                <template #item.summary="{ item }">
+                    <div class="order-summary py-1">
+                        <div class="d-flex align-center ga-2 min-w-0">
+                            <span class="font-monospace text-caption text-primary text-no-wrap">#{{ item.orderId || '—'
+                            }}</span>
+                            <span class="text-caption text-medium-emphasis text-truncate">
+                                {{ displayValue(item.projectName || item.projectId) }}
+                            </span>
+                        </div>
+                        <div class="order-item-line text-caption mt-1">
+                            <span class="order-label">场次</span>
+                            <span class="text-truncate">{{ displayValue(item.screenName || item.screenId) }}</span>
+                            <span class="order-sep">·</span>
+                            <span class="order-label">SKU</span>
+                            <span class="text-truncate">{{ displayValue(item.skuName || item.skuId) }}</span>
+                        </div>
+                        <div class="order-meta text-caption text-medium-emphasis mt-1">
+                            <span>PID {{ item.projectId || '—' }}</span>
+                            <span>Screen {{ item.screenId || '—' }}</span>
+                            <span>SKU {{ item.skuId || '—' }}</span>
+                            <span>A {{ compactID(item.accountId, 14) }}</span>
+                            <span>W {{ compactID(item.workerId, 14) }}</span>
+                        </div>
                     </div>
                 </template>
                 <template #item.buyers="{ item }">
-                    <span class="text-caption">{{ buyerText(item) }}</span>
+                    <span class="text-caption buyer-cell">{{ buyerText(item) }}</span>
                 </template>
-                <template #item.accountWorker="{ item }">
-                    <div class="text-caption">A: {{ compactID(item.accountId) }}</div>
-                    <div class="text-caption text-medium-emphasis">W: {{ compactID(item.workerId) }}</div>
-                </template>
-                <template #item.paymentExpire="{ item }">
-                    <span class="text-caption text-no-wrap">{{ fmtExpire(item.paymentExpire) }}</span>
+                <template #item.time="{ item }">
+                    <div class="text-caption text-no-wrap">{{ fmtDate(item.createdAt) }}</div>
+                    <div class="text-caption text-medium-emphasis text-no-wrap">{{ fmtExpire(item.paymentExpire) }}</div>
                 </template>
                 <template #item.actions="{ item }">
-                    <v-btn size="x-small" color="primary" variant="tonal" :disabled="!item.paymentUrl"
-                        :loading="opening[item.id]" @click="openPayment(item)">
-                        {{ t('orders.openPayment') }}
-                    </v-btn>
-                    <v-btn size="x-small" icon="mdi-content-copy" variant="text" :disabled="!item.paymentUrl"
-                        class="ml-1" @click="copyPaymentURL(item)" />
+                    <div class="d-flex align-center justify-end">
+                        <v-btn size="small" color="primary" variant="tonal" :disabled="!item.paymentUrl"
+                            :loading="opening[item.id]" @click="openPayment(item)">
+                            {{ t('orders.openPayment') }}
+                        </v-btn>
+                        <v-btn size="small" icon="mdi-content-copy" variant="text" :disabled="!item.paymentUrl"
+                            class="ml-1" @click="copyPaymentURL(item)" />
+                    </div>
                 </template>
             </v-data-table>
             <div v-else-if="!loading" class="text-center py-10">
@@ -174,3 +182,45 @@ onMounted(load)
         </v-card>
     </v-container>
 </template>
+
+<style scoped>
+.orders-table :deep(td) {
+    vertical-align: middle;
+}
+
+.order-summary {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.order-item-line {
+    display: grid;
+    grid-template-columns: auto minmax(80px, 1fr) auto auto minmax(120px, 1.35fr);
+    align-items: center;
+    column-gap: 6px;
+    min-width: 0;
+}
+
+.order-label {
+    color: rgba(var(--v-theme-on-surface), 0.56);
+    flex: none;
+}
+
+.order-sep {
+    color: rgba(var(--v-theme-on-surface), 0.38);
+}
+
+.order-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    line-height: 1.35;
+}
+
+.buyer-cell {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+</style>
