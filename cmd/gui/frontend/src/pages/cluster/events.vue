@@ -128,7 +128,7 @@ const tableHeaders = computed(() => [
                 <template #title>
                     <span class="text-subtitle-2">{{ t('events.feedTitle') }}</span>
                     <span class="text-caption text-medium-emphasis ml-2">({{ events.length }} {{ t('events.entries')
-                        }})</span>
+                    }})</span>
                 </template>
                 <template #append>
                     <v-btn size="x-small" variant="text" color="error" :loading="clearing" prepend-icon="mdi-delete"
@@ -150,8 +150,8 @@ const tableHeaders = computed(() => [
                     <span class="font-monospace text-caption text-no-wrap">{{ fmtTime(item.time) }}</span>
                 </template>
                 <template #item.workerId="{ item }">
-                    <span class="font-monospace text-caption text-no-wrap">{{ item.workerId?.slice(0, 10) || '—'
-                    }}</span>
+                    <span class="font-monospace text-caption text-no-wrap">{{ item.workerId || '—'
+                        }}</span>
                 </template>
                 <template #item.stage="{ item }">
                     <span class="font-monospace text-caption font-weight-bold"
