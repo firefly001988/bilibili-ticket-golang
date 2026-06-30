@@ -15,5 +15,6 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     VerifiedOverlay: typeof import('./components/VerifiedOverlay.vue')['default']
+    WorkerPicker: typeof import('./components/cluster/WorkerPicker.vue')['default']
   }
 }

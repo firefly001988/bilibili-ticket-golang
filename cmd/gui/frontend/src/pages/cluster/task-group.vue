@@ -1,23 +1,31 @@
 <script lang="ts" setup>
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
+import { ref, watch, computed, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
-import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup, StopTaskGroup, ForceStopTaskGroup, ForceRestartTaskGroup, StartTaskGroup, RestartMacro, StopIntent, StartPurchaseGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
+import WorkerPicker from '@/components/cluster/WorkerPicker.vue'
+import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup, StopTaskGroup, ForceStopTaskGroup, ForceRestartTaskGroup, StartTaskGroup, StopIntent, SaveTaskGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
 
 const route = useRoute(); const { t } = useI18n(); const messages = useMessagesStore()
 
-interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; phase?: string; purchaseGroups?: any[] }
+interface TaskGroupSummary { id: string; name: string; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; paymentTimeoutMinutes?: number; waveDurationMinutes?: number; maxWaves?: number; createdAt?: string }
+interface WorkerBrief { id: string; name: string; address: string; type: string; healthy: boolean; tags?: string[] }
+interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; phase?: string; purchaseGroups?: any[] }
 interface AttemptBrief { id: string; intentId: string; accountId: string; workerId: string; state: string; orderId?: string }
 interface IntentBrief { id: string; macroTaskId: string; purchaseGroupId?: string; phase: string; weight: number; priority: number; buyerCount: number; succeeded: boolean; terminal: boolean; armed: boolean; activeCount: number; deficit: number; failureReason?: string }
 
-const group = ref<any>(null); const macros = ref<MacroSummary[]>([]); const attempts = ref<AttemptBrief[]>([]); const intents = ref<IntentBrief[]>([]); const loading = ref(true)
+const group = ref<TaskGroupSummary | null>(null); const macros = ref<MacroSummary[]>([]); const attempts = ref<AttemptBrief[]>([]); const intents = ref<IntentBrief[]>([]); const loading = ref(true)
 const dispatching = ref<Record<string, boolean>>({}); const dispatchingAll = ref(false)
-// Worker selection for start
-const showWorkerSelectDialog = ref(false)
-const workerList = ref<{ id: string; name: string; address: string; type: string; healthy: boolean }[]>([])
-const selectedWorkerIds = ref<string[]>([])
+const activeTaskGroup = ref('')
+const workerList = ref<WorkerBrief[]>([])
+const groupPrimaryWorkerIds = ref<string[]>([])
+const groupStandbyWorkerIds = ref<string[]>([])
+const groupPaymentTimeoutMinutes = ref(10)
+const groupWaveDurationMinutes = ref(3)
+const groupMaxWaves = ref(3)
+const groupConfigDirty = ref(false)
+const savingGroupConfig = ref(false)
 const lookupProjectId = ref(''); const lookupLoading = ref(false); const projectInfo = ref<any>(null); const tickets = ref<any[]>([])
 const selectedScreenId = ref(0); const selectedSkuId = ref(0); const addingMacro = ref(false); const showSkuList = ref(false)
 const deletingMacro = ref<Record<string, boolean>>({})
@@ -65,8 +73,6 @@ const editingPgId = ref(''); const editingPgMacroId = ref('')
 const allowSplit = ref(false)
 const pgWeight = ref(1)
 const pgPriority = ref(0)
-const macroPrimaryWorkerIds = ref<string[]>([])
-const macroStandbyWorkerIds = ref<string[]>([])
 
 // Remember the selection for the currently expanded macro so we can restore it later.
 let lastExpandedMacroId = ''
@@ -97,16 +103,52 @@ function onBuyerSelectionChange(vals: string[]) {
     }
 }
 
-function onPrimaryWorkerSelectionChange(vals: string[]) {
-    macroPrimaryWorkerIds.value = vals
-    macroStandbyWorkerIds.value = macroStandbyWorkerIds.value.filter(id => !vals.includes(id))
+function onGroupPrimaryWorkerSelectionChange(vals: string[]) {
+    groupPrimaryWorkerIds.value = vals
+    groupStandbyWorkerIds.value = groupStandbyWorkerIds.value.filter(id => !vals.includes(id))
+    groupConfigDirty.value = true
 }
 
-function onStandbyWorkerSelectionChange(vals: string[]) {
-    macroStandbyWorkerIds.value = vals.filter(id => !macroPrimaryWorkerIds.value.includes(id))
+function onGroupStandbyWorkerSelectionChange(vals: string[]) {
+    groupStandbyWorkerIds.value = vals.filter(id => !groupPrimaryWorkerIds.value.includes(id))
+    groupConfigDirty.value = true
 }
 
-async function loadAll(id: string, silent = false) { if (!silent) loading.value = true; if (!silent) { group.value = null; macros.value = []; intents.value = []; attempts.value = [] }; try { const snap = await Snapshot(); group.value = ((snap.taskGroups || []) as any[]).find(g => g.id === id) || null; const allMacros = ((snap.macros || []) as MacroSummary[]).filter(m => m.taskGroupId === id); macros.value = allMacros; intents.value = ((snap.intents || []) as IntentBrief[]).filter(i => allMacros.some(m => m.id === i.macroTaskId)); attempts.value = ((snap.attempts || []) as AttemptBrief[]); if (!silent) { workerList.value = ((snap.workers || []) as any[]) }; if (allBuyers.value.length === 0) { allBuyers.value = ((snap.buyers || []) as any[]).map((b: any) => ({ logicalId: b.logicalId, name: b.name || '', idCard: b.idCard || '', tel: b.tel || '', accounts: b.accounts || [] })) } } catch { } if (!silent) loading.value = false }
+function markGroupConfigDirty() {
+    groupConfigDirty.value = true
+}
+
+function syncGroupDraft(nextGroup: TaskGroupSummary | null, force = false) {
+    if (!nextGroup) return
+    if (!force && groupConfigDirty.value && activeTaskGroup.value !== nextGroup.id) return
+    groupPrimaryWorkerIds.value = [...(nextGroup.primaryWorkerIds || [])]
+    groupStandbyWorkerIds.value = [...(nextGroup.standbyWorkerIds || [])].filter(id => !groupPrimaryWorkerIds.value.includes(id))
+    groupPaymentTimeoutMinutes.value = nextGroup.paymentTimeoutMinutes || 10
+    groupWaveDurationMinutes.value = nextGroup.waveDurationMinutes || 3
+    groupMaxWaves.value = nextGroup.maxWaves || 3
+    groupConfigDirty.value = false
+}
+
+async function loadAll(id: string, silent = false) {
+    if (!silent) loading.value = true
+    if (!silent) { group.value = null; macros.value = []; intents.value = []; attempts.value = [] }
+    try {
+        const snap = await Snapshot() as any
+        const nextGroup = ((snap.taskGroups || []) as TaskGroupSummary[]).find(g => g.id === id) || null
+        group.value = nextGroup
+        activeTaskGroup.value = snap.activeTaskGroup || ''
+        const allMacros = ((snap.macros || []) as MacroSummary[]).filter(m => m.taskGroupId === id)
+        macros.value = allMacros
+        intents.value = ((snap.intents || []) as IntentBrief[]).filter(i => allMacros.some(m => m.id === i.macroTaskId))
+        attempts.value = ((snap.attempts || []) as AttemptBrief[])
+        workerList.value = ((snap.workers || []) as WorkerBrief[])
+        syncGroupDraft(nextGroup, !silent)
+        if (allBuyers.value.length === 0) {
+            allBuyers.value = ((snap.buyers || []) as any[]).map((b: any) => ({ logicalId: b.logicalId, name: b.name || '', idCard: b.idCard || '', tel: b.tel || '', accounts: b.accounts || [] }))
+        }
+    } catch { }
+    if (!silent) loading.value = false
+}
 
 // ── Auto-polling ──────────────────────────────────────────────
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -143,7 +185,7 @@ async function confirmAddMacro() {
     showAddConfirmDialog.value = false
     const info = addingMacroInfo.value
     const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value)
-    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: false, orderCapacity: ticket?.buyLimit || 1, startAt: ticket?.saleStat?.start || '', deadline: ticket?.saleStat?.end || '', primaryWorkerIds: macroPrimaryWorkerIds.value, standbyWorkerIds: macroStandbyWorkerIds.value })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; macroPrimaryWorkerIds.value = []; macroStandbyWorkerIds.value = []; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
+    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: false, orderCapacity: ticket?.buyLimit || 1, startAt: ticket?.saleStat?.start || '', deadline: ticket?.saleStat?.end || '' })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
     addingMacro.value = false
     addingMacroInfo.value = null
 }
@@ -158,7 +200,6 @@ async function removeMacro(m: MacroSummary) { deletingMacro.value[m.id] = true; 
 async function savePurchaseGroup(m: MacroSummary) {
     if (selectedPgBuyerIds.value.length === 0) { messages.add({ text: t('taskGroup.pgSelectBuyer'), color: 'warning' }); return }
     const isEdit = !!editingPgId.value && editingPgMacroId.value === m.id
-    const shouldAutoStart = !isEdit && shouldAutoStartAfterPurchaseGroup(m)
     savingPg.value = true
     try {
         const buyers = selectedPgBuyerIds.value.map(id => { const b = allBuyers.value.find(x => x.logicalId === id)!; return { logicalId: id, name: b.name, idCard: b.idCard, tel: b.tel } })
@@ -172,46 +213,8 @@ async function savePurchaseGroup(m: MacroSummary) {
         selectedPgBuyerIds.value = restored
         await loadAll(group.value!.id)
         messages.add({ text: isEdit ? t('taskGroup.pgUpdated') : t('taskGroup.pgAdded'), color: 'success' })
-        if (shouldAutoStart) {
-            await autoStartTaskGroupForPastSale()
-        }
     } catch (e: any) { messages.add({ text: isEdit ? t('taskGroup.pgUpdateFailed', { error: String(e) }) : t('taskGroup.pgAddFailed', { error: String(e) }), color: 'error' }) }
     savingPg.value = false
-}
-
-function shouldAutoStartAfterPurchaseGroup(m: MacroSummary) {
-    if (m.needsReview) return false
-    const startAt = Date.parse(m.startAt || '')
-    if (!Number.isFinite(startAt) || Date.now() < startAt) return false
-    const deadline = Date.parse(m.deadline || '')
-    if (Number.isFinite(deadline) && Date.now() > deadline) return false
-    const hasActiveIntent = intents.value.some(i => i.macroTaskId === m.id && i.armed && !i.terminal && !i.succeeded)
-    const hasActiveAttempt = attempts.value.some(a => {
-        const intent = intents.value.find(i => i.id === a.intentId)
-        return intent?.macroTaskId === m.id && !['succeeded', 'failed', 'stopped'].includes(String(a.state).toLowerCase())
-    })
-    return !hasActiveIntent && !hasActiveAttempt
-}
-
-async function autoStartTaskGroupForPastSale() {
-    if (!group.value) return
-    dispatchingAll.value = true
-    try {
-        const snap = await Snapshot()
-        const workers = ((snap.workers || []) as any[]).filter(w => w.healthy)
-        if (workers.length === 0) {
-            messages.add({ text: t('taskGroup.autoStartNoWorkers'), color: 'warning' })
-            return
-        }
-        const ids = workers.map(w => w.id)
-        await StartTaskGroup(group.value.id, JSON.stringify(ids))
-        await loadAll(group.value.id)
-        messages.add({ text: t('taskGroup.autoStarted', { count: ids.length }), color: 'success' })
-    } catch (e: any) {
-        messages.add({ text: t('taskGroup.autoStartFailed', { error: String(e) }), color: 'error' })
-    } finally {
-        dispatchingAll.value = false
-    }
 }
 
 function openEditPg(macroId: string, pg: any) {
@@ -343,23 +346,40 @@ function pgStats(m: MacroSummary, pgId: string) {
 }
 
 
-async function startAllMacros() {
+async function saveGroupConfig() {
     if (!group.value) return
-    workerList.value = ((await Snapshot()).workers || []) as any[]
-    if (workerList.value.length === 0) {
-        messages.add({ text: t('taskGroup.noWorkersAvailable'), color: 'warning' })
-        return
+    savingGroupConfig.value = true
+    try {
+        await SaveTaskGroup(JSON.stringify({
+            ...group.value,
+            primaryWorkerIds: groupPrimaryWorkerIds.value,
+            standbyWorkerIds: groupStandbyWorkerIds.value,
+            paymentTimeoutMinutes: Number(groupPaymentTimeoutMinutes.value) || 10,
+            waveDurationMinutes: Number(groupWaveDurationMinutes.value) || 3,
+            maxWaves: Number(groupMaxWaves.value) || 3,
+        }))
+        groupConfigDirty.value = false
+        await loadAll(group.value.id)
+        messages.add({ text: t('taskGroup.groupConfigSaved'), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('taskGroup.groupConfigSaveFailed', { error: String(e) }), color: 'error' })
     }
-    selectedWorkerIds.value = workerList.value.filter(w => w.healthy).map(w => w.id)
-    showWorkerSelectDialog.value = true
+    savingGroupConfig.value = false
 }
 
-async function confirmStartTaskGroup() {
-    if (!group.value || selectedWorkerIds.value.length === 0) return
-    showWorkerSelectDialog.value = false
+async function startAllMacros() {
+    if (!group.value) return
+    if (groupConfigDirty.value) {
+        await saveGroupConfig()
+        if (groupConfigDirty.value) return
+    }
+    if (groupPrimaryWorkerIds.value.length + groupStandbyWorkerIds.value.length === 0) {
+        messages.add({ text: t('taskGroup.noWorkersConfigured'), color: 'warning' })
+        return
+    }
     dispatchingAll.value = true
     try {
-        await StartTaskGroup(group.value.id, JSON.stringify(selectedWorkerIds.value))
+        await StartTaskGroup(group.value.id, '')
         await loadAll(group.value.id); messages.add({ text: t('taskGroup.allStarted'), color: 'success' })
     }
     catch (e: any) { messages.add({ text: t('taskGroup.allStartFailed', { error: String(e) }), color: 'error' }) }
@@ -390,33 +410,25 @@ async function forceStopAllMacros() {
 
 async function forceRestartAllMacros() {
     if (!group.value) return
-    workerList.value = ((await Snapshot()).workers || []) as any[]
-    if (workerList.value.length === 0) {
-        messages.add({ text: t('taskGroup.noWorkersAvailable'), color: 'warning' })
+    if (groupConfigDirty.value) {
+        await saveGroupConfig()
+        if (groupConfigDirty.value) return
+    }
+    if (groupPrimaryWorkerIds.value.length + groupStandbyWorkerIds.value.length === 0) {
+        messages.add({ text: t('taskGroup.noWorkersConfigured'), color: 'warning' })
         return
     }
-    selectedWorkerIds.value = workerList.value.filter(w => w.healthy).map(w => w.id)
-    showWorkerSelectDialog.value = false
     dispatchingAll.value = true
     try {
-        await ForceRestartTaskGroup(group.value.id, JSON.stringify(selectedWorkerIds.value))
+        await ForceRestartTaskGroup(group.value.id, '')
         await loadAll(group.value.id); messages.add({ text: t('taskGroup.allForceRestarted'), color: 'success' })
     }
     catch (e: any) { messages.add({ text: t('taskGroup.forceRestartFailed', { error: String(e) }), color: 'error' }) }
     dispatchingAll.value = false
 }
 
-async function restartSingleMacro(macroID: string) {
-    dispatching.value[macroID] = true
-    try {
-        await RestartMacro(macroID)
-        await loadAll(group.value.id); messages.add({ text: t('taskGroup.macroRestarted'), color: 'success' })
-    }
-    catch (e: any) { messages.add({ text: t('taskGroup.macroRestartFailed', { error: String(e) }), color: 'error' }) }
-    dispatching.value[macroID] = false
-}
-
 async function stopSingleIntent(intentID: string) {
+    if (!group.value) return
     try {
         await StopIntent(intentID)
         await loadAll(group.value.id, true)
@@ -424,18 +436,11 @@ async function stopSingleIntent(intentID: string) {
     catch (e: any) { messages.add({ text: t('taskGroup.stopIntentFailed', { error: String(e) }), color: 'error' }) }
 }
 
-async function startSinglePurchaseGroup(macroID: string, pgID: string) {
-    dispatching.value[pgID] = true
-    try {
-        await StartPurchaseGroup(macroID, pgID)
-        await loadAll(group.value.id); messages.add({ text: t('taskGroup.pgStarted'), color: 'success' })
-    }
-    catch (e: any) { messages.add({ text: t('taskGroup.pgStartFailed', { error: String(e) }), color: 'error' }) }
-    dispatching.value[pgID] = false
-}
-
 const dispatchableMacros = computed(() => macros.value.filter(m => m.purchaseGroups && m.purchaseGroups.length > 0))
 const anyRunning = computed(() => dispatchableMacros.value.some(m => hasIntent(m)))
+const groupRunning = computed(() => anyRunning.value || (!!group.value && activeTaskGroup.value === group.value.id))
+const editingDisabled = computed(() => groupRunning.value || dispatchingAll.value)
+const workerPoolConfigured = computed(() => groupPrimaryWorkerIds.value.length + groupStandbyWorkerIds.value.length > 0)
 const groupStats = computed(() => {
     const groupIntents = intents.value.filter(i => i.armed && !i.succeeded)
     return {
@@ -470,6 +475,60 @@ const allPurchaseGroups = computed(() => {
             <h1>{{ group.name }}</h1>
             <v-divider class="mt-2 mb-4" thickness="3" />
 
+            <!-- Task group scheduling config -->
+            <v-card class="mb-4" elevation="2">
+                <v-card-title class="text-subtitle-1 d-flex align-center">
+                    {{ t('taskGroup.groupConfig') }}
+                    <v-spacer />
+                    <v-chip v-if="groupRunning" color="info" size="small" variant="tonal">
+                        {{ t('taskGroup.groupRunningLocked') }}
+                    </v-chip>
+                </v-card-title>
+                <v-card-text>
+                    <v-row dense>
+                        <v-col cols="12" md="6">
+                            <WorkerPicker :model-value="groupPrimaryWorkerIds"
+                                @update:model-value="onGroupPrimaryWorkerSelectionChange" :workers="workerList"
+                                :label="t('taskGroup.groupPrimaryWorkers')"
+                                :hint="t('taskGroup.groupPrimaryWorkersHint')" :disabled="editingDisabled" />
+                        </v-col>
+                        <v-col cols="12" md="6">
+                            <WorkerPicker :model-value="groupStandbyWorkerIds"
+                                @update:model-value="onGroupStandbyWorkerSelectionChange" :workers="workerList"
+                                :label="t('taskGroup.groupStandbyWorkers')"
+                                :hint="t('taskGroup.groupStandbyWorkersHint')" :disabled="editingDisabled" />
+                        </v-col>
+                    </v-row>
+                    <v-row dense class="mt-2">
+                        <v-col cols="12" md="4">
+                            <v-text-field v-model.number="groupPaymentTimeoutMinutes"
+                                :label="t('taskGroup.paymentTimeoutMinutes')" type="number" min="1" variant="outlined"
+                                density="compact" :disabled="editingDisabled" @update:model-value="markGroupConfigDirty" />
+                        </v-col>
+                        <v-col cols="12" md="4">
+                            <v-text-field v-model.number="groupWaveDurationMinutes"
+                                :label="t('taskGroup.waveDurationMinutes')" type="number" min="1" variant="outlined"
+                                density="compact" :disabled="editingDisabled" @update:model-value="markGroupConfigDirty" />
+                        </v-col>
+                        <v-col cols="12" md="4">
+                            <v-text-field v-model.number="groupMaxWaves" :label="t('taskGroup.maxWaves')"
+                                type="number" min="1" variant="outlined" density="compact" :disabled="editingDisabled"
+                                @update:model-value="markGroupConfigDirty" />
+                        </v-col>
+                    </v-row>
+                    <div class="d-flex align-center mt-2" style="gap:8px">
+                        <v-chip v-if="!workerPoolConfigured" size="small" color="warning" variant="tonal">
+                            {{ t('taskGroup.noWorkersConfigured') }}
+                        </v-chip>
+                        <v-spacer />
+                        <v-btn color="primary" variant="tonal" :loading="savingGroupConfig"
+                            :disabled="editingDisabled || !groupConfigDirty" @click="saveGroupConfig">
+                            {{ t('common.save') }}
+                        </v-btn>
+                    </div>
+                </v-card-text>
+            </v-card>
+
             <!-- Dispatch bar -->
             <v-card v-if="macros.length > 0" class="mb-4" elevation="2" color="surface-variant">
                 <v-card-text class="py-2 px-4">
@@ -488,8 +547,8 @@ const allPurchaseGroups = computed(() => {
                             t('taskGroup.failed', { count: groupStats.failed }) }}</v-chip>
                         <v-spacer />
                         <v-btn v-if="!anyRunning" prepend-icon="mdi-play-circle-outline" color="success" variant="tonal"
-                            size="small" :loading="dispatchingAll" :disabled="dispatchableMacros.length === 0"
-                            @click="startAllMacros">
+                            size="small" :loading="dispatchingAll"
+                            :disabled="dispatchableMacros.length === 0 || !workerPoolConfigured" @click="startAllMacros">
                             {{ t('taskGroup.startAll') }}
                         </v-btn>
                         <template v-else>
@@ -503,7 +562,8 @@ const allPurchaseGroups = computed(() => {
                             </v-btn>
                         </template>
                         <v-btn prepend-icon="mdi-refresh" color="warning" variant="tonal" size="small"
-                            :loading="dispatchingAll" @click="forceRestartAllMacros" class="ml-1">
+                            :loading="dispatchingAll" :disabled="!workerPoolConfigured" @click="forceRestartAllMacros"
+                            class="ml-1">
                             {{ t('taskGroup.forceRestartAll') }}
                         </v-btn>
                     </div>
@@ -536,15 +596,18 @@ const allPurchaseGroups = computed(() => {
             </v-card>
 
             <!-- Add Macro -->
-            <v-card class="mb-4" elevation="2">
+            <v-card class="mb-4" elevation="2" :disabled="editingDisabled">
                 <v-card-title class="text-subtitle-1">{{ t('taskGroup.addMacro') }}</v-card-title>
                 <v-card-text>
+                    <v-alert v-if="editingDisabled" type="info" variant="tonal" density="compact" class="mb-3">
+                        {{ t('taskGroup.editLockedHint') }}
+                    </v-alert>
                     <v-row dense>
                         <v-col cols="5"><v-text-field v-model="lookupProjectId" :label="t('taskGroup.projectIdLabel')"
                                 :placeholder="t('taskGroup.projectIdPlaceholder')" variant="outlined" density="compact"
-                                hide-details @keydown.enter="lookupProject" /></v-col>
+                                hide-details :disabled="editingDisabled" @keydown.enter="lookupProject" /></v-col>
                         <v-col cols="3" class="d-flex align-center"><v-btn :loading="lookupLoading" color="primary"
-                                @click="lookupProject">{{ t('taskGroup.lookup') }}</v-btn></v-col>
+                                :disabled="editingDisabled" @click="lookupProject">{{ t('taskGroup.lookup') }}</v-btn></v-col>
                     </v-row>
                     <v-expand-transition>
                         <div v-if="projectInfo" class="mt-3">
@@ -619,34 +682,8 @@ const allPurchaseGroups = computed(() => {
                                     </div>
                                 </v-expand-transition>
                             </v-card>
-                            <v-row dense class="mt-3">
-                                <v-col cols="12" md="6">
-                                    <v-select :model-value="macroPrimaryWorkerIds"
-                                        @update:model-value="onPrimaryWorkerSelectionChange" :items="workerList"
-                                        item-title="name" item-value="id" :label="t('taskGroup.macroPrimaryWorkers')"
-                                        variant="outlined" density="compact" multiple chips closable-chips
-                                        :hint="t('taskGroup.macroPrimaryWorkersHint')" persistent-hint>
-                                        <template #item="{ props, item }">
-                                            <v-list-item v-bind="props"
-                                                :subtitle="`${item.address} ${item.healthy ? '· ' + t('worker.online') : '· ' + t('worker.offline')}`" />
-                                        </template>
-                                    </v-select>
-                                </v-col>
-                                <v-col cols="12" md="6">
-                                    <v-select :model-value="macroStandbyWorkerIds"
-                                        @update:model-value="onStandbyWorkerSelectionChange" :items="workerList"
-                                        item-title="name" item-value="id" :label="t('taskGroup.macroStandbyWorkers')"
-                                        variant="outlined" density="compact" multiple chips closable-chips
-                                        :hint="t('taskGroup.macroStandbyWorkersHint')" persistent-hint>
-                                        <template #item="{ props, item }">
-                                            <v-list-item v-bind="props"
-                                                :subtitle="`${item.address} ${item.healthy ? '· ' + t('worker.online') : '· ' + t('worker.offline')}`" />
-                                        </template>
-                                    </v-select>
-                                </v-col>
-                            </v-row>
                             <v-btn class="mt-3" color="success" :loading="addingMacro"
-                                :disabled="!selectedScreenId || !selectedSkuId" @click="addMacro">{{
+                                :disabled="editingDisabled || !selectedScreenId || !selectedSkuId" @click="addMacro">{{
                                     t('taskGroup.confirmAdd') }}</v-btn>
                         </div>
                     </v-expand-transition>
@@ -688,25 +725,11 @@ const allPurchaseGroups = computed(() => {
                                         style="color:rgb(var(--v-theme-warning))">
                                         ⚠ {{ blocker }}
                                     </div>
-                                    <div v-if="(m.primaryWorkerIds || []).length > 0 || (m.standbyWorkerIds || []).length > 0"
-                                        class="text-caption text-medium-emphasis text-truncate">
-                                        {{ t('taskGroup.macroWorkers') }}:
-                                        <span v-if="(m.primaryWorkerIds || []).length > 0">
-                                            {{ t('taskGroup.macroPrimaryShort') }} {{ (m.primaryWorkerIds || []).length
-                                            }}
-                                        </span>
-                                        <span v-if="(m.standbyWorkerIds || []).length > 0" class="ml-1">
-                                            {{ t('taskGroup.macroStandbyShort') }} {{ (m.standbyWorkerIds || []).length
-                                            }}
-                                        </span>
-                                    </div>
                                 </div>
                                 <template v-slot:actions>
-                                    <v-btn v-if="hasIntent(m)" icon="mdi-refresh" size="medium" variant="text"
-                                        color="warning" :loading="dispatching[m.id]"
-                                        @click.stop="restartSingleMacro(m.id)" />
                                     <v-btn icon="mdi-delete" size="medium" variant="text" color="error"
-                                        :loading="deletingMacro[m.id]" @click.stop="removeMacro(m)" />
+                                        :loading="deletingMacro[m.id]" :disabled="editingDisabled"
+                                        @click.stop="removeMacro(m)" />
                                 </template>
                             </v-expansion-panel-title>
                             <v-expansion-panel-text>
@@ -787,18 +810,11 @@ const allPurchaseGroups = computed(() => {
                                                         </div>
                                                     </template>
                                                     <template #append>
-                                                        <v-tooltip :text="t('taskGroup.pgStart')" location="top">
-                                                            <template #activator="{ props: tipProps }">
-                                                                <v-btn icon="mdi-play" size="x-small" variant="text"
-                                                                    color="success" class="mr-1" v-bind="tipProps"
-                                                                    :loading="dispatching[pg.id]"
-                                                                    @click.stop="startSinglePurchaseGroup(m.id, pg.id)" />
-                                                            </template>
-                                                        </v-tooltip>
                                                         <v-tooltip :text="t('taskGroup.pgEdit')" location="top">
                                                             <template #activator="{ props: tipProps }">
                                                                 <v-btn icon="mdi-pencil" size="x-small" variant="text"
                                                                     color="primary" class="mr-1" v-bind="tipProps"
+                                                                    :disabled="editingDisabled"
                                                                     @click.stop="openEditPg(m.id, pg)" />
                                                             </template>
                                                         </v-tooltip>
@@ -806,7 +822,7 @@ const allPurchaseGroups = computed(() => {
                                                             <template #activator="{ props: tipProps }">
                                                                 <v-btn icon="mdi-delete" size="small" variant="text"
                                                                     color="error" :loading="deletingPg[pg.id]"
-                                                                    v-bind="tipProps"
+                                                                    :disabled="editingDisabled" v-bind="tipProps"
                                                                     @click.stop="removePurchaseGroup(m.id, pg.id)" />
                                                             </template>
                                                         </v-tooltip>
@@ -825,29 +841,32 @@ const allPurchaseGroups = computed(() => {
                                             item-title="name" item-value="logicalId"
                                             :label="`${t('taskGroup.pgSelectBuyerShort')} (${t('taskGroup.pgMaxLabel', { max: currentMacroOrderCapacity })})`"
                                             variant="outlined" density="compact" multiple chips closable-chips
-                                            hide-details class="mb-2">
+                                            hide-details class="mb-2" :disabled="editingDisabled">
                                             <template #item="{ props, item }"><v-list-item v-bind="props"
                                                     :subtitle="`${item.tel || ''} · ${item.idCard || '—'}`" /></template>
                                         </v-select>
                                         <v-checkbox-btn v-model="allowSplit" color="primary" density="compact"
-                                            :label="t('taskGroup.pgAllowSplitHint')" hide-details class="mb-2" />
+                                            :label="t('taskGroup.pgAllowSplitHint')" hide-details class="mb-2"
+                                            :disabled="editingDisabled" />
                                         <v-row dense class="mb-2">
                                             <v-col cols="6">
                                                 <v-text-field v-model="pgWeight" :label="t('taskGroup.pgWeight')"
                                                     type="number" min="1" variant="outlined" density="compact"
-                                                    hide-details :hint="t('taskGroup.pgWeightHint')" persistent-hint />
+                                                    hide-details :hint="t('taskGroup.pgWeightHint')" persistent-hint
+                                                    :disabled="editingDisabled" />
                                             </v-col>
                                             <v-col cols="6">
                                                 <v-text-field v-model="pgPriority" :label="t('taskGroup.pgPriority')"
                                                     type="number" variant="outlined" density="compact" hide-details
-                                                    :hint="t('taskGroup.pgPriorityHint')" persistent-hint />
+                                                    :hint="t('taskGroup.pgPriorityHint')" persistent-hint
+                                                    :disabled="editingDisabled" />
                                             </v-col>
                                         </v-row>
                                         <p v-if="allBuyers.length === 0" class="text-caption text-medium-emphasis mb-2">
                                             {{
                                                 t('taskGroup.pgNoBuyers') }}</p>
                                         <v-btn color="primary" :loading="savingPg"
-                                            :disabled="selectedPgBuyerIds.length === 0 || allBuyers.length === 0"
+                                            :disabled="editingDisabled || selectedPgBuyerIds.length === 0 || allBuyers.length === 0"
                                             @click="savePurchaseGroup(m)">{{
                                                 editingPgId && editingPgMacroId === m.id ? t('taskGroup.pgSave') :
                                                     t('taskGroup.pgAdd')
@@ -917,41 +936,6 @@ const allPurchaseGroups = computed(() => {
                     <v-btn color="success" :loading="addingMacro" :disabled="!addingMacroInfo?.eventDay"
                         @click="confirmAddMacro">
                         {{ t('taskGroup.addMacroConfirmBtn') }}
-                    </v-btn>
-                </v-card-actions>
-            </v-card>
-        </v-dialog>
-        <!-- ═══ Worker Selection Dialog ═══ -->
-        <v-dialog v-model="showWorkerSelectDialog" max-width="480" persistent>
-            <v-card class="pa-4">
-                <v-card-title>{{ t('taskGroup.selectWorkersTitle') }}</v-card-title>
-                <v-card-text>
-                    <p class="text-body-2 text-medium-emphasis mb-3">
-                        {{ t('taskGroup.selectWorkersHint') }}
-                    </p>
-                    <v-select v-model="selectedWorkerIds" :items="workerList" item-title="name" item-value="id"
-                        :label="t('taskGroup.selectedWorkers', { count: selectedWorkerIds.length })" variant="outlined"
-                        multiple chips closable-chips class="mb-3">
-                        <template #item="{ props, item }">
-                            <v-list-item v-bind="props"
-                                :subtitle="`${item.address} ${item.healthy ? '· ' + t('worker.online') : '· ' + t('worker.offline')}`">
-                                <template #append>
-                                    <v-chip :color="item.healthy ? 'success' : 'error'" size="x-small" variant="tonal">
-                                        {{ item.healthy ? t('worker.online') : t('worker.offline') }}
-                                    </v-chip>
-                                </template>
-                            </v-list-item>
-                        </template>
-                    </v-select>
-                    <p class="text-caption text-medium-emphasis">
-                        {{ t('taskGroup.selectWorkersNote') }}
-                    </p>
-                </v-card-text>
-                <v-card-actions>
-                    <v-spacer />
-                    <v-btn variant="text" @click="showWorkerSelectDialog = false">{{ t('common.cancel') }}</v-btn>
-                    <v-btn color="success" :disabled="selectedWorkerIds.length === 0" @click="confirmStartTaskGroup">
-                        {{ t('taskGroup.startAll') }}
                     </v-btn>
                 </v-card-actions>
             </v-card>

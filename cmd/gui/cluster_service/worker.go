@@ -113,27 +113,42 @@ func (s *ClusterService) AddWorker(document string) error {
 // same JSON document shape as AddWorker.
 func (s *ClusterService) UpdateWorker(document string) error {
 	var input struct {
-		ID            string `json:"id"`
-		Name          string `json:"name"`
-		Address       string `json:"address"`
-		CACert        string `json:"caCert"`
-		ClientCert    string `json:"clientCert"`
-		ClientKey     string `json:"clientKey"`
-		TLSServerName string `json:"tlsServerName"`
+		ID            string   `json:"id"`
+		Name          string   `json:"name"`
+		Address       string   `json:"address"`
+		CACert        string   `json:"caCert"`
+		ClientCert    string   `json:"clientCert"`
+		ClientKey     string   `json:"clientKey"`
+		TLSServerName string   `json:"tlsServerName"`
+		Tags          []string `json:"tags"`
+		TagsOnly      bool     `json:"tagsOnly"`
 	}
 	if err := json.Unmarshal([]byte(document), &input); err != nil {
 		return err
 	}
-	if input.ID == "" || input.Address == "" {
-		return fmt.Errorf("id and address are required")
-	}
-	if input.ID == "local" {
-		return fmt.Errorf("the automatically managed local worker cannot be edited")
+	if input.ID == "" {
+		return fmt.Errorf("id is required")
 	}
 	ctx := context.Background()
 	existing, existingErr := s.repository.Worker(ctx, input.ID)
 	if existingErr != nil && !errors.Is(existingErr, sql.ErrNoRows) {
 		return existingErr
+	}
+	if input.TagsOnly {
+		if existingErr != nil {
+			return fmt.Errorf("worker %s not found: %w", input.ID, existingErr)
+		}
+		existing.Tags = normalizeWorkerTags(input.Tags, existing.Type)
+		if err := s.repository.PutWorker(ctx, existing); err != nil {
+			return err
+		}
+		return s.refreshResources(ctx)
+	}
+	if input.Address == "" {
+		return fmt.Errorf("address is required")
+	}
+	if input.ID == "local" {
+		return fmt.Errorf("the automatically managed local worker cannot be edited")
 	}
 	// Block if the worker is executing an active attempt.
 	for _, attempt := range s.dispatcher.Attempts() {

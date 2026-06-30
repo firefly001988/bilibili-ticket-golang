@@ -403,7 +403,6 @@ func (s *ClusterService) Start(parent context.Context) error {
 				if err := s.refreshResources(ctx); err != nil {
 					log.Printf("[cluster] reconcile: refreshResources: %v", err)
 				}
-				s.autoStartReadyTaskGroups(ctx)
 				if err := s.dispatcher.Reconcile(ctx); err != nil {
 					log.Printf("[cluster] reconcile: Reconcile error: %v", err)
 				}

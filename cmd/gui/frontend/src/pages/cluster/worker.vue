@@ -39,6 +39,7 @@ interface WorkerSummary {
     name: string
     address: string
     type: string
+    tags?: string[]
     enabled: boolean
     healthy: boolean
     versionBlocked?: boolean
@@ -106,6 +107,12 @@ const showEditDialog = ref(false)
 const editTarget = ref<WorkerSummary | null>(null)
 const editAddress = ref('')
 const saving = ref(false)
+
+// Tag dialog
+const showTagDialog = ref(false)
+const tagTarget = ref<WorkerSummary | null>(null)
+const tagDraft = ref<string[]>([])
+const savingTags = ref(false)
 
 // Delete dialog
 const showDeleteDialog = ref(false)
@@ -513,6 +520,14 @@ const isReachable = (w: WorkerSummary) => w.healthy || w.versionBlocked === true
 const canDeleteWorker = (w: WorkerSummary) => !isPrimaryLocal(w)
 const canBatchDisconnectWorker = (w: WorkerSummary) => !isLocalWorker(w) && w.healthy
 const canBatchReconnectWorker = (w: WorkerSummary) => !isLocalWorker(w) && !w.healthy && !isVersionBlocked(w)
+const systemWorkerTags = new Set(['local', 'remote'])
+const knownUserTags = computed(() => {
+    const tags = new Set<string>()
+    for (const worker of workers.value) {
+        for (const tag of userWorkerTags(worker)) tags.add(tag)
+    }
+    return Array.from(tags).sort()
+})
 
 const selectedWorkers = computed(() => workers.value.filter(w => selectedWorkerIds.value.has(w.id)))
 const batchDisconnectTargets = computed(() => selectedWorkers.value.filter(canBatchDisconnectWorker))
@@ -548,6 +563,40 @@ function toggleAllWorkers(value?: boolean) {
 
 function clearWorkerSelection() {
     selectedWorkerIds.value = new Set()
+}
+
+function systemTagForWorker(w: WorkerSummary) {
+    return w.type || 'remote'
+}
+
+function userWorkerTags(w: WorkerSummary) {
+    return (w.tags || []).filter(tag => tag && !systemWorkerTags.has(tag))
+}
+
+function openTagEditor(w: WorkerSummary) {
+    tagTarget.value = w
+    tagDraft.value = userWorkerTags(w)
+    showTagDialog.value = true
+}
+
+async function saveTags() {
+    if (!tagTarget.value) return
+    savingTags.value = true
+    try {
+        await UpdateWorker(JSON.stringify({
+            id: tagTarget.value.id,
+            tagsOnly: true,
+            tags: tagDraft.value.map(tag => tag.trim()).filter(Boolean),
+        }))
+        showTagDialog.value = false
+        tagTarget.value = null
+        tagDraft.value = []
+        await load()
+        messages.add({ text: t('worker.tagsSaved'), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('worker.tagsSaveFailed', { error: String(e) }), color: 'error' })
+    }
+    savingTags.value = false
 }
 
 // ── Force Reconnect (version mismatch bypass) ─────────────────
@@ -889,11 +938,15 @@ async function cancelBatchDeploy() {
                                 }}</span>
                                 <v-chip v-if="isLocalWorker(w)" size="x-small" color="info" variant="tonal"
                                     class="ml-1 flex-shrink-0">
-                                    {{ t('worker.localLabel') }}
+                                    {{ systemTagForWorker(w) }}
                                 </v-chip>
                                 <v-chip v-else size="x-small" color="warning" variant="tonal"
                                     class="ml-1 flex-shrink-0">
-                                    {{ t('worker.remoteLabel') }}
+                                    {{ systemTagForWorker(w) }}
+                                </v-chip>
+                                <v-chip v-for="tag in userWorkerTags(w)" :key="tag" size="x-small" variant="tonal"
+                                    class="ml-1 flex-shrink-0">
+                                    {{ tag }}
                                 </v-chip>
                             </div>
                         </td>
@@ -970,6 +1023,8 @@ async function cancelBatchDeploy() {
                                     <v-chip size="x-small" color="info" variant="tonal" class="mr-1">
                                         {{ t('worker.primaryLocal') }}
                                     </v-chip>
+                                    <v-btn icon="mdi-tag-outline" size="small" variant="text" color="primary"
+                                        :title="t('worker.editTags')" @click="openTagEditor(w)" />
                                 </template>
                                 <!-- Other local workers: start/stop + delete -->
                                 <template v-else-if="isLocalWorker(w)">
@@ -981,6 +1036,8 @@ async function cancelBatchDeploy() {
                                         @click="toggleLocalWorker(w)" />
                                     <v-btn icon="mdi-delete" size="small" variant="text" color="error"
                                         @click="promptDelete(w)" />
+                                    <v-btn icon="mdi-tag-outline" size="small" variant="text" color="primary"
+                                        :title="t('worker.editTags')" @click="openTagEditor(w)" />
                                 </template>
                                 <!-- Remote workers -->
                                 <template v-else>
@@ -994,6 +1051,8 @@ async function cancelBatchDeploy() {
                                         @click="doReconnect(w)" />
                                     <v-btn icon="mdi-pencil" size="small" variant="text" color="primary"
                                         :title="t('worker.edit')" @click="openEdit(w)" />
+                                    <v-btn icon="mdi-tag-outline" size="small" variant="text" color="primary"
+                                        :title="t('worker.editTags')" @click="openTagEditor(w)" />
                                     <v-btn icon="mdi-delete" size="small" variant="text" color="error"
                                         @click="promptDelete(w)" />
                                 </template>
@@ -1018,6 +1077,18 @@ async function cancelBatchDeploy() {
                                     <div class="text-caption text-medium-emphasis">类型</div>
                                     <div class="text-body-2">{{ isLocalWorker(w) ? t('worker.localLabel') :
                                         t('worker.remoteLabel') }}</div>
+                                </v-col>
+                                <v-col cols="12" md="6">
+                                    <div class="text-caption text-medium-emphasis">{{ t('worker.tags') }}</div>
+                                    <div class="d-flex flex-wrap mt-1" style="gap:4px">
+                                        <v-chip size="x-small" color="info" variant="tonal">{{ systemTagForWorker(w)
+                                        }}</v-chip>
+                                        <v-chip v-for="tag in userWorkerTags(w)" :key="tag" size="x-small"
+                                            variant="tonal">{{ tag }}</v-chip>
+                                        <span v-if="userWorkerTags(w).length === 0"
+                                            class="text-caption text-medium-emphasis">{{ t('worker.noUserTags')
+                                            }}</span>
+                                    </div>
                                 </v-col>
                                 <v-col v-if="isReachable(w) && w.version" cols="6" md="3">
                                     <div class="text-caption text-medium-emphasis">{{ t('worker.colVersion') }}</div>
@@ -1395,6 +1466,30 @@ async function cancelBatchDeploy() {
                     <v-btn color="primary" :loading="saving" :disabled="!editAddress.trim()" @click="saveEdit">
                         {{ t('worker.editSave') }}
                     </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <!-- ═══ Edit Worker Tags Dialog ═══ -->
+        <v-dialog v-model="showTagDialog" max-width="560" persistent>
+            <v-card class="pa-4">
+                <v-card-title>{{ t('worker.tagsTitle') }}</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 text-medium-emphasis mb-3">
+                        {{ t('worker.tagsHint', { name: tagTarget?.name || tagTarget?.id }) }}
+                    </p>
+                    <div class="text-caption text-medium-emphasis mb-1">{{ t('worker.systemTags') }}</div>
+                    <v-chip v-if="tagTarget" size="small" color="info" variant="tonal" class="mb-3">
+                        {{ systemTagForWorker(tagTarget) }}
+                    </v-chip>
+                    <v-combobox v-model="tagDraft" :items="knownUserTags" :label="t('worker.userTags')"
+                        variant="outlined" density="compact" multiple chips closable-chips clearable
+                        :hint="t('worker.userTagsHint')" persistent-hint />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showTagDialog = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="primary" :loading="savingTags" @click="saveTags">{{ t('common.save') }}</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
