@@ -865,23 +865,21 @@ async function cancelBatchDeploy() {
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <h1 style="margin: 0;">{{ t('worker.title') }}</h1>
             <v-spacer />
-            <div style="display:flex;gap:4px;flex-wrap:wrap">
-
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap">
                 <v-btn prepend-icon="mdi-cloud-upload-outline" variant="tonal" color="success" @click="openBatchDeploy">
                     {{ t('worker.batchDeploy') }}
                 </v-btn>
-                <v-btn prepend-icon="mdi-import" variant="tonal" class="ml-2" @click="showImportDialog = true">
+                <v-btn prepend-icon="mdi-import" variant="tonal" @click="showImportDialog = true">
                     {{ t('worker.importWorker') }}
                 </v-btn>
-                <v-btn prepend-icon="mdi-cog-outline" variant="tonal" color="info" class="ml-2"
-                    @click="openGenerateConfig">
+                <v-btn prepend-icon="mdi-cog-outline" variant="tonal" color="info" @click="openGenerateConfig">
                     {{ t('worker.generateConfig') }}
                 </v-btn>
-                <v-btn prepend-icon="mdi-plus-circle-outline" variant="tonal" color="primary" class="ml-2"
+                <v-btn prepend-icon="mdi-plus-circle-outline" variant="tonal" color="primary"
                     @click="showAddLocalDialog = true">
                     {{ t('worker.addLocalWorker') }}
                 </v-btn>
-                <v-btn prepend-icon="mdi-refresh" variant="tonal" :loading="loading" class="ml-2" @click="load">
+                <v-btn prepend-icon="mdi-refresh" variant="tonal" :loading="loading" @click="load">
                     {{ t('common.refresh') }}
                 </v-btn>
             </div>
@@ -1108,9 +1106,11 @@ async function cancelBatchDeploy() {
                                         <v-chip size="x-small" color="info" variant="tonal">{{ systemTagForWorker(w)
                                         }}</v-chip>
                                         <v-chip v-for="tag in userWorkerTags(w)" :key="tag" size="x-small"
-                                            variant="tonal">{{ tag }}</v-chip>
+                                            variant="tonal">{{ tag
+                                            }}</v-chip>
                                         <span v-if="userWorkerTags(w).length === 0"
-                                            class="text-caption text-medium-emphasis">{{ t('worker.noUserTags')
+                                            class="text-caption text-medium-emphasis">{{
+                                                t('worker.noUserTags')
                                             }}</span>
                                     </div>
                                 </v-col>
@@ -1231,65 +1231,6 @@ async function cancelBatchDeploy() {
                             {{ t('worker.deployAddTarget') }}
                         </v-btn>
                     </div>
-                    <!--
-                    <v-table density="compact" class="mb-3">
-                        <thead>
-                            <tr>
-                                <th>{{ t('worker.deployHost') }}</th>
-                                <th style="width:90px">{{ t('worker.deploySSHPort') }}</th>
-                                <th>{{ t('worker.deployUsername') }}</th>
-                                <th style="width:130px">{{ t('worker.deployAuthType') }}</th>
-                                <th style="min-width:260px">{{ t('worker.deployCredential') }}</th>
-                                <th style="width:110px">{{ t('worker.deployWorkerPort') }}</th>
-                                <th>{{ t('worker.colName') }}</th>
-                                <th>{{ t('worker.colId') }}</th>
-                                <th style="width:48px"></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="(target, index) in deployTargets" :key="index">
-                                <td><v-text-field v-model="target.host" density="compact" hide-details
-                                        placeholder="1.2.3.4" />
-                                </td>
-                                <td><v-text-field v-model.number="target.sshPort" type="number" density="compact"
-                                        hide-details class="no-spin" /></td>
-                                <td><v-text-field v-model="target.username" density="compact" hide-details /></td>
-                                <td>
-                                    <v-select v-model="target.authType" density="compact" hide-details
-                                        :items="[{ title: t('worker.deployAuthPassword'), value: 'password' }, { title: t('worker.deployAuthKey'), value: 'key' }]" />
-                                </td>
-                                <td>
-                                    <template v-if="target.authType === 'key'">
-                                        <v-text-field v-model="target.privateKeyPath" density="compact" hide-details
-                                            :placeholder="t('worker.deployPrivateKeyPath')" class="mb-1">
-                                            <template #append>
-                                                <v-btn variant="tonal" size="x-small"
-                                                    @click="chooseSSHPrivateKey(index)">
-                                                    {{ t('worker.deployBrowse') }}
-                                                </v-btn>
-                                            </template>
-                                        </v-text-field>
-                                        <v-text-field v-model="target.privateKeyPassphrase" type="password"
-                                            density="compact" hide-details
-                                            :placeholder="t('worker.deployPrivateKeyPassphrase')" />
-                                    </template>
-                                    <v-text-field v-else v-model="target.password" type="password" density="compact"
-                                        hide-details :placeholder="t('worker.deployPassword')" />
-                                </td>
-                                <td><v-text-field v-model.number="target.workerPort" type="number" density="compact"
-                                        hide-details class="no-spin" /></td>
-                                <td><v-text-field v-model="target.name" density="compact" hide-details
-                                        :placeholder="t('worker.deployAuto')" /></td>
-                                <td><v-text-field v-model="target.workerId" density="compact" hide-details
-                                        :placeholder="t('worker.deployAuto')" /></td>
-                                <td>
-                                    <v-btn icon="mdi-delete" size="small" variant="text" color="error"
-                                        @click="removeDeployTarget(index)" />
-                                </td>
-                            </tr>
-                        </tbody>
-                    </v-table>
-                    -->
                     <v-divider class="mb-2 mt-1" />
                     <!-- deploy targets -->
                     <div>
