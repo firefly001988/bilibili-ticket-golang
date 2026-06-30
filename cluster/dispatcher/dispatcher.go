@@ -267,6 +267,9 @@ func (d *Dispatcher) DisarmMacro(macroID string) {
 			plan.Intent.Armed = false
 			plan.Intent.Terminal = true
 			plan.Intent.FailureReason = domain.FailureStopped
+			if d.repository != nil {
+				_ = d.repository.PutIntent(context.Background(), plan.Intent)
+			}
 		}
 		// Clear attempts for this intent
 		for attemptID, current := range d.attempts {
@@ -281,6 +284,9 @@ func (d *Dispatcher) DisarmMacro(macroID string) {
 						Reason:    domain.FailureStopped,
 						Message:   "macro disarmed by employer",
 					}
+				}
+				if d.repository != nil {
+					_ = d.repository.PutAttempt(context.Background(), current.value)
 				}
 				delete(d.accountBusy, current.value.AccountID)
 				delete(d.workerBusy, current.value.WorkerID)

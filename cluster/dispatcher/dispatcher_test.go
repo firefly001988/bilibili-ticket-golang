@@ -58,10 +58,14 @@ func (c *client) Stop(ctx context.Context, _ domain.WorkerNode, id string) error
 }
 
 type repo struct {
-	intents []domain.LogicalOrderIntent
+	intents  []domain.LogicalOrderIntent
+	attempts []domain.ExecutionAttempt
 }
 
-func (r *repo) PutAttempt(context.Context, domain.ExecutionAttempt) error { return nil }
+func (r *repo) PutAttempt(_ context.Context, attempt domain.ExecutionAttempt) error {
+	r.attempts = append(r.attempts, attempt)
+	return nil
+}
 func (r *repo) PutIntent(_ context.Context, intent domain.LogicalOrderIntent) error {
 	r.intents = append(r.intents, intent)
 	return nil
@@ -156,6 +160,41 @@ func TestMacroWorkerPrimaryAndStandbyScope(t *testing.T) {
 	}
 	if c.submitWorkers[0] != "w2" || c.submitWorkers[1] != "w4" {
 		t.Fatalf("worker scope/order mismatch: %#v", c.submitWorkers)
+	}
+}
+
+func TestDisarmMacroPersistsStoppedState(t *testing.T) {
+	c := &client{states: make(map[string]WorkerStatus)}
+	r := &repo{}
+	d := New(c, r, nil)
+	accounts, workers := resourcesN(1)
+	d.SetResources(accounts, workers)
+	d.Add(IntentPlan{Macro: dispatchMacro("m", 0), Intent: dispatchIntent("i", "m", 1, "buyer")})
+	if err := d.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.submitted) != 1 {
+		t.Fatalf("expected one attempt, got %#v", c.submitted)
+	}
+
+	d.DisarmMacro("m")
+
+	if len(d.Plans()) != 0 {
+		t.Fatalf("plans were not removed after disarm: %#v", d.Plans())
+	}
+	if len(r.intents) == 0 {
+		t.Fatal("disarm did not persist stopped intent")
+	}
+	intent := r.intents[len(r.intents)-1]
+	if intent.Armed || !intent.Terminal || intent.FailureReason != domain.FailureStopped {
+		t.Fatalf("unexpected persisted intent state: %#v", intent)
+	}
+	if len(r.attempts) == 0 {
+		t.Fatal("disarm did not persist stopped attempt")
+	}
+	attempt := r.attempts[len(r.attempts)-1]
+	if attempt.State != domain.AttemptStopped || attempt.Result.Reason != domain.FailureStopped {
+		t.Fatalf("unexpected persisted attempt state: %#v", attempt)
 	}
 }
 

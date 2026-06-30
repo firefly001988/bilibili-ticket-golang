@@ -174,8 +174,8 @@ func TestClusterServicePlansTaskGroupAndRequiresHealthyWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(intents) != 1 || intents[0].MacroTaskID != macro.ID || !intents[0].Armed {
-		t.Fatalf("task group start did not create an armed intent: %#v", intents)
+	if len(intents) != 1 || intents[0].MacroTaskID != macro.ID || intents[0].Armed || !intents[0].Terminal || intents[0].FailureReason != domain.FailureStopped {
+		t.Fatalf("task group start rollback did not persist a stopped intent: %#v", intents)
 	}
 }
 
