@@ -150,7 +150,12 @@ func (s *ClusterService) pickWorkerForAccount(accountID string) (domain.WorkerNo
 		busy[wid] = true
 	}
 	allowed := make(map[string]bool)
-	for _, id := range s.GetBuyerManagerWorkerIDs() {
+	// Read buyer-manager worker IDs directly from the config field to avoid
+	// a self-deadlock: pickWorkerForAccount already holds s.mu.Lock(), and
+	// GetBuyerManagerWorkerIDs() would attempt s.mu.RLock() on the same
+	// RWMutex.  Go's RWMutex forbids a write-locked goroutine from acquiring
+	// a read lock.
+	for _, id := range normalizeBuyerManagerWorkerIDs(s.globalCfg.BuyerManagerWorkerIDs) {
 		allowed[id] = true
 	}
 
@@ -195,7 +200,7 @@ func (s *ClusterService) pickWorkerForAccount(accountID string) (domain.WorkerNo
 			s.accountBindings[accountID] = localNode.ID
 			return *localNode, nil
 		}
-		return domain.WorkerNode{}, fmt.Errorf("no healthy workers available")
+		return domain.WorkerNode{}, ErrNoWorkerAvailable
 	}
 
 	// Pick any free remote worker, preferring the one with the fewest
