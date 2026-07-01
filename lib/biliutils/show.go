@@ -20,6 +20,7 @@ func (c *BiliClient) GetProjectInformationNew(projectID string) (*r.ProjectInfor
 	resp, err := c.client.R().SetBodyJsonMarshal(map[string]any{
 		"itemsId":             utils.ParseInt64OrDefault(projectID, 0),
 		"itemsDetailPageType": 3,
+		"from":                "newhomepage",
 	}).Post("https://mall.bilibili.com/mall-search-items/items_detail/info")
 	if err != nil {
 		return nil, err
@@ -602,4 +603,27 @@ func (c *BiliClient) DeleteTargetBuyer(buyerID int64) error {
 		return fmt.Errorf("delete buyer failed: %s", apiResp.Data.CodeMsg)
 	}
 	return nil
+}
+
+func (c *BiliClient) StockCheck(ctx context.Context, projectID int64, screenID int64, skuID int64) (error, api.StockCheckStruct) {
+	select {
+	case <-ctx.Done():
+		return ctx.Err(), api.StockCheckStruct{}
+	default:
+	}
+	form := map[string]any{
+		"project_id": strconv.FormatInt(projectID, 10),
+		"screen_id":  screenID,
+		"sku_id":     skuID,
+	}
+	resp, err := c.client.R().SetBodyJsonMarshal(form).Post("https://show.bilibili.com/api/ticket/stock/check")
+	if err != nil {
+		return err, api.StockCheckStruct{}
+	}
+	var apiResp api.ShowApiDataRoot[api.StockCheckStruct]
+	err = resp.Unmarshal(&apiResp)
+	if err != nil {
+		return err, api.StockCheckStruct{}
+	}
+	return nil, apiResp.Data
 }

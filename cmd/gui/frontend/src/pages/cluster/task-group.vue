@@ -14,7 +14,7 @@ const START_REFLOW_NOW_TOKEN = '__cluster_reflow_now__'
 interface TaskGroupSummary { id: string; name: string; accountIds?: string[]; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; paymentTimeoutMinutes?: number; waveDurationMinutes?: number; maxWaves?: number; createdAt?: string }
 interface AccountBrief { id: string; name: string; enabled: boolean; vipStatus?: number; tags?: string[] }
 interface WorkerBrief { id: string; name: string; address: string; type: string; healthy: boolean; tags?: string[] }
-interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; phase?: string; purchaseGroups?: any[] }
+interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; reflowStockCheck?: boolean; phase?: string; purchaseGroups?: any[] }
 interface AttemptBrief { id: string; intentId: string; accountId: string; workerId: string; state: string; orderId?: string }
 interface IntentBrief { id: string; macroTaskId: string; purchaseGroupId?: string; phase: string; weight: number; priority: number; buyerCount: number; succeeded: boolean; terminal: boolean; armed: boolean; activeCount: number; deficit: number; failureReason?: string }
 
@@ -39,11 +39,14 @@ function openDatetimePicker() {
     ; (customStartRef.value?.$el?.querySelector('input') as HTMLInputElement)?.showPicker()
 }
 const deletingMacro = ref<Record<string, boolean>>({})
+const savingMacroReflowCheck = ref<Record<string, boolean>>({})
+const reflowCheckDraft = ref<Record<string, boolean>>({})
 const filterName = ref('')
 const filteredTickets = computed(() => { const kw = filterName.value.trim().toLowerCase(); if (!kw) return tickets.value; return tickets.value.filter((t: any) => (t.name || '').toLowerCase().includes(kw) || (t.desc || '').toLowerCase().includes(kw) || String(t.skuId).includes(kw)) })
 
 // Add macro confirmation dialog
 const showAddConfirmDialog = ref(false)
+const addingMacroReflowStockCheck = ref(false)
 const addingMacroInfo = ref<{ projectName: string; eventDay: string; screenName: string; skuName: string; price: number; buyLimit: number; saleStart: string; saleEnd: string; isRealName: boolean } | null>(null)
 
 const eventDayHumanized = computed(() => {
@@ -211,7 +214,7 @@ watch(selectedTicket, (t) => {
 
 async function lookupProject() { const pid = lookupProjectId.value.trim(); if (!pid) { messages.add({ text: t('taskGroup.projectIdRequired'), color: 'warning' }); return } lookupLoading.value = true; projectInfo.value = null; tickets.value = []; selectedScreenId.value = 0; selectedSkuId.value = 0; try { const [info, tks] = await Promise.all([GetProjectInformationNew(pid), GetTicketSkuIDsByProjectIDNew(pid)]); if (!info) messages.add({ text: t('taskGroup.projectNotFound'), color: 'warning' }); else { projectInfo.value = info; tickets.value = tks || [] } } catch (e: any) { messages.add({ text: t('taskGroup.lookupFailed', { error: String(e) }), color: 'error' }) } lookupLoading.value = false }
 
-async function addMacro() { if (!projectInfo.value || !selectedScreenId.value || !selectedSkuId.value || !group.value) return; const ticket = selectedTicket.value; addingMacroInfo.value = { projectName: projectInfo.value.ProjectName || '', eventDay: ticket?.eventTime || projectInfo.value.StartTime || '', screenName: ticket?.name || '', skuName: ticket?.desc || '', price: ((ticket?.price || 0) / 100), buyLimit: ticket?.buyLimit || 1, saleStart: customStartAt.value || ticket?.saleStat?.start || '', saleEnd: ticket?.saleStat?.end || '', isRealName: projectInfo.value.IsForceRealName || false }; showAddConfirmDialog.value = true }
+async function addMacro() { if (!projectInfo.value || !selectedScreenId.value || !selectedSkuId.value || !group.value) return; const ticket = selectedTicket.value; addingMacroReflowStockCheck.value = false; addingMacroInfo.value = { projectName: projectInfo.value.ProjectName || '', eventDay: ticket?.eventTime || projectInfo.value.StartTime || '', screenName: ticket?.name || '', skuName: ticket?.desc || '', price: ((ticket?.price || 0) / 100), buyLimit: ticket?.buyLimit || 1, saleStart: customStartAt.value || ticket?.saleStat?.start || '', saleEnd: ticket?.saleStat?.end || '', isRealName: projectInfo.value.IsForceRealName || false }; showAddConfirmDialog.value = true }
 
 /** Format a Date as YYYY-MM-DDTHH:mm:ss for &lt;input type="datetime-local" step="1"&gt;. */
 function formatDatetimeLocal(d: Date): string {
@@ -227,7 +230,7 @@ async function confirmAddMacro() {
     const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value)
     // Use custom start time if provided, otherwise fall back to the project sale start.
     const startAt = customStartAt.value ? new Date(customStartAt.value).toISOString() : (ticket?.saleStat?.start || '')
-    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: false, orderCapacity: ticket?.buyLimit || 1, startAt, deadline: ticket?.saleStat?.end || '' })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; customStartAt.value = ''; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
+    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: false, reflowStockCheck: addingMacroReflowStockCheck.value, orderCapacity: ticket?.buyLimit || 1, startAt, deadline: ticket?.saleStat?.end || '' })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; customStartAt.value = ''; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
     addingMacro.value = false
     addingMacroInfo.value = null
 }
@@ -235,10 +238,24 @@ async function confirmAddMacro() {
 function cancelAddMacro() {
     showAddConfirmDialog.value = false
     addingMacroInfo.value = null
+    addingMacroReflowStockCheck.value = false
     customStartAt.value = ''
 }
 
 async function removeMacro(m: MacroSummary) { deletingMacro.value[m.id] = true; try { await DeleteMacro(m.id); await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroDeleted'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroDeleteFailed', { error: String(e) }), color: 'error' }) } deletingMacro.value[m.id] = false }
+
+async function saveMacroReflowCheck(m: MacroSummary) {
+    savingMacroReflowCheck.value[m.id] = true
+    const newVal = !!reflowCheckDraft.value[m.id]
+    try {
+        await SaveMacro(JSON.stringify({ ...m, reflowStockCheck: newVal }))
+        await loadAll(group.value!.id, true)
+        messages.add({ text: t('taskGroup.reflowStockCheckSaved'), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('taskGroup.reflowStockCheckFailed', { error: String(e) }), color: 'error' })
+    }
+    savingMacroReflowCheck.value[m.id] = false
+}
 
 async function savePurchaseGroup(m: MacroSummary) {
     if (selectedPgBuyerIds.value.length === 0) { messages.add({ text: t('taskGroup.pgSelectBuyer'), color: 'warning' }); return }
@@ -594,7 +611,7 @@ const allPurchaseGroups = computed(() => {
                                 :hint="t('taskGroup.groupStandbyWorkersHint')" :disabled="editingDisabled" />
                         </v-col>
                     </v-row>
-                    <v-row dense class="mt-2">
+                    <v-row dense class="mt-4">
                         <v-col cols="12" md="4">
                             <v-text-field v-model.number="groupPaymentTimeoutMinutes"
                                 :label="t('taskGroup.paymentTimeoutMinutes')" type="number" min="1" variant="outlined"
@@ -636,7 +653,7 @@ const allPurchaseGroups = computed(() => {
                         <span class="text-subtitle-2">{{ t('taskGroup.dispatch') }}</span>
                         <v-chip v-if="groupStats.total > 0" size="small" variant="tonal" color="grey">{{
                             t('taskGroup.intents', { count: groupStats.total })
-                        }}</v-chip>
+                            }}</v-chip>
                         <v-chip v-if="groupStats.deficit > 0" size="small" variant="tonal" color="warning">{{
                             t('taskGroup.queued', { count: groupStats.deficit }) }}</v-chip>
                         <v-chip v-if="groupStats.running > 0" size="small" color="info" variant="tonal">{{
@@ -681,7 +698,7 @@ const allPurchaseGroups = computed(() => {
             <v-card v-if="allPurchaseGroups.length > 0" class="mb-4" elevation="2">
                 <v-card-title class="text-subtitle-1 py-2 px-4">{{ t('taskGroup.purchaseGroups') }} ({{
                     allPurchaseGroups.length
-                    }})</v-card-title>
+                }})</v-card-title>
                 <v-card-text class="py-1 px-4">
                     <div v-for="row in allPurchaseGroups" :key="row.pg.id"
                         style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0">
@@ -809,7 +826,7 @@ const allPurchaseGroups = computed(() => {
             <!-- Macro list -->
             <v-card elevation="2">
                 <v-card-title class="text-subtitle-1">{{ t('taskGroup.macroList') }} ({{ macros.length
-                    }})</v-card-title>
+                }})</v-card-title>
                 <template v-if="macros.length > 0">
                     <v-expansion-panels v-model="expandedMacro" variant="accordion"
                         @update:model-value="onMacroPanelChange">
@@ -860,7 +877,7 @@ const allPurchaseGroups = computed(() => {
                                 <v-card v-if="dispatchStats(m).total > 0" variant="outlined" class="mb-3 pa-2">
                                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                                         <span class="text-caption text-medium-emphasis">{{ t('taskGroup.dispatchStatus')
-                                            }}:</span>
+                                        }}:</span>
                                         <v-chip v-if="dispatchStats(m).deficit > 0" size="x-small" variant="tonal"
                                             color="warning">{{
                                                 t('taskGroup.queued', { count: dispatchStats(m).deficit }) }}</v-chip>
@@ -902,10 +919,22 @@ const allPurchaseGroups = computed(() => {
                                         </v-list-item>
                                     </v-list>
                                 </v-card>
+                                <div class="mb-3 d-flex align-center" style="gap:8px">
+                                    <v-checkbox
+                                        :model-value="reflowCheckDraft[m.id] !== undefined ? !!reflowCheckDraft[m.id] : !!m.reflowStockCheck"
+                                        :label="t('taskGroup.reflowStockCheck')"
+                                        :hint="t('taskGroup.reflowStockCheckHint')" density="compact" hide-details
+                                        persistent-hint :disabled="editingDisabled"
+                                        @update:model-value="reflowCheckDraft[m.id] = $event" />
+                                    <v-btn size="small" variant="tonal" color="primary" :disabled="editingDisabled"
+                                        :loading="savingMacroReflowCheck[m.id]" @click="saveMacroReflowCheck(m)">
+                                        {{ t('common.save') }}
+                                    </v-btn>
+                                </div>
                                 <div class="mb-3">
                                     <v-label class="text-caption mb-1">{{ t('taskGroup.purchaseGroups') }} ({{
                                         (m.purchaseGroups || []).length
-                                        }})</v-label>
+                                    }})</v-label>
                                     <v-card v-if="(m.purchaseGroups || []).length > 0" elevation="2" class="mb-2">
                                         <v-list density="compact" class="py-0">
                                             <template v-for="(pg, pgIdx) in (m.purchaseGroups || [])" :key="pg.id">
@@ -979,10 +1008,10 @@ const allPurchaseGroups = computed(() => {
                                                     :disabled="editingDisabled" />
                                             </v-col>
                                             <v-col cols="6">
-                                                <v-text-field v-model.number="pgPriority" :label="t('taskGroup.pgPriority')"
-                                                    type="number" variant="outlined" density="compact" hide-details
-                                                    :hint="t('taskGroup.pgPriorityHint')" persistent-hint
-                                                    :disabled="editingDisabled" />
+                                                <v-text-field v-model.number="pgPriority"
+                                                    :label="t('taskGroup.pgPriority')" type="number" variant="outlined"
+                                                    density="compact" hide-details :hint="t('taskGroup.pgPriorityHint')"
+                                                    persistent-hint :disabled="editingDisabled" />
                                             </v-col>
                                         </v-row>
                                         <p v-if="allBuyers.length === 0" class="text-caption text-medium-emphasis mb-2">
@@ -1003,11 +1032,11 @@ const allPurchaseGroups = computed(() => {
                     </v-expansion-panels>
                 </template>
                 <v-card-text v-else class="text-medium-emphasis text-center py-6">{{ t('taskGroup.emptyMacro')
-                    }}</v-card-text>
+                }}</v-card-text>
             </v-card>
         </div>
         <v-card v-else class="mt-4 pa-6 text-center" variant="outlined"><v-card-text>{{ t('taskGroup.notFound')
-                }}</v-card-text></v-card>
+        }}</v-card-text></v-card>
 
         <!-- ═══ Add Macro Confirmation Dialog ═══ -->
         <v-dialog v-model="showAddConfirmDialog" max-width="460" persistent>
@@ -1051,9 +1080,12 @@ const allPurchaseGroups = computed(() => {
                         <div class="info-row" v-if="addingMacroInfo?.isRealName">
                             <span class="info-label"></span>
                             <v-chip color="warning" size="x-small" variant="tonal">{{ t('taskGroup.realName')
-                                }}</v-chip>
+                            }}</v-chip>
                         </div>
                     </v-card>
+                    <v-checkbox v-model="addingMacroReflowStockCheck" :label="t('taskGroup.reflowStockCheck')"
+                        density="compact" class="mt-2 mb-1" :hint="t('taskGroup.reflowStockCheckHint')"
+                        persistent-hint />
                     <p class="text-caption text-medium-emphasis">
                         {{ t('taskGroup.addMacroConfirmNote') }}
                     </p>

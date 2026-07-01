@@ -179,3 +179,9 @@ type DeleteBuyerStruct struct {
 	CodeType int    `json:"codeType"`
 	CodeMsg  string `json:"codeMsg"`
 }
+
+type StockCheckStruct struct {
+	HasStock      bool  `json:"hasStock"`
+	StockStatus   int   `json:"stockStatus"`
+	UnpaidOrderId int64 `json:"unpaidOrderId,omitempty"`
+}

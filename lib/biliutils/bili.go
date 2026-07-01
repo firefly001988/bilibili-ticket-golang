@@ -160,12 +160,14 @@ func newBiliClient(jar http.CookieJar, profile *DeviceProfile) (*BiliClient, err
 					&http.Cookie{Name: "buvid", Value: biliClient.buvid},
 					&http.Cookie{Name: "buvid_fp", Value: biliClient.fingerprint.Buvidfp},
 					&http.Cookie{Name: "fp_local", Value: biliClient.fingerprint.BuvidLocal},
-					&http.Cookie{Name: "kfcFrom", Value: "mall_home_searchhis"},
-					&http.Cookie{Name: "from", Value: "mall_search_discovery"},
+					&http.Cookie{Name: "kfcFrom", Value: "newhomepage"},
+					&http.Cookie{Name: "from", Value: "newhomepage"},
 					&http.Cookie{Name: "kfcSource", Value: "bilibiliapp"},
 					&http.Cookie{Name: "mSource", Value: "bilibiliapp"},
 					&http.Cookie{Name: "feSign", Value: getFeSign(ua, biliClient.fingerprint.Canvasfp, biliClient.fingerprint.Webglfp)},
 					&http.Cookie{Name: "screenInfo", Value: screenInfo},
+					&http.Cookie{Name: "deviceFingerprint", Value: getFeSign(ua, biliClient.fingerprint.Canvasfp, biliClient.fingerprint.Webglfp)},
+					&http.Cookie{Name: "browser_resolution", Value: fmt.Sprintf("%d-%d", 1699, 834)},
 				)
 			} else {
 				// BiliDroid UA for other endpoints

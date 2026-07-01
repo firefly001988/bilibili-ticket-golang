@@ -237,6 +237,7 @@ func (c *BiliClient) TryToRefreshNewBiliTicket() (bool, error) {
 		bilibiliURL, _ := url.Parse("https://www.bilibili.com/")
 		c.cookieJar.SetCookies(bilibiliURL, []*http.Cookie{
 			{Name: "bili_ticket", Value: apiResp.Data.Ticket, Path: "/", Domain: "bilibili.com", MaxAge: apiResp.Data.TTL},
+			{Name: "bili_ticket_expire", Value: fmt.Sprintf("%d", currentTS+int64(apiResp.Data.TTL)), Path: "/", Domain: "bilibili.com", MaxAge: apiResp.Data.TTL},
 		})
 	}
 	return true, nil

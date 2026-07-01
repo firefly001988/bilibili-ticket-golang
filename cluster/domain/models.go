@@ -112,6 +112,7 @@ type MacroTask struct {
 	EventDayConfirmed bool           `json:"eventDayConfirmed"`
 	NeedsReview       bool           `json:"needsReview"`
 	SmartMerge        bool           `json:"smartMerge"`
+	ReflowStockCheck  bool           `json:"reflowStockCheck"`
 	OrderCapacity     int            `json:"orderCapacity"`
 	CapacitySource    CapacitySource `json:"capacitySource"`
 	Priority          int            `json:"priority"`
@@ -287,18 +288,19 @@ type ExecutionAttempt struct {
 }
 
 type ExecutionSpec struct {
-	AttemptID    string      `json:"attemptId"`
-	IntentID     string      `json:"intentId"`
-	ProjectID    int64       `json:"projectId"`
-	ScreenID     int64       `json:"screenId"`
-	SKUID        int64       `json:"skuId"`
-	Buyers       []Buyer     `json:"buyers"`
-	StartMode    StartMode   `json:"startMode"`
-	StartAt      time.Time   `json:"startAt,omitempty"`
-	Deadline     time.Time   `json:"deadline"`
-	IntervalMS   int64       `json:"intervalMs"`
-	StartDelayMS int64       `json:"startDelayMs,omitempty"`
-	Credentials  Credentials `json:"credentials"`
+	AttemptID        string      `json:"attemptId"`
+	IntentID         string      `json:"intentId"`
+	ProjectID        int64       `json:"projectId"`
+	ScreenID         int64       `json:"screenId"`
+	SKUID            int64       `json:"skuId"`
+	Buyers           []Buyer     `json:"buyers"`
+	StartMode        StartMode   `json:"startMode"`
+	StartAt          time.Time   `json:"startAt,omitempty"`
+	Deadline         time.Time   `json:"deadline"`
+	IntervalMS       int64       `json:"intervalMs"`
+	StartDelayMS     int64       `json:"startDelayMs,omitempty"`
+	ReflowStockCheck bool        `json:"reflowStockCheck"`
+	Credentials      Credentials `json:"credentials"`
 }
 
 func (s ExecutionSpec) Validate() error {

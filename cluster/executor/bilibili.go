@@ -132,6 +132,24 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 			return out
 		}
 	}
+	// Reflow stock check: skip submit if stock is unavailable.
+	if spec.ReflowStockCheck {
+		stockErr, stock := b.client.StockCheck(ctx, spec.ProjectID, spec.ScreenID, b.sku.SkuID)
+		if stockErr != nil {
+			return Outcome{Code: -1, Message: "stock check failed", Err: stockErr}
+		}
+		// StockStatus: 1 = temporary sold out, 2 = sold out, 3 = has stock
+		if !stock.HasStock && stock.StockStatus != 3 {
+			switch stock.StockStatus {
+			case 1:
+				return Outcome{Code: -1, Message: "temporary sold out"}
+			case 2:
+				return Outcome{Code: -1, Message: "sold out"}
+			default:
+				return Outcome{Code: -1, Message: "no stock available"}
+			}
+		}
+	}
 	// idBind=1: split into separate single-ticket orders, each using the same buyer.
 	if b.confirm.IDBind == 1 && len(b.buyers) > 1 {
 		return b.submitSplitOrders(ctx, spec)
@@ -164,6 +182,25 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 // but each ticket must be its own order.
 func (b *BilibiliBackend) submitSplitOrders(ctx context.Context, spec domain.ExecutionSpec) Outcome {
 	pid := strconv.FormatInt(spec.ProjectID, 10)
+
+	// Reflow stock check: skip split submits if stock is unavailable.
+	if spec.ReflowStockCheck {
+		stockErr, stock := b.client.StockCheck(ctx, spec.ProjectID, spec.ScreenID, b.sku.SkuID)
+		if stockErr != nil {
+			return Outcome{Code: -1, Message: "stock check failed", Err: stockErr}
+		}
+		if !stock.HasStock && stock.StockStatus != 3 {
+			switch stock.StockStatus {
+			case 1:
+				return Outcome{Code: -1, Message: "temporary sold out"}
+			case 2:
+				return Outcome{Code: -1, Message: "sold out"}
+			default:
+				return Outcome{Code: -1, Message: "no stock available"}
+			}
+		}
+	}
+
 	var orderIDs []string
 	for _, buyer := range b.buyers {
 		single := []response.TicketBuyer{buyer}

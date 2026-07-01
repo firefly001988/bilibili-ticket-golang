@@ -1042,7 +1042,21 @@ func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account dom
 	if intervalMS <= 0 {
 		intervalMS = 500
 	}
-	spec := domain.ExecutionSpec{AttemptID: id, IntentID: plan.Intent.ID, ProjectID: plan.Macro.ProjectID, ScreenID: plan.Macro.ScreenID, SKUID: plan.Macro.SKUID, Buyers: buyers, StartMode: mode, StartAt: plan.Macro.StartAt, Deadline: plan.Macro.Deadline, IntervalMS: intervalMS, StartDelayMS: d.startDelayMs, Credentials: account.Credentials}
+	spec := domain.ExecutionSpec{
+		AttemptID:        id,
+		IntentID:         plan.Intent.ID,
+		ProjectID:        plan.Macro.ProjectID,
+		ScreenID:         plan.Macro.ScreenID,
+		SKUID:            plan.Macro.SKUID,
+		Buyers:           buyers,
+		StartMode:        mode,
+		StartAt:          plan.Macro.StartAt,
+		Deadline:         plan.Macro.Deadline,
+		IntervalMS:       intervalMS,
+		StartDelayMS:     d.startDelayMs,
+		ReflowStockCheck: plan.Macro.ReflowStockCheck && plan.Intent.Phase == domain.PhaseReflow,
+		Credentials:      account.Credentials,
+	}
 	now := d.now()
 	value := domain.ExecutionAttempt{ID: id, IntentID: plan.Intent.ID, SpecHash: spec.Hash(), AccountID: account.ID, WorkerID: worker.ID, State: domain.AttemptWaiting, CreatedAt: now, UpdatedAt: now}
 	rpcCtx, cancel := context.WithTimeout(ctx, rpcTimeout)
