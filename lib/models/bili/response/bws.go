@@ -7,8 +7,9 @@ type BWSActivity struct {
 	ReserveBeginTime int64
 	ActBeginTime     int64
 	State            int
-	DescribeInfo     string
-	ReserveDate      string // the date key this activity belongs to (e.g. "20250711")
+
+	DescribeInfo string
+	ReserveDate  string // the date key this activity belongs to (e.g. "20250711")
 }
 
 // BWSTicketInfo represents a user's ticket for a specific date.

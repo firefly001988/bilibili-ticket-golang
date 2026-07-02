@@ -38,6 +38,11 @@ enum FailureReason {
   FAILURE_INTERNAL       = 9;
 }
 
+enum TaskType {
+  TASK_TYPE_TICKET = 0;
+  TASK_TYPE_BWS    = 1;
+}
+
 // =============================================================================
 // Shared types
 // =============================================================================
@@ -82,6 +87,14 @@ message ExecutionSpec {
   int64                     interval_ms    = 10;
   int64                     start_delay_ms = 11;
   Credentials               credentials    = 12;
+  TaskType                  task_type      = 13;
+
+  // BWS (Bilibili World) reservation fields – only used when task_type == BWS
+  int32  bws_activity_id    = 20;
+  string bws_ticket_no      = 21;
+  string bws_activity_title = 22;
+  int64  bws_reserve_time   = 23;
+  string bws_reserve_date   = 24;
 }
 
 message ExecutionResult {
@@ -265,6 +278,68 @@ message DeleteBuyerRequest {
 message DeleteBuyerResponse {}
 
 // =============================================================================
+// BWS (Bilibili World) reservation – sync queries
+// =============================================================================
+
+message CheckBWSBindRequest {
+  Credentials credentials = 1;
+}
+
+message CheckBWSBindResponse {
+  bool  is_bind     = 1;
+  Credentials credentials = 2;
+}
+
+message BWSReservationInfoRequest {
+  Credentials credentials   = 1;
+  string      reserve_dates = 2;  // comma-separated, e.g. "20260711,20260712"
+  int32       reserve_type  = 3;  // 1=activities, 2=goods
+}
+
+// BWSActivity is a single activity returned by the BWS reservation info API.
+message BWSActivity {
+  int32  reserve_id         = 1;
+  string act_title          = 2;
+  int64  reserve_begin_time = 3;
+  int64  act_begin_time     = 4;
+  int32  state              = 5;
+  string describe_info      = 6;
+  string reserve_date       = 7;
+  int32  online_state       = 8;  // BW2026: 0=available, 1=already reserved
+}
+
+// BWSTicketInfo holds the ticket mapping for a given date.
+message BWSTicketInfo {
+  string date        = 1;
+  string ticket      = 2;
+  string screen_name = 3;
+  string sku_name    = 4;
+}
+
+message BWSReservationInfoResponse {
+  repeated BWSActivity   activities    = 1;
+  repeated BWSTicketInfo ticket_infos  = 2;
+  map<int32, bool>    reserved_ids  = 3;
+  Credentials         credentials   = 4;
+}
+
+// BindBWSTicket binds real-name identity to a BWS electronic ticket.
+message BindBWSTicketRequest {
+  Credentials credentials = 1;
+  int32  bid         = 2;  // activity bid, e.g. 202501
+  int32  id_type     = 3;  // 0=身份证 1=护照 2=港澳通行证 3=台湾通行证
+  string personal_id = 4;
+  string ticket_no   = 5;  // last 4 digits
+  string user_name   = 6;
+}
+
+message BindBWSTicketResponse {
+  int32       code        = 1;
+  string      message     = 2;
+  Credentials credentials = 3;
+}
+
+// =============================================================================
 // WorkerService
 // =============================================================================
 
@@ -331,4 +406,17 @@ service WorkerService {
 
   // DeleteBuyer removes a real‑name buyer from a Bilibili account.
   rpc DeleteBuyer(DeleteBuyerRequest) returns (DeleteBuyerResponse);
+
+  // ── BWS (Bilibili World) reservation ─────────────────
+
+  // CheckBWSBind checks whether the account has a BWS electronic ticket
+  // bound to a real‑name identity.
+  rpc CheckBWSBind(CheckBWSBindRequest) returns (CheckBWSBindResponse);
+
+  // GetBWSReservationInfo fetches all BWS activity information for the
+  // given dates.
+  rpc GetBWSReservationInfo(BWSReservationInfoRequest) returns (BWSReservationInfoResponse);
+
+  // BindBWSTicket binds a real‑name identity to an electronic ticket.
+  rpc BindBWSTicket(BindBWSTicketRequest) returns (BindBWSTicketResponse);
 }

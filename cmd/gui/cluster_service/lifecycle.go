@@ -35,7 +35,9 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 		waveCancels:   make(map[string]context.CancelFunc),
 		loginSessions: make(map[string]*accountLoginSession),
 		deployJobs:    make(map[string]*RemoteWorkerDeployJob),
+		bwsMeta:       make(map[string]BWSSubmitInput),
 	}
+	service.loadBWSMetadata()
 	// Wire the worker selection strategy: the provisioner uses the
 	// current known worker set to decide which worker handles each
 	// account.  The closure captures *ClusterService so it can read

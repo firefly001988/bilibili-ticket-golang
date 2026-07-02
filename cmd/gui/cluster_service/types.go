@@ -190,4 +190,5 @@ type ClusterService struct {
 	accountBindings map[string]string   // accountID → workerID (mutual exclusion)
 	deployMu        sync.RWMutex
 	deployJobs      map[string]*RemoteWorkerDeployJob
+	bwsMeta         map[string]BWSSubmitInput // attemptID → BWS submit metadata
 }

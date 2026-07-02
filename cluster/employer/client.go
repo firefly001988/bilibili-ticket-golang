@@ -387,6 +387,65 @@ func (c *WorkerClient) Configure(ctx context.Context, node domain.WorkerNode, re
 	return err
 }
 
+// ── BWS (Bilibili World) reservation ──────────────────────────
+
+// CheckBWSBind checks whether the account has a BWS electronic ticket
+// bound to a real-name identity. Returns the bind status and refreshed
+// credentials.
+func (c *WorkerClient) CheckBWSBind(ctx context.Context, node domain.WorkerNode, creds domain.Credentials) (bool, domain.Credentials, error) {
+	cli, err := c.getClient(node)
+	if err != nil {
+		return false, domain.Credentials{}, err
+	}
+	resp, err := cli.CheckBWSBind(ctx, &pb.CheckBWSBindRequest{
+		Credentials: credentialsToProto(creds),
+	})
+	if err != nil {
+		return false, domain.Credentials{}, err
+	}
+	return resp.IsBind, credentialsFromProto(resp.Credentials), nil
+}
+
+// GetBWSReservationInfo fetches all BWS activity information for the
+// given dates via the worker. Returns activities, ticket info, reserved
+// IDs, and refreshed credentials.
+func (c *WorkerClient) GetBWSReservationInfo(ctx context.Context, node domain.WorkerNode, creds domain.Credentials, reserveDates string, reserveType int) (activities []*pb.BWSActivity, ticketInfos []*pb.BWSTicketInfo, reservedIDs map[int32]bool, refreshed domain.Credentials, err error) {
+	cli, err := c.getClient(node)
+	if err != nil {
+		return nil, nil, nil, domain.Credentials{}, err
+	}
+	resp, err := cli.GetBWSReservationInfo(ctx, &pb.BWSReservationInfoRequest{
+		Credentials:  credentialsToProto(creds),
+		ReserveDates: reserveDates,
+		ReserveType:  int32(reserveType),
+	})
+	if err != nil {
+		return nil, nil, nil, domain.Credentials{}, err
+	}
+	return resp.Activities, resp.TicketInfos, resp.ReservedIds, credentialsFromProto(resp.Credentials), nil
+}
+
+// BindBWSTicket binds a real-name identity to a BWS electronic ticket
+// via the worker.
+func (c *WorkerClient) BindBWSTicket(ctx context.Context, node domain.WorkerNode, creds domain.Credentials, bid int, idType int, personalID string, ticketNo string, userName string) (int, string, domain.Credentials, error) {
+	cli, err := c.getClient(node)
+	if err != nil {
+		return -1, "", domain.Credentials{}, err
+	}
+	resp, err := cli.BindBWSTicket(ctx, &pb.BindBWSTicketRequest{
+		Credentials: credentialsToProto(creds),
+		Bid:         int32(bid),
+		IdType:      int32(idType),
+		PersonalId:  personalID,
+		TicketNo:    ticketNo,
+		UserName:    userName,
+	})
+	if err != nil {
+		return -1, "", domain.Credentials{}, err
+	}
+	return int(resp.Code), resp.Message, credentialsFromProto(resp.Credentials), nil
+}
+
 // ListBuyers fetches all real-name buyers from a worker that proxies
 // the Bilibili API. Returns the buyers and refreshed credentials.
 func (c *WorkerClient) ListBuyers(ctx context.Context, node domain.WorkerNode, creds domain.Credentials) ([]domain.Buyer, domain.Credentials, error) {
@@ -569,12 +628,19 @@ func specToProto(s domain.ExecutionSpec) *pb.ExecutionSpec {
 		StartMode:    startModeToProto(s.StartMode),
 		IntervalMs:   s.IntervalMS,
 		StartDelayMs: s.StartDelayMS,
+		TaskType:     taskTypeToProto(s.TaskType),
 		Credentials: &pb.Credentials{
 			Cookies:       s.Credentials.Cookies,
 			RefreshToken:  s.Credentials.RefreshToken,
 			Version:       s.Credentials.Version,
 			DeviceProfile: s.Credentials.DeviceProfile,
 		},
+		// BWS fields
+		BwsActivityId:    int32(s.BWSActivityID),
+		BwsTicketNo:      s.BWSTicketNo,
+		BwsActivityTitle: s.BWSActivityTitle,
+		BwsReserveTime:   s.BWSReserveTime,
+		BwsReserveDate:   s.BWSReserveDate,
 	}
 	if !s.StartAt.IsZero() {
 		p.StartAt = timestamppb.New(s.StartAt)
@@ -615,6 +681,24 @@ func startModeToProto(m domain.StartMode) pb.StartMode {
 		return pb.StartMode_START_SCHEDULED
 	}
 	return pb.StartMode_START_IMMEDIATE
+}
+
+func startModeFromProto(m pb.StartMode) domain.StartMode {
+	switch m {
+	case pb.StartMode_START_SCHEDULED:
+		return domain.StartScheduled
+	default:
+		return domain.StartImmediate
+	}
+}
+
+func taskTypeToProto(t domain.TaskType) pb.TaskType {
+	switch t {
+	case domain.TaskTypeBWS:
+		return pb.TaskType_TASK_TYPE_BWS
+	default:
+		return pb.TaskType_TASK_TYPE_TICKET
+	}
 }
 
 func attemptStateFromProto(s pb.AttemptState) domain.AttemptState {

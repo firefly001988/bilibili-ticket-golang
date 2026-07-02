@@ -55,7 +55,7 @@ func NewBilibiliBackendWithSolver(credentials domain.Credentials, solver biliuti
 		}
 		jar.SetCookies(u, []*http.Cookie{cookie})
 	}
-	for _, host := range []string{"https://bilibili.com/", "https://www.bilibili.com/", "https://show.bilibili.com/", "https://passport.bilibili.com/"} {
+	for _, host := range []string{"https://api.bilibili.com/", "https://bilibili.com/", "https://www.bilibili.com/", "https://show.bilibili.com/", "https://passport.bilibili.com/"} {
 		cookies := make([]*http.Cookie, 0, len(credentials.Cookies))
 		for name, value := range credentials.Cookies {
 			cookies = append(cookies, &http.Cookie{Name: name, Value: value, Path: "/"})

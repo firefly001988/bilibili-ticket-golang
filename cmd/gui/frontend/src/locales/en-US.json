@@ -68,6 +68,7 @@
         "groupNamePlaceholder": "Group name",
         "settingsArea": "Settings",
         "notify": "Notification Settings",
+        "bwsReservation": "BWS Reservation",
         "settings": "General Settings"
     },
     "logs": {
@@ -890,7 +891,25 @@
         "idTypeIdcard": "ID Card",
         "idTypePassport": "Passport",
         "idTypeHkMacau": "HK/Macau Permit",
-        "idTypeTaiwan": "Taiwan Permit"
+        "idTypeTaiwan": "Taiwan Permit",
+        "selectAccount": "Select Account",
+        "selectWorker": "Select Worker",
+        "selectAccountWorker": "Please select an account and a worker first",
+        "checkBind": "Check Bind",
+        "bindCheckOk": "Bound",
+        "bindCheckFailed": "Bind check failed: {error}",
+        "ticketNoHint": "Last 4 digits of ticket number",
+        "taskLogs": "Task Logs",
+        "noLogs": "No logs — waiting for task to start...",
+        "stateNotOpen": "Not Open",
+        "stateAvailable": "Available",
+        "stateEnded": "Ended",
+        "stateReserved": "Reserved",
+        "stateSoldOut": "Sold Out",
+        "reserveType": "Reserve Type",
+        "typeActivity": "Activity",
+        "typeGoods": "Goods",
+        "filterName": "Search activity name"
     },
     "pluginManagement": {
         "title": "Plugin Management",

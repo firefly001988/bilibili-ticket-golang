@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.34.1
-// source: worker.proto
+// source: cluster/worker/proto/worker.proto
 
 package proto
 
@@ -67,11 +67,11 @@ func (x AttemptState) String() string {
 }
 
 func (AttemptState) Descriptor() protoreflect.EnumDescriptor {
-	return file_worker_proto_enumTypes[0].Descriptor()
+	return file_cluster_worker_proto_worker_proto_enumTypes[0].Descriptor()
 }
 
 func (AttemptState) Type() protoreflect.EnumType {
-	return &file_worker_proto_enumTypes[0]
+	return &file_cluster_worker_proto_worker_proto_enumTypes[0]
 }
 
 func (x AttemptState) Number() protoreflect.EnumNumber {
@@ -80,7 +80,7 @@ func (x AttemptState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AttemptState.Descriptor instead.
 func (AttemptState) EnumDescriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{0}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{0}
 }
 
 type StartMode int32
@@ -113,11 +113,11 @@ func (x StartMode) String() string {
 }
 
 func (StartMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_worker_proto_enumTypes[1].Descriptor()
+	return file_cluster_worker_proto_worker_proto_enumTypes[1].Descriptor()
 }
 
 func (StartMode) Type() protoreflect.EnumType {
-	return &file_worker_proto_enumTypes[1]
+	return &file_cluster_worker_proto_worker_proto_enumTypes[1]
 }
 
 func (x StartMode) Number() protoreflect.EnumNumber {
@@ -126,7 +126,7 @@ func (x StartMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use StartMode.Descriptor instead.
 func (StartMode) EnumDescriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{1}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{1}
 }
 
 type FailureReason int32
@@ -183,11 +183,11 @@ func (x FailureReason) String() string {
 }
 
 func (FailureReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_worker_proto_enumTypes[2].Descriptor()
+	return file_cluster_worker_proto_worker_proto_enumTypes[2].Descriptor()
 }
 
 func (FailureReason) Type() protoreflect.EnumType {
-	return &file_worker_proto_enumTypes[2]
+	return &file_cluster_worker_proto_worker_proto_enumTypes[2]
 }
 
 func (x FailureReason) Number() protoreflect.EnumNumber {
@@ -196,7 +196,53 @@ func (x FailureReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FailureReason.Descriptor instead.
 func (FailureReason) EnumDescriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{2}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{2}
+}
+
+type TaskType int32
+
+const (
+	TaskType_TASK_TYPE_TICKET TaskType = 0
+	TaskType_TASK_TYPE_BWS    TaskType = 1
+)
+
+// Enum value maps for TaskType.
+var (
+	TaskType_name = map[int32]string{
+		0: "TASK_TYPE_TICKET",
+		1: "TASK_TYPE_BWS",
+	}
+	TaskType_value = map[string]int32{
+		"TASK_TYPE_TICKET": 0,
+		"TASK_TYPE_BWS":    1,
+	}
+)
+
+func (x TaskType) Enum() *TaskType {
+	p := new(TaskType)
+	*p = x
+	return p
+}
+
+func (x TaskType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TaskType) Descriptor() protoreflect.EnumDescriptor {
+	return file_cluster_worker_proto_worker_proto_enumTypes[3].Descriptor()
+}
+
+func (TaskType) Type() protoreflect.EnumType {
+	return &file_cluster_worker_proto_worker_proto_enumTypes[3]
+}
+
+func (x TaskType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TaskType.Descriptor instead.
+func (TaskType) EnumDescriptor() ([]byte, []int) {
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{3}
 }
 
 type Buyer struct {
@@ -213,7 +259,7 @@ type Buyer struct {
 
 func (x *Buyer) Reset() {
 	*x = Buyer{}
-	mi := &file_worker_proto_msgTypes[0]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -225,7 +271,7 @@ func (x *Buyer) String() string {
 func (*Buyer) ProtoMessage() {}
 
 func (x *Buyer) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[0]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -238,7 +284,7 @@ func (x *Buyer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Buyer.ProtoReflect.Descriptor instead.
 func (*Buyer) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{0}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Buyer) GetLogicalId() string {
@@ -296,7 +342,7 @@ type Credentials struct {
 
 func (x *Credentials) Reset() {
 	*x = Credentials{}
-	mi := &file_worker_proto_msgTypes[1]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -308,7 +354,7 @@ func (x *Credentials) String() string {
 func (*Credentials) ProtoMessage() {}
 
 func (x *Credentials) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[1]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -321,7 +367,7 @@ func (x *Credentials) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Credentials.ProtoReflect.Descriptor instead.
 func (*Credentials) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{1}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Credentials) GetCookies() map[string]string {
@@ -374,7 +420,7 @@ type HTTPCookie struct {
 
 func (x *HTTPCookie) Reset() {
 	*x = HTTPCookie{}
-	mi := &file_worker_proto_msgTypes[2]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -386,7 +432,7 @@ func (x *HTTPCookie) String() string {
 func (*HTTPCookie) ProtoMessage() {}
 
 func (x *HTTPCookie) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[2]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -399,7 +445,7 @@ func (x *HTTPCookie) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTPCookie.ProtoReflect.Descriptor instead.
 func (*HTTPCookie) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{2}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *HTTPCookie) GetName() string {
@@ -452,26 +498,33 @@ func (x *HTTPCookie) GetExpires() int64 {
 }
 
 type ExecutionSpec struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AttemptId     string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
-	IntentId      string                 `protobuf:"bytes,2,opt,name=intent_id,json=intentId,proto3" json:"intent_id,omitempty"`
-	ProjectId     int64                  `protobuf:"varint,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	ScreenId      int64                  `protobuf:"varint,4,opt,name=screen_id,json=screenId,proto3" json:"screen_id,omitempty"`
-	SkuId         int64                  `protobuf:"varint,5,opt,name=sku_id,json=skuId,proto3" json:"sku_id,omitempty"`
-	Buyers        []*Buyer               `protobuf:"bytes,6,rep,name=buyers,proto3" json:"buyers,omitempty"`
-	StartMode     StartMode              `protobuf:"varint,7,opt,name=start_mode,json=startMode,proto3,enum=worker.StartMode" json:"start_mode,omitempty"`
-	StartAt       *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=start_at,json=startAt,proto3" json:"start_at,omitempty"`
-	Deadline      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=deadline,proto3" json:"deadline,omitempty"`
-	IntervalMs    int64                  `protobuf:"varint,10,opt,name=interval_ms,json=intervalMs,proto3" json:"interval_ms,omitempty"`
-	StartDelayMs  int64                  `protobuf:"varint,11,opt,name=start_delay_ms,json=startDelayMs,proto3" json:"start_delay_ms,omitempty"`
-	Credentials   *Credentials           `protobuf:"bytes,12,opt,name=credentials,proto3" json:"credentials,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	AttemptId    string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
+	IntentId     string                 `protobuf:"bytes,2,opt,name=intent_id,json=intentId,proto3" json:"intent_id,omitempty"`
+	ProjectId    int64                  `protobuf:"varint,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ScreenId     int64                  `protobuf:"varint,4,opt,name=screen_id,json=screenId,proto3" json:"screen_id,omitempty"`
+	SkuId        int64                  `protobuf:"varint,5,opt,name=sku_id,json=skuId,proto3" json:"sku_id,omitempty"`
+	Buyers       []*Buyer               `protobuf:"bytes,6,rep,name=buyers,proto3" json:"buyers,omitempty"`
+	StartMode    StartMode              `protobuf:"varint,7,opt,name=start_mode,json=startMode,proto3,enum=worker.StartMode" json:"start_mode,omitempty"`
+	StartAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=start_at,json=startAt,proto3" json:"start_at,omitempty"`
+	Deadline     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=deadline,proto3" json:"deadline,omitempty"`
+	IntervalMs   int64                  `protobuf:"varint,10,opt,name=interval_ms,json=intervalMs,proto3" json:"interval_ms,omitempty"`
+	StartDelayMs int64                  `protobuf:"varint,11,opt,name=start_delay_ms,json=startDelayMs,proto3" json:"start_delay_ms,omitempty"`
+	Credentials  *Credentials           `protobuf:"bytes,12,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	TaskType     TaskType               `protobuf:"varint,13,opt,name=task_type,json=taskType,proto3,enum=worker.TaskType" json:"task_type,omitempty"`
+	// BWS (Bilibili World) reservation fields – only used when task_type == BWS
+	BwsActivityId    int32  `protobuf:"varint,20,opt,name=bws_activity_id,json=bwsActivityId,proto3" json:"bws_activity_id,omitempty"`
+	BwsTicketNo      string `protobuf:"bytes,21,opt,name=bws_ticket_no,json=bwsTicketNo,proto3" json:"bws_ticket_no,omitempty"`
+	BwsActivityTitle string `protobuf:"bytes,22,opt,name=bws_activity_title,json=bwsActivityTitle,proto3" json:"bws_activity_title,omitempty"`
+	BwsReserveTime   int64  `protobuf:"varint,23,opt,name=bws_reserve_time,json=bwsReserveTime,proto3" json:"bws_reserve_time,omitempty"`
+	BwsReserveDate   string `protobuf:"bytes,24,opt,name=bws_reserve_date,json=bwsReserveDate,proto3" json:"bws_reserve_date,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ExecutionSpec) Reset() {
 	*x = ExecutionSpec{}
-	mi := &file_worker_proto_msgTypes[3]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -483,7 +536,7 @@ func (x *ExecutionSpec) String() string {
 func (*ExecutionSpec) ProtoMessage() {}
 
 func (x *ExecutionSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[3]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -496,7 +549,7 @@ func (x *ExecutionSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionSpec.ProtoReflect.Descriptor instead.
 func (*ExecutionSpec) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{3}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ExecutionSpec) GetAttemptId() string {
@@ -583,6 +636,48 @@ func (x *ExecutionSpec) GetCredentials() *Credentials {
 	return nil
 }
 
+func (x *ExecutionSpec) GetTaskType() TaskType {
+	if x != nil {
+		return x.TaskType
+	}
+	return TaskType_TASK_TYPE_TICKET
+}
+
+func (x *ExecutionSpec) GetBwsActivityId() int32 {
+	if x != nil {
+		return x.BwsActivityId
+	}
+	return 0
+}
+
+func (x *ExecutionSpec) GetBwsTicketNo() string {
+	if x != nil {
+		return x.BwsTicketNo
+	}
+	return ""
+}
+
+func (x *ExecutionSpec) GetBwsActivityTitle() string {
+	if x != nil {
+		return x.BwsActivityTitle
+	}
+	return ""
+}
+
+func (x *ExecutionSpec) GetBwsReserveTime() int64 {
+	if x != nil {
+		return x.BwsReserveTime
+	}
+	return 0
+}
+
+func (x *ExecutionSpec) GetBwsReserveDate() string {
+	if x != nil {
+		return x.BwsReserveDate
+	}
+	return ""
+}
+
 type ExecutionResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AttemptId     string                 `protobuf:"bytes,1,opt,name=attempt_id,json=attemptId,proto3" json:"attempt_id,omitempty"`
@@ -606,7 +701,7 @@ type ExecutionResult struct {
 
 func (x *ExecutionResult) Reset() {
 	*x = ExecutionResult{}
-	mi := &file_worker_proto_msgTypes[4]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -618,7 +713,7 @@ func (x *ExecutionResult) String() string {
 func (*ExecutionResult) ProtoMessage() {}
 
 func (x *ExecutionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[4]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -631,7 +726,7 @@ func (x *ExecutionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionResult.ProtoReflect.Descriptor instead.
 func (*ExecutionResult) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{4}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ExecutionResult) GetAttemptId() string {
@@ -753,7 +848,7 @@ type LogEntry struct {
 
 func (x *LogEntry) Reset() {
 	*x = LogEntry{}
-	mi := &file_worker_proto_msgTypes[5]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +860,7 @@ func (x *LogEntry) String() string {
 func (*LogEntry) ProtoMessage() {}
 
 func (x *LogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[5]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,7 +873,7 @@ func (x *LogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
 func (*LogEntry) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{5}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *LogEntry) GetSequence() int64 {
@@ -836,7 +931,7 @@ type TaskStatus struct {
 
 func (x *TaskStatus) Reset() {
 	*x = TaskStatus{}
-	mi := &file_worker_proto_msgTypes[6]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -848,7 +943,7 @@ func (x *TaskStatus) String() string {
 func (*TaskStatus) ProtoMessage() {}
 
 func (x *TaskStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[6]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -861,7 +956,7 @@ func (x *TaskStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskStatus.ProtoReflect.Descriptor instead.
 func (*TaskStatus) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{6}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *TaskStatus) GetAttemptId() string {
@@ -913,7 +1008,7 @@ type HealthRequest struct {
 
 func (x *HealthRequest) Reset() {
 	*x = HealthRequest{}
-	mi := &file_worker_proto_msgTypes[7]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -925,7 +1020,7 @@ func (x *HealthRequest) String() string {
 func (*HealthRequest) ProtoMessage() {}
 
 func (x *HealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[7]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -938,7 +1033,7 @@ func (x *HealthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
 func (*HealthRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{7}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *HealthRequest) GetEmployerVersion() string {
@@ -972,7 +1067,7 @@ type HealthResponse struct {
 
 func (x *HealthResponse) Reset() {
 	*x = HealthResponse{}
-	mi := &file_worker_proto_msgTypes[8]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -984,7 +1079,7 @@ func (x *HealthResponse) String() string {
 func (*HealthResponse) ProtoMessage() {}
 
 func (x *HealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[8]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -997,7 +1092,7 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
 func (*HealthResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{8}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *HealthResponse) GetWorkerId() string {
@@ -1079,7 +1174,7 @@ type SubmitRequest struct {
 
 func (x *SubmitRequest) Reset() {
 	*x = SubmitRequest{}
-	mi := &file_worker_proto_msgTypes[9]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1091,7 +1186,7 @@ func (x *SubmitRequest) String() string {
 func (*SubmitRequest) ProtoMessage() {}
 
 func (x *SubmitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[9]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1104,7 +1199,7 @@ func (x *SubmitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitRequest.ProtoReflect.Descriptor instead.
 func (*SubmitRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{9}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SubmitRequest) GetSpec() *ExecutionSpec {
@@ -1123,7 +1218,7 @@ type SubmitResponse struct {
 
 func (x *SubmitResponse) Reset() {
 	*x = SubmitResponse{}
-	mi := &file_worker_proto_msgTypes[10]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1135,7 +1230,7 @@ func (x *SubmitResponse) String() string {
 func (*SubmitResponse) ProtoMessage() {}
 
 func (x *SubmitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[10]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1148,7 +1243,7 @@ func (x *SubmitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitResponse.ProtoReflect.Descriptor instead.
 func (*SubmitResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{10}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SubmitResponse) GetStatus() *TaskStatus {
@@ -1167,7 +1262,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_worker_proto_msgTypes[11]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1179,7 +1274,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[11]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1192,7 +1287,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{11}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *StatusRequest) GetAttemptId() string {
@@ -1211,7 +1306,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_worker_proto_msgTypes[12]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1223,7 +1318,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[12]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1236,7 +1331,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{12}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *StatusResponse) GetStatus() *TaskStatus {
@@ -1255,7 +1350,7 @@ type LogsRequest struct {
 
 func (x *LogsRequest) Reset() {
 	*x = LogsRequest{}
-	mi := &file_worker_proto_msgTypes[13]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1267,7 +1362,7 @@ func (x *LogsRequest) String() string {
 func (*LogsRequest) ProtoMessage() {}
 
 func (x *LogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[13]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1280,7 +1375,7 @@ func (x *LogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogsRequest.ProtoReflect.Descriptor instead.
 func (*LogsRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{13}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *LogsRequest) GetAttemptId() string {
@@ -1299,7 +1394,7 @@ type LogsResponse struct {
 
 func (x *LogsResponse) Reset() {
 	*x = LogsResponse{}
-	mi := &file_worker_proto_msgTypes[14]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1311,7 +1406,7 @@ func (x *LogsResponse) String() string {
 func (*LogsResponse) ProtoMessage() {}
 
 func (x *LogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[14]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1324,7 +1419,7 @@ func (x *LogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogsResponse.ProtoReflect.Descriptor instead.
 func (*LogsResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{14}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *LogsResponse) GetEntries() []*LogEntry {
@@ -1343,7 +1438,7 @@ type StopRequest struct {
 
 func (x *StopRequest) Reset() {
 	*x = StopRequest{}
-	mi := &file_worker_proto_msgTypes[15]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1355,7 +1450,7 @@ func (x *StopRequest) String() string {
 func (*StopRequest) ProtoMessage() {}
 
 func (x *StopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[15]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1368,7 +1463,7 @@ func (x *StopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
 func (*StopRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{15}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *StopRequest) GetAttemptId() string {
@@ -1387,7 +1482,7 @@ type StopResponse struct {
 
 func (x *StopResponse) Reset() {
 	*x = StopResponse{}
-	mi := &file_worker_proto_msgTypes[16]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1399,7 +1494,7 @@ func (x *StopResponse) String() string {
 func (*StopResponse) ProtoMessage() {}
 
 func (x *StopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[16]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1412,7 +1507,7 @@ func (x *StopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
 func (*StopResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{16}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *StopResponse) GetStatus() *TaskStatus {
@@ -1431,7 +1526,7 @@ type AckRequest struct {
 
 func (x *AckRequest) Reset() {
 	*x = AckRequest{}
-	mi := &file_worker_proto_msgTypes[17]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1443,7 +1538,7 @@ func (x *AckRequest) String() string {
 func (*AckRequest) ProtoMessage() {}
 
 func (x *AckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[17]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1456,7 +1551,7 @@ func (x *AckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AckRequest.ProtoReflect.Descriptor instead.
 func (*AckRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{17}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *AckRequest) GetAttemptId() string {
@@ -1474,7 +1569,7 @@ type AckResponse struct {
 
 func (x *AckResponse) Reset() {
 	*x = AckResponse{}
-	mi := &file_worker_proto_msgTypes[18]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1486,7 +1581,7 @@ func (x *AckResponse) String() string {
 func (*AckResponse) ProtoMessage() {}
 
 func (x *AckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[18]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1499,7 +1594,7 @@ func (x *AckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AckResponse.ProtoReflect.Descriptor instead.
 func (*AckResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{18}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{18}
 }
 
 type HeartbeatMsg struct {
@@ -1515,7 +1610,7 @@ type HeartbeatMsg struct {
 
 func (x *HeartbeatMsg) Reset() {
 	*x = HeartbeatMsg{}
-	mi := &file_worker_proto_msgTypes[19]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1527,7 +1622,7 @@ func (x *HeartbeatMsg) String() string {
 func (*HeartbeatMsg) ProtoMessage() {}
 
 func (x *HeartbeatMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[19]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1540,7 +1635,7 @@ func (x *HeartbeatMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatMsg.ProtoReflect.Descriptor instead.
 func (*HeartbeatMsg) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{19}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *HeartbeatMsg) GetWorkerId() string {
@@ -1593,7 +1688,7 @@ type GlobalConfig struct {
 
 func (x *GlobalConfig) Reset() {
 	*x = GlobalConfig{}
-	mi := &file_worker_proto_msgTypes[20]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1605,7 +1700,7 @@ func (x *GlobalConfig) String() string {
 func (*GlobalConfig) ProtoMessage() {}
 
 func (x *GlobalConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[20]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1618,7 +1713,7 @@ func (x *GlobalConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GlobalConfig.ProtoReflect.Descriptor instead.
 func (*GlobalConfig) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{20}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GlobalConfig) GetRetryIntervalMs() int64 {
@@ -1644,7 +1739,7 @@ type ConfigureRequest struct {
 
 func (x *ConfigureRequest) Reset() {
 	*x = ConfigureRequest{}
-	mi := &file_worker_proto_msgTypes[21]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1656,7 +1751,7 @@ func (x *ConfigureRequest) String() string {
 func (*ConfigureRequest) ProtoMessage() {}
 
 func (x *ConfigureRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[21]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1669,7 +1764,7 @@ func (x *ConfigureRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureRequest.ProtoReflect.Descriptor instead.
 func (*ConfigureRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{21}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ConfigureRequest) GetConfig() *GlobalConfig {
@@ -1687,7 +1782,7 @@ type ConfigureResponse struct {
 
 func (x *ConfigureResponse) Reset() {
 	*x = ConfigureResponse{}
-	mi := &file_worker_proto_msgTypes[22]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1699,7 +1794,7 @@ func (x *ConfigureResponse) String() string {
 func (*ConfigureResponse) ProtoMessage() {}
 
 func (x *ConfigureResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[22]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1712,7 +1807,7 @@ func (x *ConfigureResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigureResponse.ProtoReflect.Descriptor instead.
 func (*ConfigureResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{22}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{22}
 }
 
 type ListBuyersRequest struct {
@@ -1724,7 +1819,7 @@ type ListBuyersRequest struct {
 
 func (x *ListBuyersRequest) Reset() {
 	*x = ListBuyersRequest{}
-	mi := &file_worker_proto_msgTypes[23]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1736,7 +1831,7 @@ func (x *ListBuyersRequest) String() string {
 func (*ListBuyersRequest) ProtoMessage() {}
 
 func (x *ListBuyersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[23]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1749,7 +1844,7 @@ func (x *ListBuyersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBuyersRequest.ProtoReflect.Descriptor instead.
 func (*ListBuyersRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{23}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListBuyersRequest) GetCredentials() *Credentials {
@@ -1769,7 +1864,7 @@ type ListBuyersResponse struct {
 
 func (x *ListBuyersResponse) Reset() {
 	*x = ListBuyersResponse{}
-	mi := &file_worker_proto_msgTypes[24]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1781,7 +1876,7 @@ func (x *ListBuyersResponse) String() string {
 func (*ListBuyersResponse) ProtoMessage() {}
 
 func (x *ListBuyersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[24]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1794,7 +1889,7 @@ func (x *ListBuyersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBuyersResponse.ProtoReflect.Descriptor instead.
 func (*ListBuyersResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{24}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListBuyersResponse) GetBuyers() []*Buyer {
@@ -1821,7 +1916,7 @@ type CreateBuyerRequest struct {
 
 func (x *CreateBuyerRequest) Reset() {
 	*x = CreateBuyerRequest{}
-	mi := &file_worker_proto_msgTypes[25]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1833,7 +1928,7 @@ func (x *CreateBuyerRequest) String() string {
 func (*CreateBuyerRequest) ProtoMessage() {}
 
 func (x *CreateBuyerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[25]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1846,7 +1941,7 @@ func (x *CreateBuyerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBuyerRequest.ProtoReflect.Descriptor instead.
 func (*CreateBuyerRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{25}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *CreateBuyerRequest) GetCredentials() *Credentials {
@@ -1873,7 +1968,7 @@ type CreateBuyerResponse struct {
 
 func (x *CreateBuyerResponse) Reset() {
 	*x = CreateBuyerResponse{}
-	mi := &file_worker_proto_msgTypes[26]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1885,7 +1980,7 @@ func (x *CreateBuyerResponse) String() string {
 func (*CreateBuyerResponse) ProtoMessage() {}
 
 func (x *CreateBuyerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[26]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1898,7 +1993,7 @@ func (x *CreateBuyerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBuyerResponse.ProtoReflect.Descriptor instead.
 func (*CreateBuyerResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{26}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CreateBuyerResponse) GetBuyer() *Buyer {
@@ -1925,7 +2020,7 @@ type GetBuyerSensitiveDataRequest struct {
 
 func (x *GetBuyerSensitiveDataRequest) Reset() {
 	*x = GetBuyerSensitiveDataRequest{}
-	mi := &file_worker_proto_msgTypes[27]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1937,7 +2032,7 @@ func (x *GetBuyerSensitiveDataRequest) String() string {
 func (*GetBuyerSensitiveDataRequest) ProtoMessage() {}
 
 func (x *GetBuyerSensitiveDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[27]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1950,7 +2045,7 @@ func (x *GetBuyerSensitiveDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBuyerSensitiveDataRequest.ProtoReflect.Descriptor instead.
 func (*GetBuyerSensitiveDataRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{27}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetBuyerSensitiveDataRequest) GetCredentials() *Credentials {
@@ -1976,7 +2071,7 @@ type GetBuyerSensitiveDataResponse struct {
 
 func (x *GetBuyerSensitiveDataResponse) Reset() {
 	*x = GetBuyerSensitiveDataResponse{}
-	mi := &file_worker_proto_msgTypes[28]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1988,7 +2083,7 @@ func (x *GetBuyerSensitiveDataResponse) String() string {
 func (*GetBuyerSensitiveDataResponse) ProtoMessage() {}
 
 func (x *GetBuyerSensitiveDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[28]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2001,7 +2096,7 @@ func (x *GetBuyerSensitiveDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBuyerSensitiveDataResponse.ProtoReflect.Descriptor instead.
 func (*GetBuyerSensitiveDataResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{28}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetBuyerSensitiveDataResponse) GetBuyer() *Buyer {
@@ -2021,7 +2116,7 @@ type DeleteBuyerRequest struct {
 
 func (x *DeleteBuyerRequest) Reset() {
 	*x = DeleteBuyerRequest{}
-	mi := &file_worker_proto_msgTypes[29]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2033,7 +2128,7 @@ func (x *DeleteBuyerRequest) String() string {
 func (*DeleteBuyerRequest) ProtoMessage() {}
 
 func (x *DeleteBuyerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[29]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2046,7 +2141,7 @@ func (x *DeleteBuyerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBuyerRequest.ProtoReflect.Descriptor instead.
 func (*DeleteBuyerRequest) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{29}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *DeleteBuyerRequest) GetCredentials() *Credentials {
@@ -2071,7 +2166,7 @@ type DeleteBuyerResponse struct {
 
 func (x *DeleteBuyerResponse) Reset() {
 	*x = DeleteBuyerResponse{}
-	mi := &file_worker_proto_msgTypes[30]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2083,7 +2178,7 @@ func (x *DeleteBuyerResponse) String() string {
 func (*DeleteBuyerResponse) ProtoMessage() {}
 
 func (x *DeleteBuyerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_proto_msgTypes[30]
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2096,14 +2191,553 @@ func (x *DeleteBuyerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBuyerResponse.ProtoReflect.Descriptor instead.
 func (*DeleteBuyerResponse) Descriptor() ([]byte, []int) {
-	return file_worker_proto_rawDescGZIP(), []int{30}
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{30}
 }
 
-var File_worker_proto protoreflect.FileDescriptor
+type CheckBWSBindRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credentials   *Credentials           `protobuf:"bytes,1,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
 
-const file_worker_proto_rawDesc = "" +
+func (x *CheckBWSBindRequest) Reset() {
+	*x = CheckBWSBindRequest{}
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckBWSBindRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckBWSBindRequest) ProtoMessage() {}
+
+func (x *CheckBWSBindRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckBWSBindRequest.ProtoReflect.Descriptor instead.
+func (*CheckBWSBindRequest) Descriptor() ([]byte, []int) {
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *CheckBWSBindRequest) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+type CheckBWSBindResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	IsBind        bool                   `protobuf:"varint,1,opt,name=is_bind,json=isBind,proto3" json:"is_bind,omitempty"`
+	Credentials   *Credentials           `protobuf:"bytes,2,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckBWSBindResponse) Reset() {
+	*x = CheckBWSBindResponse{}
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckBWSBindResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckBWSBindResponse) ProtoMessage() {}
+
+func (x *CheckBWSBindResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckBWSBindResponse.ProtoReflect.Descriptor instead.
+func (*CheckBWSBindResponse) Descriptor() ([]byte, []int) {
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *CheckBWSBindResponse) GetIsBind() bool {
+	if x != nil {
+		return x.IsBind
+	}
+	return false
+}
+
+func (x *CheckBWSBindResponse) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+type BWSReservationInfoRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credentials   *Credentials           `protobuf:"bytes,1,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	ReserveDates  string                 `protobuf:"bytes,2,opt,name=reserve_dates,json=reserveDates,proto3" json:"reserve_dates,omitempty"` // comma-separated, e.g. "20260711,20260712"
+	ReserveType   int32                  `protobuf:"varint,3,opt,name=reserve_type,json=reserveType,proto3" json:"reserve_type,omitempty"`   // 1=activities, 2=goods
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BWSReservationInfoRequest) Reset() {
+	*x = BWSReservationInfoRequest{}
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BWSReservationInfoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BWSReservationInfoRequest) ProtoMessage() {}
+
+func (x *BWSReservationInfoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BWSReservationInfoRequest.ProtoReflect.Descriptor instead.
+func (*BWSReservationInfoRequest) Descriptor() ([]byte, []int) {
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *BWSReservationInfoRequest) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+func (x *BWSReservationInfoRequest) GetReserveDates() string {
+	if x != nil {
+		return x.ReserveDates
+	}
+	return ""
+}
+
+func (x *BWSReservationInfoRequest) GetReserveType() int32 {
+	if x != nil {
+		return x.ReserveType
+	}
+	return 0
+}
+
+// BWSActivity is a single activity returned by the BWS reservation info API.
+type BWSActivity struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ReserveId        int32                  `protobuf:"varint,1,opt,name=reserve_id,json=reserveId,proto3" json:"reserve_id,omitempty"`
+	ActTitle         string                 `protobuf:"bytes,2,opt,name=act_title,json=actTitle,proto3" json:"act_title,omitempty"`
+	ReserveBeginTime int64                  `protobuf:"varint,3,opt,name=reserve_begin_time,json=reserveBeginTime,proto3" json:"reserve_begin_time,omitempty"`
+	ActBeginTime     int64                  `protobuf:"varint,4,opt,name=act_begin_time,json=actBeginTime,proto3" json:"act_begin_time,omitempty"`
+	State            int32                  `protobuf:"varint,5,opt,name=state,proto3" json:"state,omitempty"`
+	DescribeInfo     string                 `protobuf:"bytes,6,opt,name=describe_info,json=describeInfo,proto3" json:"describe_info,omitempty"`
+	ReserveDate      string                 `protobuf:"bytes,7,opt,name=reserve_date,json=reserveDate,proto3" json:"reserve_date,omitempty"`
+	OnlineState      int32                  `protobuf:"varint,8,opt,name=online_state,json=onlineState,proto3" json:"online_state,omitempty"` // BW2026: 0=available, 1=already reserved
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *BWSActivity) Reset() {
+	*x = BWSActivity{}
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BWSActivity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BWSActivity) ProtoMessage() {}
+
+func (x *BWSActivity) ProtoReflect() protoreflect.Message {
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BWSActivity.ProtoReflect.Descriptor instead.
+func (*BWSActivity) Descriptor() ([]byte, []int) {
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *BWSActivity) GetReserveId() int32 {
+	if x != nil {
+		return x.ReserveId
+	}
+	return 0
+}
+
+func (x *BWSActivity) GetActTitle() string {
+	if x != nil {
+		return x.ActTitle
+	}
+	return ""
+}
+
+func (x *BWSActivity) GetReserveBeginTime() int64 {
+	if x != nil {
+		return x.ReserveBeginTime
+	}
+	return 0
+}
+
+func (x *BWSActivity) GetActBeginTime() int64 {
+	if x != nil {
+		return x.ActBeginTime
+	}
+	return 0
+}
+
+func (x *BWSActivity) GetState() int32 {
+	if x != nil {
+		return x.State
+	}
+	return 0
+}
+
+func (x *BWSActivity) GetDescribeInfo() string {
+	if x != nil {
+		return x.DescribeInfo
+	}
+	return ""
+}
+
+func (x *BWSActivity) GetReserveDate() string {
+	if x != nil {
+		return x.ReserveDate
+	}
+	return ""
+}
+
+func (x *BWSActivity) GetOnlineState() int32 {
+	if x != nil {
+		return x.OnlineState
+	}
+	return 0
+}
+
+// BWSTicketInfo holds the ticket mapping for a given date.
+type BWSTicketInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Date          string                 `protobuf:"bytes,1,opt,name=date,proto3" json:"date,omitempty"`
+	Ticket        string                 `protobuf:"bytes,2,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	ScreenName    string                 `protobuf:"bytes,3,opt,name=screen_name,json=screenName,proto3" json:"screen_name,omitempty"`
+	SkuName       string                 `protobuf:"bytes,4,opt,name=sku_name,json=skuName,proto3" json:"sku_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BWSTicketInfo) Reset() {
+	*x = BWSTicketInfo{}
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BWSTicketInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BWSTicketInfo) ProtoMessage() {}
+
+func (x *BWSTicketInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BWSTicketInfo.ProtoReflect.Descriptor instead.
+func (*BWSTicketInfo) Descriptor() ([]byte, []int) {
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *BWSTicketInfo) GetDate() string {
+	if x != nil {
+		return x.Date
+	}
+	return ""
+}
+
+func (x *BWSTicketInfo) GetTicket() string {
+	if x != nil {
+		return x.Ticket
+	}
+	return ""
+}
+
+func (x *BWSTicketInfo) GetScreenName() string {
+	if x != nil {
+		return x.ScreenName
+	}
+	return ""
+}
+
+func (x *BWSTicketInfo) GetSkuName() string {
+	if x != nil {
+		return x.SkuName
+	}
+	return ""
+}
+
+type BWSReservationInfoResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Activities    []*BWSActivity         `protobuf:"bytes,1,rep,name=activities,proto3" json:"activities,omitempty"`
+	TicketInfos   []*BWSTicketInfo       `protobuf:"bytes,2,rep,name=ticket_infos,json=ticketInfos,proto3" json:"ticket_infos,omitempty"`
+	ReservedIds   map[int32]bool         `protobuf:"bytes,3,rep,name=reserved_ids,json=reservedIds,proto3" json:"reserved_ids,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	Credentials   *Credentials           `protobuf:"bytes,4,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BWSReservationInfoResponse) Reset() {
+	*x = BWSReservationInfoResponse{}
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BWSReservationInfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BWSReservationInfoResponse) ProtoMessage() {}
+
+func (x *BWSReservationInfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BWSReservationInfoResponse.ProtoReflect.Descriptor instead.
+func (*BWSReservationInfoResponse) Descriptor() ([]byte, []int) {
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *BWSReservationInfoResponse) GetActivities() []*BWSActivity {
+	if x != nil {
+		return x.Activities
+	}
+	return nil
+}
+
+func (x *BWSReservationInfoResponse) GetTicketInfos() []*BWSTicketInfo {
+	if x != nil {
+		return x.TicketInfos
+	}
+	return nil
+}
+
+func (x *BWSReservationInfoResponse) GetReservedIds() map[int32]bool {
+	if x != nil {
+		return x.ReservedIds
+	}
+	return nil
+}
+
+func (x *BWSReservationInfoResponse) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+// BindBWSTicket binds real-name identity to a BWS electronic ticket.
+type BindBWSTicketRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Credentials   *Credentials           `protobuf:"bytes,1,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	Bid           int32                  `protobuf:"varint,2,opt,name=bid,proto3" json:"bid,omitempty"`                     // activity bid, e.g. 202501
+	IdType        int32                  `protobuf:"varint,3,opt,name=id_type,json=idType,proto3" json:"id_type,omitempty"` // 0=身份证 1=护照 2=港澳通行证 3=台湾通行证
+	PersonalId    string                 `protobuf:"bytes,4,opt,name=personal_id,json=personalId,proto3" json:"personal_id,omitempty"`
+	TicketNo      string                 `protobuf:"bytes,5,opt,name=ticket_no,json=ticketNo,proto3" json:"ticket_no,omitempty"` // last 4 digits
+	UserName      string                 `protobuf:"bytes,6,opt,name=user_name,json=userName,proto3" json:"user_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BindBWSTicketRequest) Reset() {
+	*x = BindBWSTicketRequest{}
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindBWSTicketRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindBWSTicketRequest) ProtoMessage() {}
+
+func (x *BindBWSTicketRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindBWSTicketRequest.ProtoReflect.Descriptor instead.
+func (*BindBWSTicketRequest) Descriptor() ([]byte, []int) {
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *BindBWSTicketRequest) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+func (x *BindBWSTicketRequest) GetBid() int32 {
+	if x != nil {
+		return x.Bid
+	}
+	return 0
+}
+
+func (x *BindBWSTicketRequest) GetIdType() int32 {
+	if x != nil {
+		return x.IdType
+	}
+	return 0
+}
+
+func (x *BindBWSTicketRequest) GetPersonalId() string {
+	if x != nil {
+		return x.PersonalId
+	}
+	return ""
+}
+
+func (x *BindBWSTicketRequest) GetTicketNo() string {
+	if x != nil {
+		return x.TicketNo
+	}
+	return ""
+}
+
+func (x *BindBWSTicketRequest) GetUserName() string {
+	if x != nil {
+		return x.UserName
+	}
+	return ""
+}
+
+type BindBWSTicketResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          int32                  `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Credentials   *Credentials           `protobuf:"bytes,3,opt,name=credentials,proto3" json:"credentials,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BindBWSTicketResponse) Reset() {
+	*x = BindBWSTicketResponse{}
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindBWSTicketResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindBWSTicketResponse) ProtoMessage() {}
+
+func (x *BindBWSTicketResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cluster_worker_proto_worker_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindBWSTicketResponse.ProtoReflect.Descriptor instead.
+func (*BindBWSTicketResponse) Descriptor() ([]byte, []int) {
+	return file_cluster_worker_proto_worker_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *BindBWSTicketResponse) GetCode() int32 {
+	if x != nil {
+		return x.Code
+	}
+	return 0
+}
+
+func (x *BindBWSTicketResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *BindBWSTicketResponse) GetCredentials() *Credentials {
+	if x != nil {
+		return x.Credentials
+	}
+	return nil
+}
+
+var File_cluster_worker_proto_worker_proto protoreflect.FileDescriptor
+
+const file_cluster_worker_proto_worker_proto_rawDesc = "" +
 	"\n" +
-	"\fworker.proto\x12\x06worker\x1a\x1fgoogle/protobuf/timestamp.proto\"\x94\x01\n" +
+	"!cluster/worker/proto/worker.proto\x12\x06worker\x1a\x1fgoogle/protobuf/timestamp.proto\"\x94\x01\n" +
 	"\x05Buyer\x12\x1d\n" +
 	"\n" +
 	"logical_id\x18\x01 \x01(\tR\tlogicalId\x12\x19\n" +
@@ -2130,7 +2764,7 @@ const file_worker_proto_rawDesc = "" +
 	"\x04path\x18\x04 \x01(\tR\x04path\x12\x16\n" +
 	"\x06secure\x18\x05 \x01(\bR\x06secure\x12\x1b\n" +
 	"\thttp_only\x18\x06 \x01(\bR\bhttpOnly\x12\x18\n" +
-	"\aexpires\x18\a \x01(\x03R\aexpires\"\xe4\x03\n" +
+	"\aexpires\x18\a \x01(\x03R\aexpires\"\xe1\x05\n" +
 	"\rExecutionSpec\x12\x1d\n" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12\x1b\n" +
@@ -2148,7 +2782,13 @@ const file_worker_proto_rawDesc = "" +
 	" \x01(\x03R\n" +
 	"intervalMs\x12$\n" +
 	"\x0estart_delay_ms\x18\v \x01(\x03R\fstartDelayMs\x125\n" +
-	"\vcredentials\x18\f \x01(\v2\x13.worker.CredentialsR\vcredentials\"\xc8\x04\n" +
+	"\vcredentials\x18\f \x01(\v2\x13.worker.CredentialsR\vcredentials\x12-\n" +
+	"\ttask_type\x18\r \x01(\x0e2\x10.worker.TaskTypeR\btaskType\x12&\n" +
+	"\x0fbws_activity_id\x18\x14 \x01(\x05R\rbwsActivityId\x12\"\n" +
+	"\rbws_ticket_no\x18\x15 \x01(\tR\vbwsTicketNo\x12,\n" +
+	"\x12bws_activity_title\x18\x16 \x01(\tR\x10bwsActivityTitle\x12(\n" +
+	"\x10bws_reserve_time\x18\x17 \x01(\x03R\x0ebwsReserveTime\x12(\n" +
+	"\x10bws_reserve_date\x18\x18 \x01(\tR\x0ebwsReserveDate\"\xc8\x04\n" +
 	"\x0fExecutionResult\x12\x1d\n" +
 	"\n" +
 	"attempt_id\x18\x01 \x01(\tR\tattemptId\x12\x1b\n" +
@@ -2256,7 +2896,54 @@ const file_worker_proto_rawDesc = "" +
 	"\x12DeleteBuyerRequest\x125\n" +
 	"\vcredentials\x18\x01 \x01(\v2\x13.worker.CredentialsR\vcredentials\x12\x19\n" +
 	"\bbuyer_id\x18\x02 \x01(\x03R\abuyerId\"\x15\n" +
-	"\x13DeleteBuyerResponse*\xa2\x01\n" +
+	"\x13DeleteBuyerResponse\"L\n" +
+	"\x13CheckBWSBindRequest\x125\n" +
+	"\vcredentials\x18\x01 \x01(\v2\x13.worker.CredentialsR\vcredentials\"f\n" +
+	"\x14CheckBWSBindResponse\x12\x17\n" +
+	"\ais_bind\x18\x01 \x01(\bR\x06isBind\x125\n" +
+	"\vcredentials\x18\x02 \x01(\v2\x13.worker.CredentialsR\vcredentials\"\x9a\x01\n" +
+	"\x19BWSReservationInfoRequest\x125\n" +
+	"\vcredentials\x18\x01 \x01(\v2\x13.worker.CredentialsR\vcredentials\x12#\n" +
+	"\rreserve_dates\x18\x02 \x01(\tR\freserveDates\x12!\n" +
+	"\freserve_type\x18\x03 \x01(\x05R\vreserveType\"\x9e\x02\n" +
+	"\vBWSActivity\x12\x1d\n" +
+	"\n" +
+	"reserve_id\x18\x01 \x01(\x05R\treserveId\x12\x1b\n" +
+	"\tact_title\x18\x02 \x01(\tR\bactTitle\x12,\n" +
+	"\x12reserve_begin_time\x18\x03 \x01(\x03R\x10reserveBeginTime\x12$\n" +
+	"\x0eact_begin_time\x18\x04 \x01(\x03R\factBeginTime\x12\x14\n" +
+	"\x05state\x18\x05 \x01(\x05R\x05state\x12#\n" +
+	"\rdescribe_info\x18\x06 \x01(\tR\fdescribeInfo\x12!\n" +
+	"\freserve_date\x18\a \x01(\tR\vreserveDate\x12!\n" +
+	"\fonline_state\x18\b \x01(\x05R\vonlineState\"w\n" +
+	"\rBWSTicketInfo\x12\x12\n" +
+	"\x04date\x18\x01 \x01(\tR\x04date\x12\x16\n" +
+	"\x06ticket\x18\x02 \x01(\tR\x06ticket\x12\x1f\n" +
+	"\vscreen_name\x18\x03 \x01(\tR\n" +
+	"screenName\x12\x19\n" +
+	"\bsku_name\x18\x04 \x01(\tR\askuName\"\xda\x02\n" +
+	"\x1aBWSReservationInfoResponse\x123\n" +
+	"\n" +
+	"activities\x18\x01 \x03(\v2\x13.worker.BWSActivityR\n" +
+	"activities\x128\n" +
+	"\fticket_infos\x18\x02 \x03(\v2\x15.worker.BWSTicketInfoR\vticketInfos\x12V\n" +
+	"\freserved_ids\x18\x03 \x03(\v23.worker.BWSReservationInfoResponse.ReservedIdsEntryR\vreservedIds\x125\n" +
+	"\vcredentials\x18\x04 \x01(\v2\x13.worker.CredentialsR\vcredentials\x1a>\n" +
+	"\x10ReservedIdsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\bR\x05value:\x028\x01\"\xd3\x01\n" +
+	"\x14BindBWSTicketRequest\x125\n" +
+	"\vcredentials\x18\x01 \x01(\v2\x13.worker.CredentialsR\vcredentials\x12\x10\n" +
+	"\x03bid\x18\x02 \x01(\x05R\x03bid\x12\x17\n" +
+	"\aid_type\x18\x03 \x01(\x05R\x06idType\x12\x1f\n" +
+	"\vpersonal_id\x18\x04 \x01(\tR\n" +
+	"personalId\x12\x1b\n" +
+	"\tticket_no\x18\x05 \x01(\tR\bticketNo\x12\x1b\n" +
+	"\tuser_name\x18\x06 \x01(\tR\buserName\"|\n" +
+	"\x15BindBWSTicketResponse\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\x05R\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x125\n" +
+	"\vcredentials\x18\x03 \x01(\v2\x13.worker.CredentialsR\vcredentials*\xa2\x01\n" +
 	"\fAttemptState\x12\x12\n" +
 	"\x0eATTEMPT_QUEUED\x10\x00\x12\x13\n" +
 	"\x0fATTEMPT_WAITING\x10\x01\x12\x13\n" +
@@ -2278,7 +2965,10 @@ const file_worker_proto_rawDesc = "" +
 	"\x14FAILURE_ACCOUNT_RISK\x10\x06\x12\x17\n" +
 	"\x13FAILURE_WORKER_LOST\x10\a\x12\x19\n" +
 	"\x15FAILURE_UNRECOVERABLE\x10\b\x12\x14\n" +
-	"\x10FAILURE_INTERNAL\x10\t2\xd5\x06\n" +
+	"\x10FAILURE_INTERNAL\x10\t*3\n" +
+	"\bTaskType\x12\x14\n" +
+	"\x10TASK_TYPE_TICKET\x10\x00\x12\x11\n" +
+	"\rTASK_TYPE_BWS\x10\x012\xce\b\n" +
 	"\rWorkerService\x127\n" +
 	"\x06Health\x12\x15.worker.HealthRequest\x1a\x16.worker.HealthResponse\x127\n" +
 	"\x06Submit\x12\x15.worker.SubmitRequest\x1a\x16.worker.SubmitResponse\x127\n" +
@@ -2293,149 +2983,178 @@ const file_worker_proto_rawDesc = "" +
 	"\vCreateBuyer\x12\x1a.worker.CreateBuyerRequest\x1a\x1b.worker.CreateBuyerResponse\x12d\n" +
 	"\x15GetBuyerSensitiveData\x12$.worker.GetBuyerSensitiveDataRequest\x1a%.worker.GetBuyerSensitiveDataResponse\x12I\n" +
 	"\x10ListBuyersMasked\x12\x19.worker.ListBuyersRequest\x1a\x1a.worker.ListBuyersResponse\x12F\n" +
-	"\vDeleteBuyer\x12\x1a.worker.DeleteBuyerRequest\x1a\x1b.worker.DeleteBuyerResponseB-Z+bilibili-ticket-golang/cluster/worker/protob\x06proto3"
+	"\vDeleteBuyer\x12\x1a.worker.DeleteBuyerRequest\x1a\x1b.worker.DeleteBuyerResponse\x12I\n" +
+	"\fCheckBWSBind\x12\x1b.worker.CheckBWSBindRequest\x1a\x1c.worker.CheckBWSBindResponse\x12^\n" +
+	"\x15GetBWSReservationInfo\x12!.worker.BWSReservationInfoRequest\x1a\".worker.BWSReservationInfoResponse\x12L\n" +
+	"\rBindBWSTicket\x12\x1c.worker.BindBWSTicketRequest\x1a\x1d.worker.BindBWSTicketResponseB-Z+bilibili-ticket-golang/cluster/worker/protob\x06proto3"
 
 var (
-	file_worker_proto_rawDescOnce sync.Once
-	file_worker_proto_rawDescData []byte
+	file_cluster_worker_proto_worker_proto_rawDescOnce sync.Once
+	file_cluster_worker_proto_worker_proto_rawDescData []byte
 )
 
-func file_worker_proto_rawDescGZIP() []byte {
-	file_worker_proto_rawDescOnce.Do(func() {
-		file_worker_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_worker_proto_rawDesc), len(file_worker_proto_rawDesc)))
+func file_cluster_worker_proto_worker_proto_rawDescGZIP() []byte {
+	file_cluster_worker_proto_worker_proto_rawDescOnce.Do(func() {
+		file_cluster_worker_proto_worker_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_cluster_worker_proto_worker_proto_rawDesc), len(file_cluster_worker_proto_worker_proto_rawDesc)))
 	})
-	return file_worker_proto_rawDescData
+	return file_cluster_worker_proto_worker_proto_rawDescData
 }
 
-var file_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
-var file_worker_proto_goTypes = []any{
+var file_cluster_worker_proto_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_cluster_worker_proto_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_cluster_worker_proto_worker_proto_goTypes = []any{
 	(AttemptState)(0),                     // 0: worker.AttemptState
 	(StartMode)(0),                        // 1: worker.StartMode
 	(FailureReason)(0),                    // 2: worker.FailureReason
-	(*Buyer)(nil),                         // 3: worker.Buyer
-	(*Credentials)(nil),                   // 4: worker.Credentials
-	(*HTTPCookie)(nil),                    // 5: worker.HTTPCookie
-	(*ExecutionSpec)(nil),                 // 6: worker.ExecutionSpec
-	(*ExecutionResult)(nil),               // 7: worker.ExecutionResult
-	(*LogEntry)(nil),                      // 8: worker.LogEntry
-	(*TaskStatus)(nil),                    // 9: worker.TaskStatus
-	(*HealthRequest)(nil),                 // 10: worker.HealthRequest
-	(*HealthResponse)(nil),                // 11: worker.HealthResponse
-	(*SubmitRequest)(nil),                 // 12: worker.SubmitRequest
-	(*SubmitResponse)(nil),                // 13: worker.SubmitResponse
-	(*StatusRequest)(nil),                 // 14: worker.StatusRequest
-	(*StatusResponse)(nil),                // 15: worker.StatusResponse
-	(*LogsRequest)(nil),                   // 16: worker.LogsRequest
-	(*LogsResponse)(nil),                  // 17: worker.LogsResponse
-	(*StopRequest)(nil),                   // 18: worker.StopRequest
-	(*StopResponse)(nil),                  // 19: worker.StopResponse
-	(*AckRequest)(nil),                    // 20: worker.AckRequest
-	(*AckResponse)(nil),                   // 21: worker.AckResponse
-	(*HeartbeatMsg)(nil),                  // 22: worker.HeartbeatMsg
-	(*GlobalConfig)(nil),                  // 23: worker.GlobalConfig
-	(*ConfigureRequest)(nil),              // 24: worker.ConfigureRequest
-	(*ConfigureResponse)(nil),             // 25: worker.ConfigureResponse
-	(*ListBuyersRequest)(nil),             // 26: worker.ListBuyersRequest
-	(*ListBuyersResponse)(nil),            // 27: worker.ListBuyersResponse
-	(*CreateBuyerRequest)(nil),            // 28: worker.CreateBuyerRequest
-	(*CreateBuyerResponse)(nil),           // 29: worker.CreateBuyerResponse
-	(*GetBuyerSensitiveDataRequest)(nil),  // 30: worker.GetBuyerSensitiveDataRequest
-	(*GetBuyerSensitiveDataResponse)(nil), // 31: worker.GetBuyerSensitiveDataResponse
-	(*DeleteBuyerRequest)(nil),            // 32: worker.DeleteBuyerRequest
-	(*DeleteBuyerResponse)(nil),           // 33: worker.DeleteBuyerResponse
-	nil,                                   // 34: worker.Credentials.CookiesEntry
-	(*timestamppb.Timestamp)(nil),         // 35: google.protobuf.Timestamp
+	(TaskType)(0),                         // 3: worker.TaskType
+	(*Buyer)(nil),                         // 4: worker.Buyer
+	(*Credentials)(nil),                   // 5: worker.Credentials
+	(*HTTPCookie)(nil),                    // 6: worker.HTTPCookie
+	(*ExecutionSpec)(nil),                 // 7: worker.ExecutionSpec
+	(*ExecutionResult)(nil),               // 8: worker.ExecutionResult
+	(*LogEntry)(nil),                      // 9: worker.LogEntry
+	(*TaskStatus)(nil),                    // 10: worker.TaskStatus
+	(*HealthRequest)(nil),                 // 11: worker.HealthRequest
+	(*HealthResponse)(nil),                // 12: worker.HealthResponse
+	(*SubmitRequest)(nil),                 // 13: worker.SubmitRequest
+	(*SubmitResponse)(nil),                // 14: worker.SubmitResponse
+	(*StatusRequest)(nil),                 // 15: worker.StatusRequest
+	(*StatusResponse)(nil),                // 16: worker.StatusResponse
+	(*LogsRequest)(nil),                   // 17: worker.LogsRequest
+	(*LogsResponse)(nil),                  // 18: worker.LogsResponse
+	(*StopRequest)(nil),                   // 19: worker.StopRequest
+	(*StopResponse)(nil),                  // 20: worker.StopResponse
+	(*AckRequest)(nil),                    // 21: worker.AckRequest
+	(*AckResponse)(nil),                   // 22: worker.AckResponse
+	(*HeartbeatMsg)(nil),                  // 23: worker.HeartbeatMsg
+	(*GlobalConfig)(nil),                  // 24: worker.GlobalConfig
+	(*ConfigureRequest)(nil),              // 25: worker.ConfigureRequest
+	(*ConfigureResponse)(nil),             // 26: worker.ConfigureResponse
+	(*ListBuyersRequest)(nil),             // 27: worker.ListBuyersRequest
+	(*ListBuyersResponse)(nil),            // 28: worker.ListBuyersResponse
+	(*CreateBuyerRequest)(nil),            // 29: worker.CreateBuyerRequest
+	(*CreateBuyerResponse)(nil),           // 30: worker.CreateBuyerResponse
+	(*GetBuyerSensitiveDataRequest)(nil),  // 31: worker.GetBuyerSensitiveDataRequest
+	(*GetBuyerSensitiveDataResponse)(nil), // 32: worker.GetBuyerSensitiveDataResponse
+	(*DeleteBuyerRequest)(nil),            // 33: worker.DeleteBuyerRequest
+	(*DeleteBuyerResponse)(nil),           // 34: worker.DeleteBuyerResponse
+	(*CheckBWSBindRequest)(nil),           // 35: worker.CheckBWSBindRequest
+	(*CheckBWSBindResponse)(nil),          // 36: worker.CheckBWSBindResponse
+	(*BWSReservationInfoRequest)(nil),     // 37: worker.BWSReservationInfoRequest
+	(*BWSActivity)(nil),                   // 38: worker.BWSActivity
+	(*BWSTicketInfo)(nil),                 // 39: worker.BWSTicketInfo
+	(*BWSReservationInfoResponse)(nil),    // 40: worker.BWSReservationInfoResponse
+	(*BindBWSTicketRequest)(nil),          // 41: worker.BindBWSTicketRequest
+	(*BindBWSTicketResponse)(nil),         // 42: worker.BindBWSTicketResponse
+	nil,                                   // 43: worker.Credentials.CookiesEntry
+	nil,                                   // 44: worker.BWSReservationInfoResponse.ReservedIdsEntry
+	(*timestamppb.Timestamp)(nil),         // 45: google.protobuf.Timestamp
 }
-var file_worker_proto_depIdxs = []int32{
-	34, // 0: worker.Credentials.cookies:type_name -> worker.Credentials.CookiesEntry
-	5,  // 1: worker.Credentials.cookie_jar:type_name -> worker.HTTPCookie
-	3,  // 2: worker.ExecutionSpec.buyers:type_name -> worker.Buyer
+var file_cluster_worker_proto_worker_proto_depIdxs = []int32{
+	43, // 0: worker.Credentials.cookies:type_name -> worker.Credentials.CookiesEntry
+	6,  // 1: worker.Credentials.cookie_jar:type_name -> worker.HTTPCookie
+	4,  // 2: worker.ExecutionSpec.buyers:type_name -> worker.Buyer
 	1,  // 3: worker.ExecutionSpec.start_mode:type_name -> worker.StartMode
-	35, // 4: worker.ExecutionSpec.start_at:type_name -> google.protobuf.Timestamp
-	35, // 5: worker.ExecutionSpec.deadline:type_name -> google.protobuf.Timestamp
-	4,  // 6: worker.ExecutionSpec.credentials:type_name -> worker.Credentials
-	0,  // 7: worker.ExecutionResult.state:type_name -> worker.AttemptState
-	2,  // 8: worker.ExecutionResult.reason:type_name -> worker.FailureReason
-	4,  // 9: worker.ExecutionResult.credentials:type_name -> worker.Credentials
-	35, // 10: worker.ExecutionResult.started_at:type_name -> google.protobuf.Timestamp
-	35, // 11: worker.ExecutionResult.finished_at:type_name -> google.protobuf.Timestamp
-	35, // 12: worker.LogEntry.time:type_name -> google.protobuf.Timestamp
-	0,  // 13: worker.TaskStatus.state:type_name -> worker.AttemptState
-	35, // 14: worker.TaskStatus.lease_until:type_name -> google.protobuf.Timestamp
-	7,  // 15: worker.TaskStatus.result:type_name -> worker.ExecutionResult
-	6,  // 16: worker.SubmitRequest.spec:type_name -> worker.ExecutionSpec
-	9,  // 17: worker.SubmitResponse.status:type_name -> worker.TaskStatus
-	9,  // 18: worker.StatusResponse.status:type_name -> worker.TaskStatus
-	8,  // 19: worker.LogsResponse.entries:type_name -> worker.LogEntry
-	9,  // 20: worker.StopResponse.status:type_name -> worker.TaskStatus
-	35, // 21: worker.HeartbeatMsg.time:type_name -> google.protobuf.Timestamp
-	7,  // 22: worker.HeartbeatMsg.completed_task:type_name -> worker.ExecutionResult
-	23, // 23: worker.ConfigureRequest.config:type_name -> worker.GlobalConfig
-	4,  // 24: worker.ListBuyersRequest.credentials:type_name -> worker.Credentials
-	3,  // 25: worker.ListBuyersResponse.buyers:type_name -> worker.Buyer
-	4,  // 26: worker.ListBuyersResponse.credentials:type_name -> worker.Credentials
-	4,  // 27: worker.CreateBuyerRequest.credentials:type_name -> worker.Credentials
-	3,  // 28: worker.CreateBuyerRequest.buyer:type_name -> worker.Buyer
-	3,  // 29: worker.CreateBuyerResponse.buyer:type_name -> worker.Buyer
-	4,  // 30: worker.CreateBuyerResponse.credentials:type_name -> worker.Credentials
-	4,  // 31: worker.GetBuyerSensitiveDataRequest.credentials:type_name -> worker.Credentials
-	3,  // 32: worker.GetBuyerSensitiveDataResponse.buyer:type_name -> worker.Buyer
-	4,  // 33: worker.DeleteBuyerRequest.credentials:type_name -> worker.Credentials
-	10, // 34: worker.WorkerService.Health:input_type -> worker.HealthRequest
-	12, // 35: worker.WorkerService.Submit:input_type -> worker.SubmitRequest
-	14, // 36: worker.WorkerService.Status:input_type -> worker.StatusRequest
-	16, // 37: worker.WorkerService.Logs:input_type -> worker.LogsRequest
-	18, // 38: worker.WorkerService.Stop:input_type -> worker.StopRequest
-	20, // 39: worker.WorkerService.Ack:input_type -> worker.AckRequest
-	22, // 40: worker.WorkerService.Heartbeat:input_type -> worker.HeartbeatMsg
-	24, // 41: worker.WorkerService.Configure:input_type -> worker.ConfigureRequest
-	26, // 42: worker.WorkerService.ListBuyers:input_type -> worker.ListBuyersRequest
-	28, // 43: worker.WorkerService.CreateBuyer:input_type -> worker.CreateBuyerRequest
-	30, // 44: worker.WorkerService.GetBuyerSensitiveData:input_type -> worker.GetBuyerSensitiveDataRequest
-	26, // 45: worker.WorkerService.ListBuyersMasked:input_type -> worker.ListBuyersRequest
-	32, // 46: worker.WorkerService.DeleteBuyer:input_type -> worker.DeleteBuyerRequest
-	11, // 47: worker.WorkerService.Health:output_type -> worker.HealthResponse
-	13, // 48: worker.WorkerService.Submit:output_type -> worker.SubmitResponse
-	15, // 49: worker.WorkerService.Status:output_type -> worker.StatusResponse
-	17, // 50: worker.WorkerService.Logs:output_type -> worker.LogsResponse
-	19, // 51: worker.WorkerService.Stop:output_type -> worker.StopResponse
-	21, // 52: worker.WorkerService.Ack:output_type -> worker.AckResponse
-	22, // 53: worker.WorkerService.Heartbeat:output_type -> worker.HeartbeatMsg
-	25, // 54: worker.WorkerService.Configure:output_type -> worker.ConfigureResponse
-	27, // 55: worker.WorkerService.ListBuyers:output_type -> worker.ListBuyersResponse
-	29, // 56: worker.WorkerService.CreateBuyer:output_type -> worker.CreateBuyerResponse
-	31, // 57: worker.WorkerService.GetBuyerSensitiveData:output_type -> worker.GetBuyerSensitiveDataResponse
-	27, // 58: worker.WorkerService.ListBuyersMasked:output_type -> worker.ListBuyersResponse
-	33, // 59: worker.WorkerService.DeleteBuyer:output_type -> worker.DeleteBuyerResponse
-	47, // [47:60] is the sub-list for method output_type
-	34, // [34:47] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	45, // 4: worker.ExecutionSpec.start_at:type_name -> google.protobuf.Timestamp
+	45, // 5: worker.ExecutionSpec.deadline:type_name -> google.protobuf.Timestamp
+	5,  // 6: worker.ExecutionSpec.credentials:type_name -> worker.Credentials
+	3,  // 7: worker.ExecutionSpec.task_type:type_name -> worker.TaskType
+	0,  // 8: worker.ExecutionResult.state:type_name -> worker.AttemptState
+	2,  // 9: worker.ExecutionResult.reason:type_name -> worker.FailureReason
+	5,  // 10: worker.ExecutionResult.credentials:type_name -> worker.Credentials
+	45, // 11: worker.ExecutionResult.started_at:type_name -> google.protobuf.Timestamp
+	45, // 12: worker.ExecutionResult.finished_at:type_name -> google.protobuf.Timestamp
+	45, // 13: worker.LogEntry.time:type_name -> google.protobuf.Timestamp
+	0,  // 14: worker.TaskStatus.state:type_name -> worker.AttemptState
+	45, // 15: worker.TaskStatus.lease_until:type_name -> google.protobuf.Timestamp
+	8,  // 16: worker.TaskStatus.result:type_name -> worker.ExecutionResult
+	7,  // 17: worker.SubmitRequest.spec:type_name -> worker.ExecutionSpec
+	10, // 18: worker.SubmitResponse.status:type_name -> worker.TaskStatus
+	10, // 19: worker.StatusResponse.status:type_name -> worker.TaskStatus
+	9,  // 20: worker.LogsResponse.entries:type_name -> worker.LogEntry
+	10, // 21: worker.StopResponse.status:type_name -> worker.TaskStatus
+	45, // 22: worker.HeartbeatMsg.time:type_name -> google.protobuf.Timestamp
+	8,  // 23: worker.HeartbeatMsg.completed_task:type_name -> worker.ExecutionResult
+	24, // 24: worker.ConfigureRequest.config:type_name -> worker.GlobalConfig
+	5,  // 25: worker.ListBuyersRequest.credentials:type_name -> worker.Credentials
+	4,  // 26: worker.ListBuyersResponse.buyers:type_name -> worker.Buyer
+	5,  // 27: worker.ListBuyersResponse.credentials:type_name -> worker.Credentials
+	5,  // 28: worker.CreateBuyerRequest.credentials:type_name -> worker.Credentials
+	4,  // 29: worker.CreateBuyerRequest.buyer:type_name -> worker.Buyer
+	4,  // 30: worker.CreateBuyerResponse.buyer:type_name -> worker.Buyer
+	5,  // 31: worker.CreateBuyerResponse.credentials:type_name -> worker.Credentials
+	5,  // 32: worker.GetBuyerSensitiveDataRequest.credentials:type_name -> worker.Credentials
+	4,  // 33: worker.GetBuyerSensitiveDataResponse.buyer:type_name -> worker.Buyer
+	5,  // 34: worker.DeleteBuyerRequest.credentials:type_name -> worker.Credentials
+	5,  // 35: worker.CheckBWSBindRequest.credentials:type_name -> worker.Credentials
+	5,  // 36: worker.CheckBWSBindResponse.credentials:type_name -> worker.Credentials
+	5,  // 37: worker.BWSReservationInfoRequest.credentials:type_name -> worker.Credentials
+	38, // 38: worker.BWSReservationInfoResponse.activities:type_name -> worker.BWSActivity
+	39, // 39: worker.BWSReservationInfoResponse.ticket_infos:type_name -> worker.BWSTicketInfo
+	44, // 40: worker.BWSReservationInfoResponse.reserved_ids:type_name -> worker.BWSReservationInfoResponse.ReservedIdsEntry
+	5,  // 41: worker.BWSReservationInfoResponse.credentials:type_name -> worker.Credentials
+	5,  // 42: worker.BindBWSTicketRequest.credentials:type_name -> worker.Credentials
+	5,  // 43: worker.BindBWSTicketResponse.credentials:type_name -> worker.Credentials
+	11, // 44: worker.WorkerService.Health:input_type -> worker.HealthRequest
+	13, // 45: worker.WorkerService.Submit:input_type -> worker.SubmitRequest
+	15, // 46: worker.WorkerService.Status:input_type -> worker.StatusRequest
+	17, // 47: worker.WorkerService.Logs:input_type -> worker.LogsRequest
+	19, // 48: worker.WorkerService.Stop:input_type -> worker.StopRequest
+	21, // 49: worker.WorkerService.Ack:input_type -> worker.AckRequest
+	23, // 50: worker.WorkerService.Heartbeat:input_type -> worker.HeartbeatMsg
+	25, // 51: worker.WorkerService.Configure:input_type -> worker.ConfigureRequest
+	27, // 52: worker.WorkerService.ListBuyers:input_type -> worker.ListBuyersRequest
+	29, // 53: worker.WorkerService.CreateBuyer:input_type -> worker.CreateBuyerRequest
+	31, // 54: worker.WorkerService.GetBuyerSensitiveData:input_type -> worker.GetBuyerSensitiveDataRequest
+	27, // 55: worker.WorkerService.ListBuyersMasked:input_type -> worker.ListBuyersRequest
+	33, // 56: worker.WorkerService.DeleteBuyer:input_type -> worker.DeleteBuyerRequest
+	35, // 57: worker.WorkerService.CheckBWSBind:input_type -> worker.CheckBWSBindRequest
+	37, // 58: worker.WorkerService.GetBWSReservationInfo:input_type -> worker.BWSReservationInfoRequest
+	41, // 59: worker.WorkerService.BindBWSTicket:input_type -> worker.BindBWSTicketRequest
+	12, // 60: worker.WorkerService.Health:output_type -> worker.HealthResponse
+	14, // 61: worker.WorkerService.Submit:output_type -> worker.SubmitResponse
+	16, // 62: worker.WorkerService.Status:output_type -> worker.StatusResponse
+	18, // 63: worker.WorkerService.Logs:output_type -> worker.LogsResponse
+	20, // 64: worker.WorkerService.Stop:output_type -> worker.StopResponse
+	22, // 65: worker.WorkerService.Ack:output_type -> worker.AckResponse
+	23, // 66: worker.WorkerService.Heartbeat:output_type -> worker.HeartbeatMsg
+	26, // 67: worker.WorkerService.Configure:output_type -> worker.ConfigureResponse
+	28, // 68: worker.WorkerService.ListBuyers:output_type -> worker.ListBuyersResponse
+	30, // 69: worker.WorkerService.CreateBuyer:output_type -> worker.CreateBuyerResponse
+	32, // 70: worker.WorkerService.GetBuyerSensitiveData:output_type -> worker.GetBuyerSensitiveDataResponse
+	28, // 71: worker.WorkerService.ListBuyersMasked:output_type -> worker.ListBuyersResponse
+	34, // 72: worker.WorkerService.DeleteBuyer:output_type -> worker.DeleteBuyerResponse
+	36, // 73: worker.WorkerService.CheckBWSBind:output_type -> worker.CheckBWSBindResponse
+	40, // 74: worker.WorkerService.GetBWSReservationInfo:output_type -> worker.BWSReservationInfoResponse
+	42, // 75: worker.WorkerService.BindBWSTicket:output_type -> worker.BindBWSTicketResponse
+	60, // [60:76] is the sub-list for method output_type
+	44, // [44:60] is the sub-list for method input_type
+	44, // [44:44] is the sub-list for extension type_name
+	44, // [44:44] is the sub-list for extension extendee
+	0,  // [0:44] is the sub-list for field type_name
 }
 
-func init() { file_worker_proto_init() }
-func file_worker_proto_init() {
-	if File_worker_proto != nil {
+func init() { file_cluster_worker_proto_worker_proto_init() }
+func file_cluster_worker_proto_worker_proto_init() {
+	if File_cluster_worker_proto_worker_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_worker_proto_rawDesc), len(file_worker_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   32,
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cluster_worker_proto_worker_proto_rawDesc), len(file_cluster_worker_proto_worker_proto_rawDesc)),
+			NumEnums:      4,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_worker_proto_goTypes,
-		DependencyIndexes: file_worker_proto_depIdxs,
-		EnumInfos:         file_worker_proto_enumTypes,
-		MessageInfos:      file_worker_proto_msgTypes,
+		GoTypes:           file_cluster_worker_proto_worker_proto_goTypes,
+		DependencyIndexes: file_cluster_worker_proto_worker_proto_depIdxs,
+		EnumInfos:         file_cluster_worker_proto_worker_proto_enumTypes,
+		MessageInfos:      file_cluster_worker_proto_worker_proto_msgTypes,
 	}.Build()
-	File_worker_proto = out.File
-	file_worker_proto_goTypes = nil
-	file_worker_proto_depIdxs = nil
+	File_cluster_worker_proto_worker_proto = out.File
+	file_cluster_worker_proto_worker_proto_goTypes = nil
+	file_cluster_worker_proto_worker_proto_depIdxs = nil
 }

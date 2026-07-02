@@ -47,6 +47,13 @@ const (
 	StartScheduled StartMode = "scheduled"
 )
 
+type TaskType string
+
+const (
+	TaskTypeTicket TaskType = "ticket"
+	TaskTypeBWS    TaskType = "bws"
+)
+
 type FailureReason string
 
 const (
@@ -301,11 +308,31 @@ type ExecutionSpec struct {
 	StartDelayMS     int64       `json:"startDelayMs,omitempty"`
 	ReflowStockCheck bool        `json:"reflowStockCheck"`
 	Credentials      Credentials `json:"credentials"`
+	TaskType         TaskType    `json:"taskType,omitempty"`
+
+	// BWS-specific fields
+	BWSActivityID    int    `json:"bwsActivityId,omitempty"`
+	BWSTicketNo      string `json:"bwsTicketNo,omitempty"`
+	BWSActivityTitle string `json:"bwsActivityTitle,omitempty"`
+	BWSReserveTime   int64  `json:"bwsReserveTime,omitempty"`
+	BWSReserveDate   string `json:"bwsReserveDate,omitempty"`
 }
 
 func (s ExecutionSpec) Validate() error {
 	if strings.TrimSpace(s.AttemptID) == "" || strings.TrimSpace(s.IntentID) == "" {
 		return fmt.Errorf("attemptId and intentId are required")
+	}
+	if s.TaskType == TaskTypeBWS {
+		if s.BWSActivityID <= 0 || s.BWSTicketNo == "" || s.BWSReserveTime <= 0 {
+			return fmt.Errorf("bws: activityId, ticketNo, and reserveTime are required")
+		}
+		if s.StartMode != StartImmediate && s.StartMode != StartScheduled {
+			return fmt.Errorf("invalid start mode")
+		}
+		if s.StartMode == StartScheduled && s.StartAt.IsZero() {
+			return fmt.Errorf("scheduled task requires startAt")
+		}
+		return nil
 	}
 	if s.ProjectID <= 0 || s.ScreenID <= 0 || s.SKUID <= 0 || len(s.Buyers) == 0 {
 		return fmt.Errorf("invalid immutable order shape")
@@ -325,6 +352,12 @@ func (s ExecutionSpec) Validate() error {
 func (s ExecutionSpec) Hash() string {
 	copy := s
 	copy.Credentials = Credentials{}
+	// Zero out BWS fields so they don't affect hash when not a BWS task
+	copy.BWSActivityID = 0
+	copy.BWSTicketNo = ""
+	copy.BWSActivityTitle = ""
+	copy.BWSReserveTime = 0
+	copy.BWSReserveDate = ""
 	b, _ := json.Marshal(copy)
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])

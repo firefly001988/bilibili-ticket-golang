@@ -68,6 +68,7 @@
         "groupNamePlaceholder": "任务组名称",
         "settingsArea": "设置",
         "notify": "通知设置",
+        "bwsReservation": "BWS 预约",
         "settings": "常规设置"
     },
     "logs": {
@@ -890,7 +891,25 @@
         "idTypeIdcard": "身份证",
         "idTypePassport": "护照",
         "idTypeHkMacau": "港澳通行证",
-        "idTypeTaiwan": "台湾通行证"
+        "idTypeTaiwan": "台湾通行证",
+        "selectAccount": "选择账号",
+        "selectWorker": "选择 Worker",
+        "selectAccountWorker": "请先选择账号和 Worker",
+        "checkBind": "检测绑票",
+        "bindCheckOk": "已绑票",
+        "bindCheckFailed": "绑票检测失败: {error}",
+        "ticketNoHint": "输入票号后4位",
+        "taskLogs": "任务日志",
+        "noLogs": "暂无日志 — 等待任务启动...",
+        "stateNotOpen": "暂未开放",
+        "stateAvailable": "可预约",
+        "stateEnded": "已结束",
+        "stateReserved": "已预约",
+        "stateSoldOut": "已售完",
+        "reserveType": "场次类型",
+        "typeActivity": "活动",
+        "typeGoods": "商品",
+        "filterName": "搜索活动名称"
     },
     "pluginManagement": {
         "title": "插件管理",

@@ -2,13 +2,12 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.34.1
-// source: worker.proto
+// source: cluster/worker/proto/worker.proto
 
 package proto
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -33,6 +32,9 @@ const (
 	WorkerService_GetBuyerSensitiveData_FullMethodName = "/worker.WorkerService/GetBuyerSensitiveData"
 	WorkerService_ListBuyersMasked_FullMethodName      = "/worker.WorkerService/ListBuyersMasked"
 	WorkerService_DeleteBuyer_FullMethodName           = "/worker.WorkerService/DeleteBuyer"
+	WorkerService_CheckBWSBind_FullMethodName          = "/worker.WorkerService/CheckBWSBind"
+	WorkerService_GetBWSReservationInfo_FullMethodName = "/worker.WorkerService/GetBWSReservationInfo"
+	WorkerService_BindBWSTicket_FullMethodName         = "/worker.WorkerService/BindBWSTicket"
 )
 
 // WorkerServiceClient is the client API for WorkerService service.
@@ -89,6 +91,14 @@ type WorkerServiceClient interface {
 	ListBuyersMasked(ctx context.Context, in *ListBuyersRequest, opts ...grpc.CallOption) (*ListBuyersResponse, error)
 	// DeleteBuyer removes a real‑name buyer from a Bilibili account.
 	DeleteBuyer(ctx context.Context, in *DeleteBuyerRequest, opts ...grpc.CallOption) (*DeleteBuyerResponse, error)
+	// CheckBWSBind checks whether the account has a BWS electronic ticket
+	// bound to a real‑name identity.
+	CheckBWSBind(ctx context.Context, in *CheckBWSBindRequest, opts ...grpc.CallOption) (*CheckBWSBindResponse, error)
+	// GetBWSReservationInfo fetches all BWS activity information for the
+	// given dates.
+	GetBWSReservationInfo(ctx context.Context, in *BWSReservationInfoRequest, opts ...grpc.CallOption) (*BWSReservationInfoResponse, error)
+	// BindBWSTicket binds a real‑name identity to an electronic ticket.
+	BindBWSTicket(ctx context.Context, in *BindBWSTicketRequest, opts ...grpc.CallOption) (*BindBWSTicketResponse, error)
 }
 
 type workerServiceClient struct {
@@ -232,6 +242,36 @@ func (c *workerServiceClient) DeleteBuyer(ctx context.Context, in *DeleteBuyerRe
 	return out, nil
 }
 
+func (c *workerServiceClient) CheckBWSBind(ctx context.Context, in *CheckBWSBindRequest, opts ...grpc.CallOption) (*CheckBWSBindResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckBWSBindResponse)
+	err := c.cc.Invoke(ctx, WorkerService_CheckBWSBind_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workerServiceClient) GetBWSReservationInfo(ctx context.Context, in *BWSReservationInfoRequest, opts ...grpc.CallOption) (*BWSReservationInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BWSReservationInfoResponse)
+	err := c.cc.Invoke(ctx, WorkerService_GetBWSReservationInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workerServiceClient) BindBWSTicket(ctx context.Context, in *BindBWSTicketRequest, opts ...grpc.CallOption) (*BindBWSTicketResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BindBWSTicketResponse)
+	err := c.cc.Invoke(ctx, WorkerService_BindBWSTicket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkerServiceServer is the server API for WorkerService service.
 // All implementations must embed UnimplementedWorkerServiceServer
 // for forward compatibility.
@@ -286,6 +326,14 @@ type WorkerServiceServer interface {
 	ListBuyersMasked(context.Context, *ListBuyersRequest) (*ListBuyersResponse, error)
 	// DeleteBuyer removes a real‑name buyer from a Bilibili account.
 	DeleteBuyer(context.Context, *DeleteBuyerRequest) (*DeleteBuyerResponse, error)
+	// CheckBWSBind checks whether the account has a BWS electronic ticket
+	// bound to a real‑name identity.
+	CheckBWSBind(context.Context, *CheckBWSBindRequest) (*CheckBWSBindResponse, error)
+	// GetBWSReservationInfo fetches all BWS activity information for the
+	// given dates.
+	GetBWSReservationInfo(context.Context, *BWSReservationInfoRequest) (*BWSReservationInfoResponse, error)
+	// BindBWSTicket binds a real‑name identity to an electronic ticket.
+	BindBWSTicket(context.Context, *BindBWSTicketRequest) (*BindBWSTicketResponse, error)
 	mustEmbedUnimplementedWorkerServiceServer()
 }
 
@@ -334,6 +382,15 @@ func (UnimplementedWorkerServiceServer) ListBuyersMasked(context.Context, *ListB
 }
 func (UnimplementedWorkerServiceServer) DeleteBuyer(context.Context, *DeleteBuyerRequest) (*DeleteBuyerResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteBuyer not implemented")
+}
+func (UnimplementedWorkerServiceServer) CheckBWSBind(context.Context, *CheckBWSBindRequest) (*CheckBWSBindResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckBWSBind not implemented")
+}
+func (UnimplementedWorkerServiceServer) GetBWSReservationInfo(context.Context, *BWSReservationInfoRequest) (*BWSReservationInfoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBWSReservationInfo not implemented")
+}
+func (UnimplementedWorkerServiceServer) BindBWSTicket(context.Context, *BindBWSTicketRequest) (*BindBWSTicketResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BindBWSTicket not implemented")
 }
 func (UnimplementedWorkerServiceServer) mustEmbedUnimplementedWorkerServiceServer() {}
 func (UnimplementedWorkerServiceServer) testEmbeddedByValue()                       {}
@@ -579,6 +636,60 @@ func _WorkerService_DeleteBuyer_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkerService_CheckBWSBind_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckBWSBindRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).CheckBWSBind(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_CheckBWSBind_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).CheckBWSBind(ctx, req.(*CheckBWSBindRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkerService_GetBWSReservationInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BWSReservationInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).GetBWSReservationInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_GetBWSReservationInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).GetBWSReservationInfo(ctx, req.(*BWSReservationInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkerService_BindBWSTicket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BindBWSTicketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).BindBWSTicket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_BindBWSTicket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).BindBWSTicket(ctx, req.(*BindBWSTicketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkerService_ServiceDesc is the grpc.ServiceDesc for WorkerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -634,6 +745,18 @@ var WorkerService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "DeleteBuyer",
 			Handler:    _WorkerService_DeleteBuyer_Handler,
 		},
+		{
+			MethodName: "CheckBWSBind",
+			Handler:    _WorkerService_CheckBWSBind_Handler,
+		},
+		{
+			MethodName: "GetBWSReservationInfo",
+			Handler:    _WorkerService_GetBWSReservationInfo_Handler,
+		},
+		{
+			MethodName: "BindBWSTicket",
+			Handler:    _WorkerService_BindBWSTicket_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -643,5 +766,5 @@ var WorkerService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "worker.proto",
+	Metadata: "cluster/worker/proto/worker.proto",
 }

@@ -1,11 +1,17 @@
 package api
 
 // BWSReservationInfoStruct represents the full response from
-// GET /x/activity/bws/online/park/info
+// GET /x/activity/bws/online/park/info (BW2026 format)
 type BWSReservationInfoStruct struct {
 	UserTicketInfo  map[string]BWSTicketDetailStruct   `json:"user_ticket_info"`
 	ReserveList     map[string][]BWSActivityInfoStruct `json:"reserve_list"`
-	UserReserveInfo map[string][]BWSReservedInfoStruct `json:"user_reserve_info"`
+	UserReserveInfo map[string]BWSReserveCountStruct   `json:"user_reserve_info"` // BW2026: counts per date, not individual reserved IDs
+}
+
+// BWSReserveCountStruct is the per-date reservation count (BW2026 format).
+type BWSReserveCountStruct struct {
+	TotalCount int `json:"total_count"`
+	CurCount   int `json:"cur_count"`
 }
 
 // BWSTicketDetailStruct is a single ticket entry keyed by date (e.g. "20250711").
@@ -15,19 +21,15 @@ type BWSTicketDetailStruct struct {
 	SkuName    string `json:"sku_name"`
 }
 
-// BWSActivityInfoStruct is a single activity within a day's reserve list.
+// BWSActivityInfoStruct is a single activity within a day's reserve list (BW2026 format).
 type BWSActivityInfoStruct struct {
 	ReserveID        int    `json:"reserve_id"`
 	ActTitle         string `json:"act_title"`
 	ReserveBeginTime int64  `json:"reserve_begin_time"`
 	ActBeginTime     int64  `json:"act_begin_time"`
 	State            int    `json:"state"`
+	OnlineState      int    `json:"online_state"` // BW2026: 0=available, 1=reserved
 	DescribeInfo     string `json:"describe_info"`
-}
-
-// BWSReservedInfoStruct is a single already-reserved activity entry.
-type BWSReservedInfoStruct struct {
-	ReserveID int `json:"reserve_id"`
 }
 
 // BWSMyReservationsStruct represents the response from
@@ -45,4 +47,10 @@ type BWSMyReservationItemStruct struct {
 	ReserveLocation string `json:"reserve_location"`
 	IsChecked       int    `json:"is_checked"`
 	OnlineState     int    `json:"online_state"`
+}
+
+// BWSBindStatusStruct represents the response from
+// GET /x/activity/bws/online/park/ticket/check
+type BWSBindStatusStruct struct {
+	IsBind bool `json:"is_bind"`
 }

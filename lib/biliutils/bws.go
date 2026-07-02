@@ -7,28 +7,29 @@ import (
 	"strconv"
 )
 
+const year = "202601"
+
 // ── BWS (Bilibili World) 预约抢票 API ──────────────────────────────────────
 
 // Inspired from https://github.com/Starsbon/bws_ticket
 // May not suit for BW2026, update reqired if BW2026 reservation API differs significantly from BW2025's.
 
-// bwsBaseURL is the base path for BWS online park endpoints.
-const bwsBaseURL = "https://api.bilibili.com/x/activity/bws/online/park"
-
 // GetBWSReservationInfo fetches all reservation information for the given dates.
 //
 // reserveDates is comma-separated, e.g. "20250711,20250712,20250713".
+// reserveType specifies the type of reservation to fetch. `0` for activities, `1` for goods.
 //
 // Returns a parsed BWSReservationData containing ticket mapping, activity
 // mapping, and already-reserved activity IDs for convenient access.
-func (c *BiliClient) GetBWSReservationInfo(reserveDates string) (*r.BWSReservationData, error) {
+func (c *BiliClient) GetBWSReservationInfo(reserveDates string, reserveType int) (*r.BWSReservationData, error) {
 	resp, err := c.client.R().
 		SetQueryParam("reserve_date", reserveDates).
-		Get(bwsBaseURL + "/reserve/info")
+		SetQueryParam("year", year).
+		SetQueryParam("reserve_type", strconv.Itoa(reserveType)).
+		Get("https://api.bilibili.com/x/activity/bws/online/park/reserve/info")
 	if err != nil {
 		return nil, fmt.Errorf("BWS info request failed: %w", err)
 	}
-
 	var apiResp api.MainApiDataRoot[api.BWSReservationInfoStruct]
 	if err = resp.Unmarshal(&apiResp); err != nil {
 		return nil, fmt.Errorf("BWS info unmarshal failed: %w", err)
@@ -57,7 +58,7 @@ func (c *BiliClient) GetBWSReservationInfo(reserveDates string) (*r.BWSReservati
 
 	for date, activities := range apiResp.Data.ReserveList {
 		for _, act := range activities {
-			data.ActivityMapping[act.ReserveID] = &r.BWSActivity{
+			bwsAct := &r.BWSActivity{
 				ReserveID:        act.ReserveID,
 				ActTitle:         act.ActTitle,
 				ReserveBeginTime: act.ReserveBeginTime,
@@ -66,12 +67,7 @@ func (c *BiliClient) GetBWSReservationInfo(reserveDates string) (*r.BWSReservati
 				DescribeInfo:     act.DescribeInfo,
 				ReserveDate:      date,
 			}
-		}
-	}
-
-	for _, reserved := range apiResp.Data.UserReserveInfo {
-		for _, item := range reserved {
-			data.ReservedIDs[item.ReserveID] = true
+			data.ActivityMapping[act.ReserveID] = bwsAct
 		}
 	}
 
@@ -80,7 +76,7 @@ func (c *BiliClient) GetBWSReservationInfo(reserveDates string) (*r.BWSReservati
 
 // GetBWSMyReservations fetches the user's current BWS reservations.
 func (c *BiliClient) GetBWSMyReservations() (*api.BWSMyReservationsStruct, error) {
-	resp, err := c.client.R().Get(bwsBaseURL + "/reserve/myreserve")
+	resp, err := c.client.R().Get("https://api.bilibili.com/x/activity/bws/online/park/myreserve")
 	if err != nil {
 		return nil, fmt.Errorf("BWS myreserve request failed: %w", err)
 	}
@@ -117,7 +113,7 @@ func (c *BiliClient) MakeBWSReservation(ticketNo string, reservationID int) (cod
 
 	resp, reqErr := c.client.R().
 		SetFormData(form).
-		Post(bwsBaseURL + "/reserve/do")
+		Post("https://api.bilibili.com/x/activity/bws/online/park/reserve/do")
 	if reqErr != nil {
 		return -1, "", fmt.Errorf("BWS reservation request failed: %w", reqErr)
 	}
@@ -160,7 +156,7 @@ func (c *BiliClient) BindBWSTicket(bid int, idType int, personalID string, ticke
 
 	resp, reqErr := c.client.R().
 		SetFormData(form).
-		Post(bwsBaseURL + "/ticket/bind")
+		Post("https://api.bilibili.com/x/activity/bws/online/park/ticket/bind")
 	if reqErr != nil {
 		return -1, "", fmt.Errorf("BWS bind request failed: %w", reqErr)
 	}
@@ -171,4 +167,25 @@ func (c *BiliClient) BindBWSTicket(bid int, idType int, personalID string, ticke
 	}
 
 	return apiResp.Code, apiResp.Message, nil
+}
+
+// CheckBWSBindStatus checks the user's BWS bind status.
+//
+// Returns a boolean indicating if the account is bound, and any transport/unmarshal error.
+func (c *BiliClient) CheckBWSBindStatus() (bool, error) {
+	resp, err := c.client.R().SetQueryParams(map[string]string{
+		"csrf": c.getCSRFFromCookie(),
+		"year": year,
+	}).Get("https://api.bilibili.com/x/activity/bws/online/park/ticket/check")
+	if err != nil {
+		return false, fmt.Errorf("BWS bind check request failed: %w", err)
+	}
+	var apiResp api.MainApiDataRoot[api.BWSBindStatusStruct]
+	if err = resp.Unmarshal(&apiResp); err != nil {
+		return false, fmt.Errorf("BWS bind check unmarshal failed: %w", err)
+	}
+	if err = apiResp.CheckValid(); err != nil {
+		return false, err
+	}
+	return apiResp.Data.IsBind, nil
 }

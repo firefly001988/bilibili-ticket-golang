@@ -650,6 +650,122 @@ func (ws *workerService) DeleteBuyer(_ context.Context, req *pb.DeleteBuyerReque
 	return &pb.DeleteBuyerResponse{}, nil
 }
 
+// =============================================================================
+// CheckBWSBind – check whether an account has a BWS electronic ticket bound
+// =============================================================================
+
+func (ws *workerService) CheckBWSBind(_ context.Context, req *pb.CheckBWSBindRequest) (*pb.CheckBWSBindResponse, error) {
+	if req.Credentials == nil {
+		return nil, status.Error(codes.InvalidArgument, "credentials are required")
+	}
+	creds := credentialsFromProto(req.Credentials)
+	backend, err := executor.NewBilibiliBackend(creds)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "initialize Bilibili client: %v", err)
+	}
+	client, _ := backend.ClientAndJar()
+	isBind, err := client.CheckBWSBindStatus()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "check BWS bind: %v", err)
+	}
+	refreshed := backend.Credentials()
+	return &pb.CheckBWSBindResponse{
+		IsBind:      isBind,
+		Credentials: credentialsToProto(refreshed),
+	}, nil
+}
+
+// =============================================================================
+// GetBWSReservationInfo – fetch BWS activity info for the given dates
+// =============================================================================
+
+func (ws *workerService) GetBWSReservationInfo(_ context.Context, req *pb.BWSReservationInfoRequest) (*pb.BWSReservationInfoResponse, error) {
+	if req.Credentials == nil {
+		return nil, status.Error(codes.InvalidArgument, "credentials are required")
+	}
+	if req.ReserveDates == "" {
+		return nil, status.Error(codes.InvalidArgument, "reserve_dates is required")
+	}
+	creds := credentialsFromProto(req.Credentials)
+	backend, err := executor.NewBilibiliBackend(creds)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "initialize Bilibili client: %v", err)
+	}
+	client, _ := backend.ClientAndJar()
+	data, err := client.GetBWSReservationInfo(req.ReserveDates, int(req.ReserveType))
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get BWS reservation info: %v", err)
+	}
+
+	// Build activities list
+	activities := make([]*pb.BWSActivity, 0)
+	for _, act := range data.ActivityMapping {
+		activities = append(activities, &pb.BWSActivity{
+			ReserveId:        int32(act.ReserveID),
+			ActTitle:         act.ActTitle,
+			ReserveBeginTime: act.ReserveBeginTime,
+			ActBeginTime:     act.ActBeginTime,
+			State:            int32(act.State),
+			DescribeInfo:     act.DescribeInfo,
+			ReserveDate:      act.ReserveDate,
+		})
+	}
+
+	// Build ticket info list
+	ticketInfos := make([]*pb.BWSTicketInfo, 0)
+	for date, ti := range data.TicketInfo {
+		ticketInfos = append(ticketInfos, &pb.BWSTicketInfo{
+			Date:       date,
+			Ticket:     ti.Ticket,
+			ScreenName: ti.ScreenName,
+			SkuName:    ti.SkuName,
+		})
+	}
+
+	refreshed := backend.Credentials()
+	return &pb.BWSReservationInfoResponse{
+		Activities:  activities,
+		TicketInfos: ticketInfos,
+		ReservedIds: func() map[int32]bool {
+			m := make(map[int32]bool)
+			for id := range data.ReservedIDs {
+				m[int32(id)] = true
+			}
+			return m
+		}(),
+		Credentials: credentialsToProto(refreshed),
+	}, nil
+}
+
+// =============================================================================
+// BindBWSTicket – bind real‑name identity to a BWS electronic ticket
+// =============================================================================
+
+func (ws *workerService) BindBWSTicket(_ context.Context, req *pb.BindBWSTicketRequest) (*pb.BindBWSTicketResponse, error) {
+	if req.Credentials == nil {
+		return nil, status.Error(codes.InvalidArgument, "credentials are required")
+	}
+	if req.TicketNo == "" || req.PersonalId == "" || req.UserName == "" {
+		return nil, status.Error(codes.InvalidArgument, "ticket_no, personal_id, and user_name are required")
+	}
+	creds := credentialsFromProto(req.Credentials)
+	backend, err := executor.NewBilibiliBackend(creds)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "initialize Bilibili client: %v", err)
+	}
+	client, _ := backend.ClientAndJar()
+	code, message, err := client.BindBWSTicket(int(req.Bid), int(req.IdType), req.PersonalId, req.TicketNo, req.UserName)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "bind BWS ticket: %v", err)
+	}
+	refreshed := backend.Credentials()
+	return &pb.BindBWSTicketResponse{
+		Code:        int32(code),
+		Message:     message,
+		Credentials: credentialsToProto(refreshed),
+	}, nil
+}
+
 // Heartbeat
 // =============================================================================
 
@@ -738,6 +854,13 @@ func specFromProto(p *pb.ExecutionSpec) (domain.ExecutionSpec, error) {
 		IntervalMS:   p.IntervalMs,
 		StartDelayMS: p.StartDelayMs,
 		Credentials:  credentialsFromProto(p.Credentials),
+		TaskType:     taskTypeFromProto(p.TaskType),
+		// BWS fields
+		BWSActivityID:    int(p.BwsActivityId),
+		BWSTicketNo:      p.BwsTicketNo,
+		BWSActivityTitle: p.BwsActivityTitle,
+		BWSReserveTime:   p.BwsReserveTime,
+		BWSReserveDate:   p.BwsReserveDate,
 	}
 	if p.StartAt != nil {
 		s.StartAt = p.StartAt.AsTime()
@@ -831,6 +954,15 @@ func startModeFromProto(m pb.StartMode) domain.StartMode {
 		return domain.StartScheduled
 	default:
 		return domain.StartImmediate
+	}
+}
+
+func taskTypeFromProto(t pb.TaskType) domain.TaskType {
+	switch t {
+	case pb.TaskType_TASK_TYPE_BWS:
+		return domain.TaskTypeBWS
+	default:
+		return domain.TaskTypeTicket
 	}
 }
 
@@ -948,6 +1080,12 @@ func logEntryToProto(e LogEntry) *pb.LogEntry {
 }
 
 func (s *Server) run(ctx context.Context, t *task) {
+	// Route BWS tasks to the BWS-specific execution path.
+	if t.spec.TaskType == domain.TaskTypeBWS {
+		s.runBWS(ctx, t)
+		return
+	}
+
 	// Apply global configuration overrides from the employer.
 	s.globalConfigMu.RLock()
 	gcfg := s.globalConfig
@@ -999,6 +1137,72 @@ func (s *Server) run(ctx context.Context, t *task) {
 			result.Success, result.State, result.Reason, result.Message = false, domain.AttemptFailed, domain.FailureInternal, "persist success: "+err.Error()
 		}
 	}
+	s.complete(t, result)
+}
+
+// runBWS executes a BWS (Bilibili World) reservation task using the
+// Engine.Run() loop with clock calibration and outcome classification.
+func (s *Server) runBWS(ctx context.Context, t *task) {
+	s.globalConfigMu.RLock()
+	gcfg := s.globalConfig
+	s.globalConfigMu.RUnlock()
+	if gcfg.StartDelayMs > 0 {
+		t.spec.StartDelayMS = gcfg.StartDelayMs
+	}
+	if gcfg.RetryIntervalMs > 0 {
+		t.spec.IntervalMS = gcfg.RetryIntervalMs
+	}
+
+	bwsBackend, err := executor.NewBWSBackend(t.spec.Credentials)
+	if err != nil {
+		s.complete(t, domain.ExecutionResult{
+			AttemptID: t.spec.AttemptID, IntentID: t.spec.IntentID,
+			State: domain.AttemptFailed, Reason: domain.FailureInternal,
+			Message: err.Error(), FinishedAt: s.now(),
+		})
+		return
+	}
+	bwsBackend.SetReservation(int(t.spec.BWSActivityID), t.spec.BWSTicketNo)
+
+	s.mu.Lock()
+	if t.state == domain.AttemptWaiting {
+		t.state = domain.AttemptRunning
+	}
+	s.mu.Unlock()
+	s.logTask(t, "started", fmt.Sprintf("BWS activity=%d ticket=%s reserve=%s",
+		t.spec.BWSActivityID, t.spec.BWSTicketNo,
+		time.Unix(t.spec.BWSReserveTime, 0).Format(time.RFC3339)), 0, false)
+
+	var executionClock executor.Clock
+	if s.config.CalibrateClock {
+		if offset, cerr := biliclock.GetBilibiliClockOffset(); cerr == nil {
+			executionClock = executor.OffsetClock{Offset: offset}
+		} else {
+			_ = WriteRedactedLog(s.config.DataDir, "clock calibration failed: "+cerr.Error())
+		}
+	}
+
+	result := (executor.Engine{
+		Backend:    bwsBackend,
+		Classifier: executor.BWSClassifier{},
+		Clock:      executionClock,
+		Observe: func(event executor.Event) {
+			s.logTask(t, event.Stage, event.Message, event.Code, event.Retryable)
+		},
+		GetRetryInterval: func() int64 {
+			s.globalConfigMu.RLock()
+			ms := s.globalConfig.RetryIntervalMs
+			s.globalConfigMu.RUnlock()
+			return ms
+		},
+	}).Run(ctx, t.spec)
+
+	// On success, the Engine propagates the OrderID from Attempt.
+	// BWSBackend leaves OrderID empty; fill it here for traceability.
+	if result.Success && result.OrderID == "" {
+		result.OrderID = fmt.Sprintf("bws-%d", t.spec.BWSActivityID)
+	}
+
 	s.complete(t, result)
 }
 

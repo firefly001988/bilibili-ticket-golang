@@ -35,7 +35,7 @@ const calculatedPath = computed(() => {
   if (p === '') return 'home'
   if (p.startsWith('cluster/task-group/')) return 'task-groups'
   // Match partial paths (e.g. "account/list" should match "account")
-  for (const seg of ['account/list', 'account/buyers', 'cluster/worker', 'cluster/logs', 'cluster/events', 'cluster/orders', 'notify', 'settings']) {
+  for (const seg of ['account/list', 'account/buyers', 'cluster/worker', 'cluster/logs', 'cluster/events', 'cluster/orders', 'notify', 'settings', 'bws-reservation']) {
     if (p.startsWith(seg)) return seg
   }
   return p
@@ -174,6 +174,8 @@ onMounted(async () => {
         </v-list-group>
         <v-list-item :title="t('nav.orders')" value="cluster/orders" @click="router.push('/cluster/orders')"
           prepend-icon="mdi-receipt-text-check-outline" />
+        <v-list-item :title="t('nav.bwsReservation')" value="bws-reservation" @click="router.push('/bws-reservation')"
+          prepend-icon="mdi-ticket-confirmation-outline" />
 
         <v-divider class="mt-1" />
         <v-list-subheader>
