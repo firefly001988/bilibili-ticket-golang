@@ -315,7 +315,9 @@ func (ws *workerService) Submit(_ context.Context, req *pb.SubmitRequest) (*pb.S
 		s.mu.Unlock()
 		return resp, nil
 	}
-	if s.active != "" {
+	// For non-BWS tasks: only one active task at a time.
+	// BWS tasks are scheduled independently and can coexist.
+	if s.active != "" && spec.TaskType != domain.TaskTypeBWS {
 		s.mu.Unlock()
 		return nil, status.Error(codes.ResourceExhausted, "worker is busy")
 	}
