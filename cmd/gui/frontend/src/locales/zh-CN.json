@@ -325,6 +325,7 @@
         "filterPlaceholder": "搜索 场次/SKU 名称",
         "projectIdLabel": "项目 ID",
         "projectIdPlaceholder": "如 1001653",
+        "projectIdHelp": "可以在漫展演出售票页面 URL 中找到",
         "projectIdRequired": "请输入项目 ID",
         "projectNotFound": "未找到项目",
         "projectId": "项目 ID",

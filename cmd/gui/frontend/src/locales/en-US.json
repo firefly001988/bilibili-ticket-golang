@@ -325,6 +325,7 @@
         "filterPlaceholder": "Search screen/SKU name",
         "projectIdLabel": "Project ID",
         "projectIdPlaceholder": "e.g. 1001653",
+        "projectIdHelp": "Find it in the event ticket page URL",
         "projectIdRequired": "Project ID is required",
         "projectNotFound": "Project not found",
         "projectId": "Project ID",
