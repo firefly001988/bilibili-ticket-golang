@@ -319,7 +319,7 @@
     "taskGroup": {
         "createdAt": "Created",
         "notFound": "Task group not found",
-        "addMacro": "Add SKU (Lookup)",
+        "addMacro": "Add SKU Macro",
         "tickets": "Tickets ({count})",
         "filterAll": "All",
         "filterPlaceholder": "Search screen/SKU name",
@@ -346,7 +346,6 @@
         "macroList": "Macro List",
         "macroDeleted": "Deleted",
         "macroDeleteFailed": "Delete failed: {error}",
-        "emptyMacro": "No SKUs — enter a project ID above to search",
         "colProject": "Project",
         "colScreen": "Screen",
         "colSku": "SKU",

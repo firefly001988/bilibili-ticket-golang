@@ -319,7 +319,7 @@
     "taskGroup": {
         "createdAt": "创建时间",
         "notFound": "任务组不存在",
-        "addMacro": "添加 SKU（查项目）",
+        "addMacro": "添加 SKU 宏任务",
         "tickets": "票种 ({count})",
         "filterAll": "全部",
         "filterPlaceholder": "搜索 场次/SKU 名称",
@@ -346,7 +346,6 @@
         "macroList": "宏任务列表",
         "macroDeleted": "已删除",
         "macroDeleteFailed": "删除失败: {error}",
-        "emptyMacro": "无 SKU — 在上方输入项目 ID 查询并添加",
         "colProject": "项目",
         "colScreen": "场次",
         "colSku": "票种",

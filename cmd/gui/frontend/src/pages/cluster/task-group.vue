@@ -8,7 +8,7 @@ import AccountPicker from '@/components/cluster/AccountPicker.vue'
 import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup, StopTaskGroup, ForceStopTaskGroup, ForceRestartTaskGroup, StartTaskGroup, StopIntent, SaveTaskGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
 
-const route = useRoute(); const { t } = useI18n(); const messages = useMessagesStore()
+const route = useRoute(); const { t, locale } = useI18n(); const messages = useMessagesStore()
 const START_REFLOW_NOW_TOKEN = '__cluster_reflow_now__'
 
 interface TaskGroupSummary { id: string; name: string; accountIds?: string[]; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; paymentTimeoutMinutes?: number; waveDurationMinutes?: number; maxWaves?: number; reflowStockCheck?: boolean; createdAt?: string }
@@ -199,6 +199,54 @@ const selectedTicket = computed(() => {
     if (!selectedScreenId.value || !selectedSkuId.value) return null
     return (tickets.value as any[]).find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value) || null
 })
+
+function activeLocale() {
+    const loc = String(locale.value || '')
+    return loc === 'en' ? 'en-US' : loc || 'zh-CN'
+}
+
+function parseDateInput(value: string | undefined, dateOnly = false) {
+    if (!value) return null
+    const raw = String(value).trim()
+    if (!raw) return null
+    const normalized = dateOnly && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw
+    const date = new Date(normalized)
+    return Number.isNaN(date.getTime()) ? null : date
+}
+
+function formatEventDay(value: string | undefined) {
+    const date = parseDateInput(value, true)
+    if (!date) return value || '—'
+    return new Intl.DateTimeFormat(activeLocale(), {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'short',
+    }).format(date)
+}
+
+function formatDateTime(value: string | undefined) {
+    const date = parseDateInput(value)
+    if (!date) return value || '—'
+    return new Intl.DateTimeFormat(activeLocale(), {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    }).format(date)
+}
+
+function formatDateTimeRange(start: string | undefined, end: string | undefined) {
+    return `${formatDateTime(start)} ~ ${formatDateTime(end)}`
+}
+
+function purchaseGroupBuyerNames(pg: any) {
+    const names = (pg.buyers || []).map((b: any) => buyerByLogicalId(b.logicalId)?.name || b.name || b.logicalId).filter(Boolean)
+    return names.length > 0 ? names.join('、') : '—'
+}
 
 /** When the user picks a ticket, sync its sale start into the picker. */
 watch(selectedTicket, (t) => {
@@ -653,7 +701,7 @@ const allPurchaseGroups = computed(() => {
             </v-card>
 
             <!-- Dispatch bar -->
-            <v-card v-if="macros.length > 0" class="mb-4" elevation="2" color="surface-variant">
+            <v-card v-if="macros.length > 0" class="mb-4" elevation="2">
                 <v-card-text class="py-2 px-4">
                     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
                         <span class="text-subtitle-2">{{ t('taskGroup.dispatch') }}</span>
@@ -725,117 +773,12 @@ const allPurchaseGroups = computed(() => {
                 </v-card-text>
             </v-card>
 
-            <!-- Add Macro -->
-            <v-card class="mb-4" elevation="2" :disabled="editingDisabled">
-                <v-card-title class="text-subtitle-1">{{ t('taskGroup.addMacro') }}</v-card-title>
-                <v-card-text>
-                    <v-alert v-if="editingDisabled" type="info" variant="tonal" density="compact" class="mb-3">
-                        {{ t('taskGroup.editLockedHint') }}
-                    </v-alert>
-                    <v-row dense>
-                        <v-col cols="5"><v-text-field v-model="lookupProjectId" :label="t('taskGroup.projectIdLabel')"
-                                :placeholder="t('taskGroup.projectIdPlaceholder')" variant="outlined" density="compact"
-                                hide-details :disabled="editingDisabled" @keydown.enter="lookupProject" /></v-col>
-                        <v-col cols="3" class="d-flex align-center"><v-btn :loading="lookupLoading" color="primary"
-                                :disabled="editingDisabled" @click="lookupProject">{{ t('taskGroup.lookup')
-                                }}</v-btn></v-col>
-                    </v-row>
-                    <v-expand-transition>
-                        <div v-if="projectInfo" class="mt-3">
-                            <v-card class="mt-3 pa-4" elevation="2">
-                                <v-card-title>{{ projectInfo.ProjectName }}<v-chip v-if="projectInfo.IsHotProject"
-                                        color="error" size="small">{{ t('taskGroup.hot') }}</v-chip></v-card-title>
-                                <v-card-text>
-                                    <p><v-label>{{ t('taskGroup.projectId') }}:</v-label> {{ projectInfo.ProjectID }}
-                                    </p>
-                                    <p><v-label>{{ t('taskGroup.sale') }}:</v-label> {{ projectInfo.StartTime }} ~ {{
-                                        projectInfo.EndTime }}</p>
-                                    <p v-if="projectInfo.IsForceRealName"><v-label color="warning">{{
-                                        t('taskGroup.realNameRequired') }}</v-label></p>
-                                    <p v-if="projectInfo.contactRequired"><v-label color="warning">{{
-                                        t('taskGroup.contactRequired') }}</v-label></p>
-                                </v-card-text>
-                            </v-card>
-                            <!-- SKU list -->
-                            <v-card v-if="tickets.length > 0" class="mt-3" elevation="2">
-                                <v-card-title class="text-subtitle-1 pa-3 d-flex align-center" style="cursor:pointer"
-                                    @click="showSkuList = !showSkuList">
-                                    {{ t('taskGroup.tickets', { count: tickets.length }) }}<v-spacer />
-                                    <v-icon class="sku-chevron" :class="{ 'sku-chevron--open': showSkuList }"
-                                        size="small">mdi-chevron-down</v-icon>
-                                </v-card-title>
-                                <v-expand-transition>
-                                    <div v-show="showSkuList">
-                                        <v-card-text class="pb-1 pt-0 px-4"><v-text-field v-model="filterName"
-                                                :label="t('taskGroup.filterPlaceholder')"
-                                                prepend-inner-icon="mdi-magnify" variant="outlined" density="compact"
-                                                hide-details clearable /></v-card-text>
-                                        <v-list class="py-0">
-                                            <v-list-group v-for="sc in filteredScreens" :key="sc.screenId"
-                                                :value="'screen-' + sc.screenId">
-                                                <template #activator="{ props: groupProps }">
-                                                    <v-list-item v-bind="groupProps" class="px-4"
-                                                        :title="sc.screenName">
-                                                        <template #append>
-                                                            <v-icon class="screen-chevron">mdi-chevron-down</v-icon>
-                                                        </template>
-                                                    </v-list-item>
-                                                </template>
-                                                <v-divider />
-                                                <v-list-item v-for="t in sc.tickets" :key="`${t.screenId}-${t.skuId}`"
-                                                    class="px-4 pl-8" style="cursor:pointer"
-                                                    :active="selectedScreenId === t.screenId && selectedSkuId === t.skuId"
-                                                    @click="selectedScreenId = t.screenId; selectedSkuId = t.skuId">
-                                                    <template #title>
-                                                        <div
-                                                            style="display:flex;align-items:center;gap:4px;min-width:0">
-                                                            <span class="text-body-2 text-truncate"
-                                                                style="min-width:0">{{ t.desc || t.skuId }}</span>
-                                                            <v-chip v-if="t.flags?.display_name" size="small"
-                                                                variant="tonal" class="ml-1 flex-shrink-0"
-                                                                :color="t.flags.display_name.includes('售罄') || t.flags.display_name.includes('停售') ? 'red' : t.flags.display_name.includes('未开') ? 'grey' : t.flags.display_name.includes('不可') ? 'yellow' : 'green'">
-                                                                {{ t.flags.display_name }}
-                                                            </v-chip>
-                                                        </div>
-                                                    </template>
-                                                    <template #subtitle>
-                                                        <span class="text-body-2">SKU:{{ t.skuId }} | ¥{{ ((t.price ||
-                                                            0) / 100).toFixed(0) }}</span>
-                                                    </template>
-                                                    <template #append>
-                                                        <v-icon class="sku-check-icon"
-                                                            :class="{ 'sku-check-icon--selected': selectedScreenId === t.screenId && selectedSkuId === t.skuId }"
-                                                            color="primary">mdi-check-circle</v-icon>
-                                                    </template>
-                                                </v-list-item>
-                                            </v-list-group>
-                                        </v-list>
-                                    </div>
-                                </v-expand-transition>
-                            </v-card>
-                            <v-row dense class="mt-3">
-                                <v-col cols="12">
-                                    <v-text-field ref="customStartRef" v-model="customStartAt"
-                                        :label="t('taskGroup.customStartAt')" :hint="t('taskGroup.customStartAtHint')"
-                                        type="datetime-local" step="1" variant="outlined" density="compact"
-                                        persistent-hint :disabled="editingDisabled" @click="openDatetimePicker" />
-                                </v-col>
-                            </v-row>
-                            <v-btn class="mt-3" color="success" :loading="addingMacro"
-                                :disabled="editingDisabled || !selectedScreenId || !selectedSkuId" @click="addMacro">{{
-                                    t('taskGroup.confirmAdd') }}</v-btn>
-                        </div>
-                    </v-expand-transition>
-                </v-card-text>
-            </v-card>
-
             <!-- Macro list -->
             <v-card elevation="2">
                 <v-card-title class="text-subtitle-1">{{ t('taskGroup.macroList') }} ({{ macros.length
                 }})</v-card-title>
-                <template v-if="macros.length > 0">
-                    <v-expansion-panels v-model="expandedMacro" variant="accordion"
-                        @update:model-value="onMacroPanelChange">
+                <v-expansion-panels v-model="expandedMacro" variant="accordion"
+                    @update:model-value="onMacroPanelChange">
                         <v-expansion-panel v-for="(m, idx) in macros" :key="m.id" :value="idx + 1">
                             <v-expansion-panel-title>
                                 <div style="width:100%;min-width:0">
@@ -857,14 +800,23 @@ const allPurchaseGroups = computed(() => {
                                         <v-icon size="16" color="info">mdi-clock-start</v-icon>
                                         <span class="text-body-2" style="color:rgb(var(--v-theme-info))">{{
                                             t('taskGroup.saleStartTime') }}:</span>
-                                        <span class="text-body-2" style="font-weight:600">{{ m.startAt ? new
-                                            Date(m.startAt).toLocaleString() : '—' }}</span>
+                                        <span class="text-body-2" style="font-weight:600">{{ formatDateTime(m.startAt)
+                                            }}</span>
                                     </div>
                                     <div class="text-caption text-medium-emphasis text-truncate mt-1">{{
                                         t('taskGroup.eventDay') }}: {{
-                                            m.eventDay || '—' }}</div>
+                                            formatEventDay(m.eventDay) }}</div>
                                     <div class="text-caption text-medium-emphasis text-truncate mt-1">{{
-                                        t('taskGroup.saleTime') }}: {{ m.startAt || '—' }} ~ {{ m.deadline || '—' }}
+                                        t('taskGroup.saleTime') }}: {{ formatDateTimeRange(m.startAt, m.deadline) }}
+                                    </div>
+                                    <div v-if="(m.purchaseGroups || []).length > 0"
+                                        class="d-flex align-center flex-wrap mt-2" style="gap:4px">
+                                        <span class="text-caption text-medium-emphasis">{{ t('taskGroup.purchaseGroups')
+                                        }}:</span>
+                                        <v-chip v-for="pg in sortedPurchaseGroups(m)" :key="pg.id" size="x-small"
+                                            variant="tonal">
+                                            {{ purchaseGroupBuyerNames(pg) }}
+                                        </v-chip>
                                     </div>
                                     <div v-if="isPendingAutoStart(m) && startBlockers(m).length > 0"
                                         v-for="blocker in startBlockers(m)" :key="blocker" class="text-caption mt-1"
@@ -1022,10 +974,126 @@ const allPurchaseGroups = computed(() => {
                                     </v-card-text></v-card>
                             </v-expansion-panel-text>
                         </v-expansion-panel>
-                    </v-expansion-panels>
-                </template>
-                <v-card-text v-else class="text-medium-emphasis text-center py-6">{{ t('taskGroup.emptyMacro')
-                }}</v-card-text>
+                    <v-expansion-panel :value="-1">
+                        <v-expansion-panel-title>
+                            <div class="d-flex align-center" style="gap:8px">
+                                <v-icon color="primary">mdi-plus-circle-outline</v-icon>
+                                <span>{{ t('taskGroup.addMacro') }}</span>
+                            </div>
+                        </v-expansion-panel-title>
+                        <v-expansion-panel-text>
+                            <v-alert v-if="editingDisabled" type="info" variant="tonal" density="compact" class="mb-3">
+                                {{ t('taskGroup.editLockedHint') }}
+                            </v-alert>
+                            <v-row dense>
+                                <v-col cols="12" md="5"><v-text-field v-model="lookupProjectId"
+                                        :label="t('taskGroup.projectIdLabel')"
+                                        :placeholder="t('taskGroup.projectIdPlaceholder')" variant="outlined"
+                                        density="compact" hide-details :disabled="editingDisabled"
+                                        @keydown.enter="lookupProject" /></v-col>
+                                <v-col cols="12" md="3" class="d-flex align-center"><v-btn :loading="lookupLoading"
+                                        color="primary" :disabled="editingDisabled" @click="lookupProject">{{
+                                            t('taskGroup.lookup')
+                                        }}</v-btn></v-col>
+                            </v-row>
+                            <v-expand-transition>
+                                <div v-if="projectInfo" class="mt-3">
+                                    <v-card class="mt-3 pa-4" elevation="2">
+                                        <v-card-title>{{ projectInfo.ProjectName }}<v-chip
+                                                v-if="projectInfo.IsHotProject" color="error" size="small">{{
+                                                    t('taskGroup.hot') }}</v-chip></v-card-title>
+                                        <v-card-text>
+                                            <p><v-label>{{ t('taskGroup.projectId') }}:</v-label> {{
+                                                projectInfo.ProjectID }}
+                                            </p>
+                                            <p><v-label>{{ t('taskGroup.sale') }}:</v-label> {{
+                                                formatDateTime(projectInfo.StartTime) }} ~ {{
+                                                    formatDateTime(projectInfo.EndTime) }}</p>
+                                            <p v-if="projectInfo.IsForceRealName"><v-label color="warning">{{
+                                                t('taskGroup.realNameRequired') }}</v-label></p>
+                                            <p v-if="projectInfo.contactRequired"><v-label color="warning">{{
+                                                t('taskGroup.contactRequired') }}</v-label></p>
+                                        </v-card-text>
+                                    </v-card>
+                                    <!-- SKU list -->
+                                    <v-card v-if="tickets.length > 0" class="mt-3" elevation="2">
+                                        <v-card-title class="text-subtitle-1 pa-3 d-flex align-center"
+                                            style="cursor:pointer" @click="showSkuList = !showSkuList">
+                                            {{ t('taskGroup.tickets', { count: tickets.length }) }}<v-spacer />
+                                            <v-icon class="sku-chevron" :class="{ 'sku-chevron--open': showSkuList }"
+                                                size="small">mdi-chevron-down</v-icon>
+                                        </v-card-title>
+                                        <v-expand-transition>
+                                            <div v-show="showSkuList">
+                                                <v-card-text class="pb-1 pt-0 px-4"><v-text-field v-model="filterName"
+                                                        :label="t('taskGroup.filterPlaceholder')"
+                                                        prepend-inner-icon="mdi-magnify" variant="outlined"
+                                                        density="compact" hide-details clearable /></v-card-text>
+                                                <v-list class="py-0">
+                                                    <v-list-group v-for="sc in filteredScreens" :key="sc.screenId"
+                                                        :value="'screen-' + sc.screenId">
+                                                        <template #activator="{ props: groupProps }">
+                                                            <v-list-item v-bind="groupProps" class="px-4"
+                                                                :title="sc.screenName">
+                                                                <template #append>
+                                                                    <v-icon
+                                                                        class="screen-chevron">mdi-chevron-down</v-icon>
+                                                                </template>
+                                                            </v-list-item>
+                                                        </template>
+                                                        <v-divider />
+                                                        <v-list-item v-for="t in sc.tickets"
+                                                            :key="`${t.screenId}-${t.skuId}`" class="px-4 pl-8"
+                                                            style="cursor:pointer"
+                                                            :active="selectedScreenId === t.screenId && selectedSkuId === t.skuId"
+                                                            @click="selectedScreenId = t.screenId; selectedSkuId = t.skuId">
+                                                            <template #title>
+                                                                <div
+                                                                    style="display:flex;align-items:center;gap:4px;min-width:0">
+                                                                    <span class="text-body-2 text-truncate"
+                                                                        style="min-width:0">{{ t.desc || t.skuId
+                                                                        }}</span>
+                                                                    <v-chip v-if="t.flags?.display_name" size="small"
+                                                                        variant="tonal" class="ml-1 flex-shrink-0"
+                                                                        :color="t.flags.display_name.includes('售罄') || t.flags.display_name.includes('停售') ? 'red' : t.flags.display_name.includes('未开') ? 'grey' : t.flags.display_name.includes('不可') ? 'yellow' : 'green'">
+                                                                        {{ t.flags.display_name }}
+                                                                    </v-chip>
+                                                                </div>
+                                                            </template>
+                                                            <template #subtitle>
+                                                                <span class="text-body-2">SKU:{{ t.skuId }} | ¥{{
+                                                                    ((t.price ||
+                                                                        0) / 100).toFixed(0) }}</span>
+                                                            </template>
+                                                            <template #append>
+                                                                <v-icon class="sku-check-icon"
+                                                                    :class="{ 'sku-check-icon--selected': selectedScreenId === t.screenId && selectedSkuId === t.skuId }"
+                                                                    color="primary">mdi-check-circle</v-icon>
+                                                            </template>
+                                                        </v-list-item>
+                                                    </v-list-group>
+                                                </v-list>
+                                            </div>
+                                        </v-expand-transition>
+                                    </v-card>
+                                    <v-row dense class="mt-3">
+                                        <v-col cols="12">
+                                            <v-text-field ref="customStartRef" v-model="customStartAt"
+                                                :label="t('taskGroup.customStartAt')"
+                                                :hint="t('taskGroup.customStartAtHint')" type="datetime-local" step="1"
+                                                variant="outlined" density="compact" persistent-hint
+                                                :disabled="editingDisabled" @click="openDatetimePicker" />
+                                        </v-col>
+                                    </v-row>
+                                    <v-btn class="mt-3" color="success" :loading="addingMacro"
+                                        :disabled="editingDisabled || !selectedScreenId || !selectedSkuId"
+                                        @click="addMacro">{{
+                                            t('taskGroup.confirmAdd') }}</v-btn>
+                                </div>
+                            </v-expand-transition>
+                        </v-expansion-panel-text>
+                    </v-expansion-panel>
+                </v-expansion-panels>
             </v-card>
         </div>
         <v-card v-else class="mt-4 pa-6 text-center" variant="outlined"><v-card-text>{{ t('taskGroup.notFound')
