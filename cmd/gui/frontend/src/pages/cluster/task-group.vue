@@ -255,6 +255,13 @@ function buyerDisplayName(b: any) {
     return tail ? `${name} · ${tail}` : name
 }
 
+function buyerDisplayNameFullId(b: any) {
+    const buyer = b?.logicalId ? (buyerByLogicalId(b.logicalId) || b) : b
+    const name = buyer?.name || b?.name || buyer?.logicalId || b?.logicalId || '—'
+    const idCard = String(buyer?.idCard || '').replace(/\s+/g, '')
+    return idCard ? `${name} · ${idCard}` : name
+}
+
 function buyerSubtitle(b: any) {
     const buyer = b?.logicalId ? (buyerByLogicalId(b.logicalId) || b) : b
     const tel = buyer?.tel || ''
@@ -945,9 +952,6 @@ const allPurchaseGroups = computed(() => {
                                             <div class="purchase-group-section__title">
                                                 {{ t('taskGroup.purchaseGroups') }}
                                             </div>
-                                            <div class="text-caption text-medium-emphasis">
-                                                {{ t('taskGroup.pgAddHint') }}
-                                            </div>
                                         </div>
                                         <v-chip size="small" variant="tonal" color="primary">
                                             {{ (m.purchaseGroups || []).length }}
@@ -960,7 +964,7 @@ const allPurchaseGroups = computed(() => {
                                                 <div class="purchase-group-card__buyers">
                                                     <v-chip v-for="b in (pg.buyers || [])" :key="b.logicalId"
                                                         size="small" variant="tonal">
-                                                        {{ buyerDisplayName(b) }}
+                                                        {{ buyerDisplayNameFullId(b) }}
                                                     </v-chip>
                                                 </div>
                                                 <div class="purchase-group-card__meta">
@@ -1003,7 +1007,10 @@ const allPurchaseGroups = computed(() => {
                                     </div>
                                 </div>
                                 <v-card variant="text"><v-card-text class="pa-0">
-                                        <p class="text-caption mb-2">{{ t('taskGroup.pgAddHint') }}</p>
+                                        <div class="purchase-group-form-title">
+                                            {{ editingPgId && editingPgMacroId === m.id ? t('taskGroup.pgEditTitle') :
+                                                t('taskGroup.pgAdd') }}
+                                        </div>
                                         <v-select v-if="allBuyers.length > 0" :model-value="selectedPgBuyerIds"
                                             @update:model-value="onBuyerSelectionChange" :items="allBuyers"
                                             :item-title="buyerDisplayName" item-value="logicalId"
@@ -1548,6 +1555,13 @@ const allPurchaseGroups = computed(() => {
     border-radius: 10px;
     color: rgba(var(--v-theme-on-surface), 0.58);
     font-size: 0.82rem;
+}
+
+.purchase-group-form-title {
+    margin-bottom: 10px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: rgba(var(--v-theme-on-surface), 0.9);
 }
 
 .add-macro-title__content {
