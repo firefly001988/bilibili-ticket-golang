@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 interface WorkerOption {
@@ -32,10 +32,11 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const dialog = ref(false)
 const keyword = ref('')
+const workerIDSet = computed(() => new Set(props.workers.map(worker => worker.id)))
 
 const selected = computed({
-    get: () => props.modelValue || [],
-    set: (value: string[]) => emit('update:modelValue', dedupe(value)),
+    get: () => pruneExisting(props.modelValue || []),
+    set: (value: string[]) => emit('update:modelValue', pruneExisting(value)),
 })
 
 const selectedSet = computed(() => new Set(selected.value))
@@ -97,6 +98,14 @@ function dedupe(values: string[]) {
     return result
 }
 
+function pruneExisting(values: string[]) {
+    return dedupe(values).filter(id => workerIDSet.value.has(id))
+}
+
+function sameValues(a: string[], b: string[]) {
+    return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
 function workerTags(worker: WorkerOption) {
     const tags = worker.tags && worker.tags.length > 0 ? worker.tags : [worker.type || 'remote']
     return dedupe(tags.map(tag => String(tag).trim()).filter(Boolean))
@@ -141,6 +150,15 @@ function toggleTag(tag: string) {
     }
     setSelected([...next])
 }
+
+watch(
+    () => [props.modelValue, props.workers] as const,
+    () => {
+        const pruned = pruneExisting(props.modelValue || [])
+        if (!sameValues(pruned, props.modelValue || [])) emit('update:modelValue', pruned)
+    },
+    { deep: true }
+)
 </script>
 
 <template>

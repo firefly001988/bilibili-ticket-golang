@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 interface AccountOption {
@@ -31,10 +31,11 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const dialog = ref(false)
 const keyword = ref('')
+const accountIDSet = computed(() => new Set(props.accounts.map(account => account.id)))
 
 const selected = computed({
-    get: () => props.modelValue || [],
-    set: (value: string[]) => emit('update:modelValue', dedupe(value)),
+    get: () => pruneExisting(props.modelValue || []),
+    set: (value: string[]) => emit('update:modelValue', pruneExisting(value)),
 })
 
 const selectedSet = computed(() => new Set(selected.value))
@@ -87,6 +88,14 @@ function dedupe(values: string[]) {
     return result
 }
 
+function pruneExisting(values: string[]) {
+    return dedupe(values).filter(id => accountIDSet.value.has(id))
+}
+
+function sameValues(a: string[], b: string[]) {
+    return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
 function accountTags(account: AccountOption) {
     return dedupe((account.tags || []).map(tag => String(tag).trim()).filter(Boolean))
 }
@@ -130,6 +139,15 @@ function toggleTag(tag: string) {
     }
     setSelected([...next])
 }
+
+watch(
+    () => [props.modelValue, props.accounts] as const,
+    () => {
+        const pruned = pruneExisting(props.modelValue || [])
+        if (!sameValues(pruned, props.modelValue || [])) emit('update:modelValue', pruned)
+    },
+    { deep: true }
+)
 </script>
 
 <template>
