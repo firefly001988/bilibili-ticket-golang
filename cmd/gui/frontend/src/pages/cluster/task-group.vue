@@ -318,6 +318,19 @@ async function removePurchaseGroup(macroId: string, pgId: string) {
 
 function buyerByLogicalId(id: string) { return allBuyers.value.find(b => b.logicalId === id) }
 
+/** 按权重降序、优先级降序排列购票组，反映实际调度顺序 */
+function sortedPurchaseGroups(m: MacroSummary) {
+    const groups = [...(m.purchaseGroups || [])]
+    groups.sort((a, b) => {
+        const wa = a.weight || 1, wb = b.weight || 1
+        if (wa !== wb) return wb - wa
+        const pa = a.priority || 0, pb = b.priority || 0
+        if (pa !== pb) return pb - pa
+        return (a.id || '').localeCompare(b.id || '')
+    })
+    return groups
+}
+
 async function loadBuyersOnce() { if (allBuyers.value.length > 0) return; try { const snap = await Snapshot(); allBuyers.value = ((snap.buyers || []) as any[]).map((b: any) => ({ logicalId: b.logicalId, name: b.name || '', idCard: b.idCard || '', tel: b.tel || '', accounts: b.accounts || [] })) } catch { } }
 
 function randomId(prefix: string) { const arr = new Uint8Array(6); crypto.getRandomValues(arr); return prefix + '-' + Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('') }
@@ -925,7 +938,7 @@ const allPurchaseGroups = computed(() => {
                                         :label="t('taskGroup.reflowStockCheck')"
                                         :hint="t('taskGroup.reflowStockCheckHint')" density="compact" hide-details
                                         persistent-hint :disabled="editingDisabled"
-                                        @update:model-value="reflowCheckDraft[m.id] = $event" />
+                                        @update:model-value="reflowCheckDraft[m.id] = !!$event" />
                                     <v-btn size="small" variant="tonal" color="primary" :disabled="editingDisabled"
                                         :loading="savingMacroReflowCheck[m.id]" @click="saveMacroReflowCheck(m)">
                                         {{ t('common.save') }}
@@ -937,7 +950,7 @@ const allPurchaseGroups = computed(() => {
                                     }})</v-label>
                                     <v-card v-if="(m.purchaseGroups || []).length > 0" elevation="2" class="mb-2">
                                         <v-list density="compact" class="py-0">
-                                            <template v-for="(pg, pgIdx) in (m.purchaseGroups || [])" :key="pg.id">
+                                            <template v-for="(pg, pgIdx) in sortedPurchaseGroups(m)" :key="pg.id">
                                                 <v-list-item class="px-2">
                                                     <template #title>
                                                         <div
@@ -950,13 +963,12 @@ const allPurchaseGroups = computed(() => {
                                                             <v-chip v-if="pg.allowSplit" color="primary" size="x-small"
                                                                 variant="outlined" class="ml-1">{{
                                                                     t('taskGroup.pgAllowSplit') }}</v-chip>
-                                                            <v-chip v-if="(pg.weight || 1) !== 1" size="x-small"
-                                                                variant="outlined" class="ml-1" color="info">
+                                                            <v-chip size="x-small" variant="outlined" class="ml-1"
+                                                                color="info">
                                                                 ×{{ pg.weight || 1 }}
                                                             </v-chip>
-                                                            <v-chip v-if="(pg.priority || 0) !== 0" size="x-small"
-                                                                variant="outlined" class="ml-1"
-                                                                :color="(pg.priority || 0) > 0 ? 'success' : 'warning'">
+                                                            <v-chip size="x-small" variant="outlined" class="ml-1"
+                                                                :color="(pg.priority || 0) > 0 ? 'success' : (pg.priority || 0) < 0 ? 'warning' : ''">
                                                                 P{{ pg.priority || 0 }}
                                                             </v-chip>
                                                         </div>
@@ -980,7 +992,7 @@ const allPurchaseGroups = computed(() => {
                                                         </v-tooltip>
                                                     </template>
                                                 </v-list-item>
-                                                <v-divider v-if="pgIdx < (m.purchaseGroups || []).length - 1" />
+                                                <v-divider v-if="pgIdx < sortedPurchaseGroups(m).length - 1" />
                                             </template>
                                         </v-list>
                                     </v-card>

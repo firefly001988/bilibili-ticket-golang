@@ -205,7 +205,7 @@ func TestPriorityBreaksEqualWeightRemaindersAscending(t *testing.T) {
 	if err := d.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]int{"i0": 4, "i1": 4, "i2": 4, "i3": 3}
+	want := map[string]int{"i0": 3, "i1": 4, "i2": 4, "i3": 4}
 	for id, expected := range want {
 		if got := d.activeCount(id); got != expected {
 			t.Fatalf("intent %s active=%d want=%d", id, got, expected)
@@ -338,7 +338,7 @@ func TestReplicasUseDistinctAccountsAndWorkers(t *testing.T) {
 func TestConflictingShapesSerializeByPriorityAndWinnerStopsSibling(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	d := New(c, nil, nil)
-	// 2 workers, 2 accounts. Conflicting intents serialize; lower numeric
+	// 2 workers, 2 accounts. Conflicting intents serialize; higher numeric
 	// priority wins and receives the whole runnable allocation.
 	accounts := []domain.Account{{ID: "a1", Enabled: true}, {ID: "a2", Enabled: true}}
 	workers := []domain.WorkerNode{{ID: "w1", Enabled: true}, {ID: "w2", Enabled: true}}
@@ -348,8 +348,8 @@ func TestConflictingShapesSerializeByPriorityAndWinnerStopsSibling(t *testing.T)
 	// Same buyer -> same ShapeHash -> conflict.
 	lowIntent := dispatchIntent("low-i", "low", 2, "buyer")
 	highIntent := dispatchIntent("high-i", "high", 2, "buyer")
-	lowIntent.Priority = 10
-	highIntent.Priority = 0
+	lowIntent.Priority = 0
+	highIntent.Priority = 10
 	d.Add(IntentPlan{Macro: low, Intent: lowIntent})
 	d.Add(IntentPlan{Macro: high, Intent: highIntent})
 	if err := d.Reconcile(context.Background()); err != nil {
@@ -376,12 +376,12 @@ func TestStandbyIsIdleUntilMachineFailure(t *testing.T) {
 	d := New(c, nil, nil)
 	accounts, workers := resources()
 	// Two intents A and B with equal weight=2 and 3 workers. Largest remainder
-	// gives the extra slot to the lower numeric priority.
+	// gives the extra slot to the higher numeric priority.
 	d.SetResources(accounts, workers)
 	aIntent := dispatchIntent("a", "ma", 2, "buyer-a")
 	bIntent := dispatchIntent("b", "mb", 2, "buyer-b")
-	aIntent.Priority = 0
-	bIntent.Priority = 1
+	aIntent.Priority = 1
+	bIntent.Priority = 0
 	d.Add(IntentPlan{Macro: dispatchMacro("ma", 0), Intent: aIntent})
 	d.Add(IntentPlan{Macro: dispatchMacro("mb", 0), Intent: bIntent})
 	_ = d.Reconcile(context.Background())
@@ -581,7 +581,7 @@ func TestWinnerTerminalsAllConflictingIntents(t *testing.T) {
 	c := &client{states: make(map[string]WorkerStatus)}
 	r := &repo{}
 	d := New(c, r, nil)
-	// 1 worker — lower numeric priority receives the single slot.
+	// 1 worker — higher numeric priority receives the single slot.
 	accounts := []domain.Account{{ID: "a1", Enabled: true}}
 	workers := []domain.WorkerNode{{ID: "w1", Enabled: true}}
 	d.SetResources(accounts, workers)
@@ -589,8 +589,8 @@ func TestWinnerTerminalsAllConflictingIntents(t *testing.T) {
 	low := dispatchMacro("low", 1)
 	highIntent := dispatchIntent("high-i", "high", 1, "buyer")
 	lowIntent := dispatchIntent("low-i", "low", 1, "buyer")
-	highIntent.Priority = 0
-	lowIntent.Priority = 10
+	highIntent.Priority = 10
+	lowIntent.Priority = 0
 	d.Add(IntentPlan{Macro: low, Intent: lowIntent})
 	d.Add(IntentPlan{Macro: high, Intent: highIntent})
 	if err := d.Reconcile(context.Background()); err != nil {

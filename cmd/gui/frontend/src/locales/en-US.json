@@ -458,7 +458,7 @@
         "pgWeight": "Weight",
         "pgWeightHint": "Relative resource share, default 1",
         "pgPriority": "Priority",
-        "pgPriorityHint": "Lower values receive remainder slots first",
+        "pgPriorityHint": "Higher values receive remainder slots first",
         "blockerNoWorkers": "No healthy workers available",
         "blockerNoBuyerMapping": "Buyers not synced to any account — sync in Buyer Management"
     },

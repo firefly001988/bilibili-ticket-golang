@@ -139,7 +139,7 @@ type PurchaseGroup struct {
 	Buyers      []Buyer   `json:"buyers"`
 	AllowSplit  bool      `json:"allowSplit"`
 	Weight      int       `json:"weight"`   // relative worker/account share (default=1)
-	Priority    int       `json:"priority"` // lower values receive remainder slots first
+	Priority    int       `json:"priority"` // higher values receive remainder slots first
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -155,7 +155,7 @@ type LogicalOrderIntent struct {
 	Armed           bool          `json:"armed"`
 	Terminal        bool          `json:"terminal"`
 	Weight          int           `json:"weight"`   // relative worker/account share
-	Priority        int           `json:"priority"` // lower values receive remainder slots first
+	Priority        int           `json:"priority"` // higher values receive remainder slots first
 	FailureReason   FailureReason `json:"failureReason,omitempty"`
 	CreatedAt       time.Time     `json:"createdAt"`
 }

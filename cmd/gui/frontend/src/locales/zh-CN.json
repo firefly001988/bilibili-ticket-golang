@@ -458,7 +458,7 @@
         "pgWeight": "权重",
         "pgWeightHint": "相对资源份额，默认 1",
         "pgPriority": "优先级",
-        "pgPriorityHint": "数字越小越优先获得余量资源",
+        "pgPriorityHint": "数字越大越优先获得余量资源",
         "blockerNoWorkers": "没有健康的 Worker",
         "blockerNoBuyerMapping": "购票人尚未同步到任何账号，请先在「购票人管理」中同步"
     },

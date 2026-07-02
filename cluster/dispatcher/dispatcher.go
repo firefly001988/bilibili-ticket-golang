@@ -775,7 +775,7 @@ func planOrderLess(a, b *IntentPlan) bool {
 		}
 		return a.Intent.CreatedAt.Before(b.Intent.CreatedAt)
 	}
-	return a.Intent.Priority < b.Intent.Priority
+	return a.Intent.Priority > b.Intent.Priority
 }
 
 func (d *Dispatcher) activeCount(intentID string) int {
