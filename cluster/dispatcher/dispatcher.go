@@ -41,8 +41,9 @@ type MappingResolver interface {
 var ErrBuyerUnavailable = errors.New("buyer is unavailable on account")
 
 type IntentPlan struct {
-	Macro  domain.MacroTask
-	Intent domain.LogicalOrderIntent
+	TaskGroup domain.TaskGroup
+	Macro     domain.MacroTask
+	Intent    domain.LogicalOrderIntent
 }
 
 type attempt struct {
@@ -1054,7 +1055,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, plan *IntentPlan, account dom
 		Deadline:         plan.Macro.Deadline,
 		IntervalMS:       intervalMS,
 		StartDelayMS:     d.startDelayMs,
-		ReflowStockCheck: plan.Macro.ReflowStockCheck && plan.Intent.Phase == domain.PhaseReflow,
+		ReflowStockCheck: plan.TaskGroup.ReflowStockCheck && plan.Intent.Phase == domain.PhaseReflow,
 		Credentials:      account.Credentials,
 	}
 	now := d.now()

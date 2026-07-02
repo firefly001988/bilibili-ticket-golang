@@ -88,6 +88,7 @@ type TaskGroup struct {
 	PaymentTimeoutMinutes int       `json:"paymentTimeoutMinutes,omitempty"`
 	WaveDurationMinutes   int       `json:"waveDurationMinutes,omitempty"`
 	MaxWaves              int       `json:"maxWaves,omitempty"`
+	ReflowStockCheck      bool      `json:"reflowStockCheck,omitempty"`
 	CreatedAt             time.Time `json:"createdAt"`
 }
 
@@ -112,7 +113,6 @@ type MacroTask struct {
 	EventDayConfirmed bool           `json:"eventDayConfirmed"`
 	NeedsReview       bool           `json:"needsReview"`
 	SmartMerge        bool           `json:"smartMerge"`
-	ReflowStockCheck  bool           `json:"reflowStockCheck"`
 	OrderCapacity     int            `json:"orderCapacity"`
 	CapacitySource    CapacitySource `json:"capacitySource"`
 	Priority          int            `json:"priority"`

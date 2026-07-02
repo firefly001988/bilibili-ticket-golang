@@ -309,6 +309,15 @@ func (s *ClusterService) Start(parent context.Context) error {
 	for _, macro := range macros {
 		macroByID[macro.ID] = macro
 	}
+	groups, err := s.repository.ListTaskGroups(ctx)
+	if err != nil {
+		return err
+	}
+	taskGroupByID := make(map[string]domain.TaskGroup, len(groups))
+	for _, taskGroup := range groups {
+		normalizeTaskGroupDefaults(&taskGroup)
+		taskGroupByID[taskGroup.ID] = taskGroup
+	}
 	intents, err := s.repository.ListIntents(ctx)
 	if err != nil {
 		return err
@@ -317,7 +326,7 @@ func (s *ClusterService) Start(parent context.Context) error {
 	for _, intent := range intents {
 		intentByID[intent.ID] = intent
 		if macro, ok := macroByID[intent.MacroTaskID]; ok {
-			s.dispatcher.Add(dispatcher.IntentPlan{Macro: macro, Intent: intent})
+			s.dispatcher.Add(dispatcher.IntentPlan{TaskGroup: taskGroupByID[macro.TaskGroupID], Macro: macro, Intent: intent})
 			s.phases[macro.ID] = intent.Phase
 		}
 	}

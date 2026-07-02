@@ -523,6 +523,10 @@ func (s *ClusterService) planMacro(ctx context.Context, macroID string, phase do
 	if selected == nil {
 		return nil, fmt.Errorf("macro task not found")
 	}
+	taskGroup, err := s.taskGroupByID(ctx, selected.TaskGroupID)
+	if err != nil {
+		return nil, err
+	}
 	groups, err := s.repository.ListPurchaseGroups(ctx, macroID)
 	if err != nil {
 		return nil, err
@@ -556,7 +560,7 @@ func (s *ClusterService) planMacro(ctx context.Context, macroID string, phase do
 		if err := s.repository.PutIntent(ctx, intent); err != nil {
 			return nil, err
 		}
-		s.dispatcher.Add(dispatcher.IntentPlan{Macro: *selected, Intent: intent})
+		s.dispatcher.Add(dispatcher.IntentPlan{TaskGroup: taskGroup, Macro: *selected, Intent: intent})
 		intentIDs[intent.ID] = struct{}{}
 	}
 	if skipped > 0 && len(intentIDs) == 0 {
@@ -636,6 +640,10 @@ func (s *ClusterService) StartPurchaseGroup(macroID, purchaseGroupID string) err
 	if selected == nil {
 		return fmt.Errorf("macro task not found")
 	}
+	taskGroup, err := s.taskGroupByID(ctx, selected.TaskGroupID)
+	if err != nil {
+		return err
+	}
 
 	group, err := s.repository.PurchaseGroup(ctx, purchaseGroupID)
 	if err != nil {
@@ -658,7 +666,7 @@ func (s *ClusterService) StartPurchaseGroup(macroID, purchaseGroupID string) err
 		if err := s.repository.PutIntent(ctx, intent); err != nil {
 			return err
 		}
-		s.dispatcher.Add(dispatcher.IntentPlan{Macro: *selected, Intent: intent})
+		s.dispatcher.Add(dispatcher.IntentPlan{TaskGroup: taskGroup, Macro: *selected, Intent: intent})
 	}
 
 	s.mu.Lock()

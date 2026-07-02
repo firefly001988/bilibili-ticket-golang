@@ -11,10 +11,10 @@ import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../.
 const route = useRoute(); const { t } = useI18n(); const messages = useMessagesStore()
 const START_REFLOW_NOW_TOKEN = '__cluster_reflow_now__'
 
-interface TaskGroupSummary { id: string; name: string; accountIds?: string[]; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; paymentTimeoutMinutes?: number; waveDurationMinutes?: number; maxWaves?: number; createdAt?: string }
+interface TaskGroupSummary { id: string; name: string; accountIds?: string[]; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; paymentTimeoutMinutes?: number; waveDurationMinutes?: number; maxWaves?: number; reflowStockCheck?: boolean; createdAt?: string }
 interface AccountBrief { id: string; name: string; enabled: boolean; vipStatus?: number; tags?: string[] }
 interface WorkerBrief { id: string; name: string; address: string; type: string; healthy: boolean; tags?: string[] }
-interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; reflowStockCheck?: boolean; phase?: string; purchaseGroups?: any[] }
+interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; phase?: string; purchaseGroups?: any[] }
 interface AttemptBrief { id: string; intentId: string; accountId: string; workerId: string; state: string; orderId?: string }
 interface IntentBrief { id: string; macroTaskId: string; purchaseGroupId?: string; phase: string; weight: number; priority: number; buyerCount: number; succeeded: boolean; terminal: boolean; armed: boolean; activeCount: number; deficit: number; failureReason?: string }
 
@@ -29,6 +29,7 @@ const groupStandbyWorkerIds = ref<string[]>([])
 const groupPaymentTimeoutMinutes = ref(10)
 const groupWaveDurationMinutes = ref(3)
 const groupMaxWaves = ref(3)
+const groupReflowStockCheck = ref(false)
 const groupConfigDirty = ref(false)
 const savingGroupConfig = ref(false)
 const lookupProjectId = ref(''); const lookupLoading = ref(false); const projectInfo = ref<any>(null); const tickets = ref<any[]>([])
@@ -39,14 +40,11 @@ function openDatetimePicker() {
     ; (customStartRef.value?.$el?.querySelector('input') as HTMLInputElement)?.showPicker()
 }
 const deletingMacro = ref<Record<string, boolean>>({})
-const savingMacroReflowCheck = ref<Record<string, boolean>>({})
-const reflowCheckDraft = ref<Record<string, boolean>>({})
 const filterName = ref('')
 const filteredTickets = computed(() => { const kw = filterName.value.trim().toLowerCase(); if (!kw) return tickets.value; return tickets.value.filter((t: any) => (t.name || '').toLowerCase().includes(kw) || (t.desc || '').toLowerCase().includes(kw) || String(t.skuId).includes(kw)) })
 
 // Add macro confirmation dialog
 const showAddConfirmDialog = ref(false)
-const addingMacroReflowStockCheck = ref(false)
 const addingMacroInfo = ref<{ projectName: string; eventDay: string; screenName: string; skuName: string; price: number; buyLimit: number; saleStart: string; saleEnd: string; isRealName: boolean } | null>(null)
 
 const eventDayHumanized = computed(() => {
@@ -145,6 +143,7 @@ function syncGroupDraft(nextGroup: TaskGroupSummary | null, force = false) {
     groupPaymentTimeoutMinutes.value = nextGroup.paymentTimeoutMinutes || 10
     groupWaveDurationMinutes.value = nextGroup.waveDurationMinutes || 3
     groupMaxWaves.value = nextGroup.maxWaves || 3
+    groupReflowStockCheck.value = !!nextGroup.reflowStockCheck
     groupConfigDirty.value = false
 }
 
@@ -214,7 +213,7 @@ watch(selectedTicket, (t) => {
 
 async function lookupProject() { const pid = lookupProjectId.value.trim(); if (!pid) { messages.add({ text: t('taskGroup.projectIdRequired'), color: 'warning' }); return } lookupLoading.value = true; projectInfo.value = null; tickets.value = []; selectedScreenId.value = 0; selectedSkuId.value = 0; try { const [info, tks] = await Promise.all([GetProjectInformationNew(pid), GetTicketSkuIDsByProjectIDNew(pid)]); if (!info) messages.add({ text: t('taskGroup.projectNotFound'), color: 'warning' }); else { projectInfo.value = info; tickets.value = tks || [] } } catch (e: any) { messages.add({ text: t('taskGroup.lookupFailed', { error: String(e) }), color: 'error' }) } lookupLoading.value = false }
 
-async function addMacro() { if (!projectInfo.value || !selectedScreenId.value || !selectedSkuId.value || !group.value) return; const ticket = selectedTicket.value; addingMacroReflowStockCheck.value = false; addingMacroInfo.value = { projectName: projectInfo.value.ProjectName || '', eventDay: ticket?.eventTime || projectInfo.value.StartTime || '', screenName: ticket?.name || '', skuName: ticket?.desc || '', price: ((ticket?.price || 0) / 100), buyLimit: ticket?.buyLimit || 1, saleStart: customStartAt.value || ticket?.saleStat?.start || '', saleEnd: ticket?.saleStat?.end || '', isRealName: projectInfo.value.IsForceRealName || false }; showAddConfirmDialog.value = true }
+async function addMacro() { if (!projectInfo.value || !selectedScreenId.value || !selectedSkuId.value || !group.value) return; const ticket = selectedTicket.value; addingMacroInfo.value = { projectName: projectInfo.value.ProjectName || '', eventDay: ticket?.eventTime || projectInfo.value.StartTime || '', screenName: ticket?.name || '', skuName: ticket?.desc || '', price: ((ticket?.price || 0) / 100), buyLimit: ticket?.buyLimit || 1, saleStart: customStartAt.value || ticket?.saleStat?.start || '', saleEnd: ticket?.saleStat?.end || '', isRealName: projectInfo.value.IsForceRealName || false }; showAddConfirmDialog.value = true }
 
 /** Format a Date as YYYY-MM-DDTHH:mm:ss for &lt;input type="datetime-local" step="1"&gt;. */
 function formatDatetimeLocal(d: Date): string {
@@ -230,7 +229,7 @@ async function confirmAddMacro() {
     const ticket = tickets.value.find((t: any) => t.screenId === selectedScreenId.value && t.skuId === selectedSkuId.value)
     // Use custom start time if provided, otherwise fall back to the project sale start.
     const startAt = customStartAt.value ? new Date(customStartAt.value).toISOString() : (ticket?.saleStat?.start || '')
-    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: false, reflowStockCheck: addingMacroReflowStockCheck.value, orderCapacity: ticket?.buyLimit || 1, startAt, deadline: ticket?.saleStat?.end || '' })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; customStartAt.value = ''; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
+    try { await SaveMacro(JSON.stringify({ id: randomId('macro'), taskGroupId: group.value.id, projectId: Number(projectInfo.value!.ProjectID), projectName: projectInfo.value!.ProjectName || '', screenId: selectedScreenId.value, screenName: ticket?.name || '', skuId: selectedSkuId.value, skuName: ticket?.desc || '', eventDay: info.eventDay, eventDayConfirmed: true, needsReview: false, orderCapacity: ticket?.buyLimit || 1, startAt, deadline: ticket?.saleStat?.end || '' })); projectInfo.value = null; selectedScreenId.value = 0; selectedSkuId.value = 0; lookupProjectId.value = ''; customStartAt.value = ''; await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroAdded'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroAddFailed', { error: String(e) }), color: 'error' }) }
     addingMacro.value = false
     addingMacroInfo.value = null
 }
@@ -238,24 +237,10 @@ async function confirmAddMacro() {
 function cancelAddMacro() {
     showAddConfirmDialog.value = false
     addingMacroInfo.value = null
-    addingMacroReflowStockCheck.value = false
     customStartAt.value = ''
 }
 
 async function removeMacro(m: MacroSummary) { deletingMacro.value[m.id] = true; try { await DeleteMacro(m.id); await loadAll(group.value!.id); messages.add({ text: t('taskGroup.macroDeleted'), color: 'success' }) } catch (e: any) { messages.add({ text: t('taskGroup.macroDeleteFailed', { error: String(e) }), color: 'error' }) } deletingMacro.value[m.id] = false }
-
-async function saveMacroReflowCheck(m: MacroSummary) {
-    savingMacroReflowCheck.value[m.id] = true
-    const newVal = !!reflowCheckDraft.value[m.id]
-    try {
-        await SaveMacro(JSON.stringify({ ...m, reflowStockCheck: newVal }))
-        await loadAll(group.value!.id, true)
-        messages.add({ text: t('taskGroup.reflowStockCheckSaved'), color: 'success' })
-    } catch (e: any) {
-        messages.add({ text: t('taskGroup.reflowStockCheckFailed', { error: String(e) }), color: 'error' })
-    }
-    savingMacroReflowCheck.value[m.id] = false
-}
 
 async function savePurchaseGroup(m: MacroSummary) {
     if (selectedPgBuyerIds.value.length === 0) { messages.add({ text: t('taskGroup.pgSelectBuyer'), color: 'warning' }); return }
@@ -443,6 +428,7 @@ async function saveGroupConfig() {
             paymentTimeoutMinutes: Number(groupPaymentTimeoutMinutes.value) || 10,
             waveDurationMinutes: Number(groupWaveDurationMinutes.value) || 3,
             maxWaves: Number(groupMaxWaves.value) || 3,
+            reflowStockCheck: groupReflowStockCheck.value,
         }))
         groupConfigDirty.value = false
         await loadAll(group.value.id)
@@ -641,6 +627,12 @@ const allPurchaseGroups = computed(() => {
                         <v-col cols="12" md="4">
                             <v-text-field v-model.number="groupMaxWaves" :label="t('taskGroup.maxWaves')" type="number"
                                 min="1" variant="outlined" density="compact" :disabled="editingDisabled"
+                                @update:model-value="markGroupConfigDirty" />
+                        </v-col>
+                        <v-col cols="12">
+                            <v-checkbox v-model="groupReflowStockCheck" :label="t('taskGroup.reflowStockCheck')"
+                                :hint="t('taskGroup.reflowStockCheckHint')" density="compact" hide-details
+                                persistent-hint :disabled="editingDisabled"
                                 @update:model-value="markGroupConfigDirty" />
                         </v-col>
                     </v-row>
@@ -933,18 +925,6 @@ const allPurchaseGroups = computed(() => {
                                         </v-list-item>
                                     </v-list>
                                 </v-card>
-                                <div class="mb-3 d-flex align-center" style="gap:8px">
-                                    <v-checkbox
-                                        :model-value="reflowCheckDraft[m.id] !== undefined ? !!reflowCheckDraft[m.id] : !!m.reflowStockCheck"
-                                        :label="t('taskGroup.reflowStockCheck')"
-                                        :hint="t('taskGroup.reflowStockCheckHint')" density="compact" hide-details
-                                        persistent-hint :disabled="editingDisabled"
-                                        @update:model-value="reflowCheckDraft[m.id] = !!$event" />
-                                    <v-btn size="small" variant="tonal" color="primary" :disabled="editingDisabled"
-                                        :loading="savingMacroReflowCheck[m.id]" @click="saveMacroReflowCheck(m)">
-                                        {{ t('common.save') }}
-                                    </v-btn>
-                                </div>
                                 <div class="mb-3">
                                     <v-label class="text-caption mb-1">{{ t('taskGroup.purchaseGroups') }} ({{
                                         (m.purchaseGroups || []).length
@@ -1096,9 +1076,6 @@ const allPurchaseGroups = computed(() => {
                             }}</v-chip>
                         </div>
                     </v-card>
-                    <v-checkbox v-model="addingMacroReflowStockCheck" :label="t('taskGroup.reflowStockCheck')"
-                        density="compact" class="mt-2 mb-1" :hint="t('taskGroup.reflowStockCheckHint')"
-                        persistent-hint />
                     <p class="text-caption text-medium-emphasis">
                         {{ t('taskGroup.addMacroConfirmNote') }}
                     </p>
