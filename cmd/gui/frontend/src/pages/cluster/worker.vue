@@ -862,8 +862,8 @@ async function cancelBatchDeploy() {
 
 <template>
     <v-container>
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <h1 style="margin: 0;">{{ t('worker.title') }}</h1>
+        <div class="page-title-bar" style="gap:12px;flex-wrap:wrap">
+            <h1 class="page-title">{{ t('worker.title') }}</h1>
             <v-spacer />
             <div style="display:flex;gap:.5rem;flex-wrap:wrap">
                 <v-btn prepend-icon="mdi-cloud-upload-outline" variant="tonal" color="success" @click="openBatchDeploy">
@@ -884,8 +884,6 @@ async function cancelBatchDeploy() {
                 </v-btn>
             </div>
         </div>
-
-        <v-divider class="mt-2 mb-4" thickness="3" />
 
         <v-card v-if="!loading && workers.length > 0 && selectedWorkerIds.size > 0" class="mb-3 pa-3" variant="tonal">
             <div class="d-flex align-center flex-wrap" style="gap:8px">
@@ -1042,9 +1040,6 @@ async function cancelBatchDeploy() {
                             <div style="display:flex;gap:4px">
                                 <!-- Primary local worker — read-only, no stop/delete -->
                                 <template v-if="isPrimaryLocal(w)">
-                                    <v-chip size="x-small" color="info" variant="tonal" class="mr-1">
-                                        {{ t('worker.primaryLocal') }}
-                                    </v-chip>
                                     <v-btn icon="mdi-tag-outline" size="small" variant="text" color="primary"
                                         :title="t('worker.editTags')" @click="openTagEditor(w)" />
                                 </template>

@@ -54,18 +54,21 @@
     },
     "nav": {
         "home": "首页",
+        "accountArea": "账号与购票人",
         "account": "账号管理",
-        "buyers": "购票人",
+        "buyers": "购票人管理",
         "clusterArea": "集群",
         "worker": "Worker 管理",
+        "taskOrderArea": "任务与订单",
         "logs": "调度日志",
+        "logsArea": "日志",
         "events": "集群日志",
         "orders": "订单记录",
         "taskGroups": "任务组",
         "groupNamePlaceholder": "任务组名称",
         "settingsArea": "设置",
-        "notify": "通知",
-        "settings": "设置"
+        "notify": "通知设置",
+        "settings": "常规设置"
     },
     "logs": {
         "title": "调度日志",
@@ -582,7 +585,7 @@
         "colAccounts": "所属账号",
         "colActions": "操作",
         "noAccounts": "未关联账号",
-        "accountSummary": "{name} 等 {count} 个账号",
+        "accountSummarySuffix": "等 {count} 个账号",
         "unnamed": "未命名",
         "batchSelected": "已选 {count} 个购票人",
         "batchSyncAll": "同步到全部账号",
@@ -613,7 +616,7 @@
         "checking": "正在检查..."
     },
     "index": {
-        "title": "Bilibili 票据系统",
+        "title": "BanG Dream! It’s BtGO!!!!!",
         "mirrorLabel": "切换镜像",
         "errorBanner": "公告获取失败：{error}。已显示上次缓存的内容，可尝试切换镜像重试。",
         "empty": "暂无公告，一切正常 🎉"
@@ -746,7 +749,7 @@
         "chainTriggerSaveFailed": "切换模式保存失败: {error}"
     },
     "notify": {
-        "title": "通知渠道",
+        "title": "通知设置",
         "addChannel": "添加渠道",
         "editChannel": "编辑渠道",
         "testChannel": "测试",

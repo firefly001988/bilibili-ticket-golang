@@ -181,8 +181,8 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
 
 <template>
     <v-container>
-        <div class="d-flex align-center mb-4">
-            <h1 class="text-h5">{{ t('logs.title') }}</h1>
+        <div class="page-title-bar">
+            <h1 class="page-title">{{ t('logs.title') }}</h1>
             <v-spacer />
             <v-btn :variant="autoRefresh ? 'tonal' : 'text'" :color="autoRefresh ? 'primary' : undefined" size="small"
                 :prepend-icon="autoRefresh ? 'mdi-pause' : 'mdi-play'" @click="toggleAutoRefresh">

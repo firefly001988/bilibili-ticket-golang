@@ -16,9 +16,9 @@ onMounted(() => {
 <template>
     <v-container>
         <!-- Header -->
-        <div class="d-flex align-center mb-4">
+        <div class="page-title-bar">
             <div>
-                <h1 class="text-h4 font-weight-bold">{{ t('index.title') }}</h1>
+                <h1 class="page-title">{{ t('index.title') }}</h1>
             </div>
             <v-spacer />
             <v-select v-if="error && mirrorOptions.length > 1" :model-value="activeMirrorIndex" :items="mirrorOptions"
@@ -27,8 +27,6 @@ onMounted(() => {
                 @update:model-value="switchMirror" />
             <v-btn icon="mdi-refresh" variant="text" size="small" :loading="loading" @click="refresh()" />
         </div>
-
-        <v-divider class="mb-6" />
 
         <!-- Error banner -->
         <v-alert v-if="error" type="warning" variant="tonal" class="mb-4">

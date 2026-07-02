@@ -107,8 +107,8 @@ onMounted(load)
 
 <template>
     <v-container>
-        <div class="d-flex align-center mb-4">
-            <h1 class="text-h5">{{ t('orders.title') }}</h1>
+        <div class="page-title-bar">
+            <h1 class="page-title">{{ t('orders.title') }}</h1>
             <v-spacer />
             <v-btn size="small" variant="text" :loading="loading" prepend-icon="mdi-refresh" @click="load">
                 {{ t('common.refresh') }}

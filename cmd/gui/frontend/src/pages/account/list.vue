@@ -260,8 +260,8 @@ const qrExpirySeconds = ref(0)
 
 <template>
     <v-container>
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <h1>{{ t('account.title') }}</h1>
+        <div class="page-title-bar" style="gap:12px;flex-wrap:wrap">
+            <h1 class="page-title">{{ t('account.title') }}</h1>
             <v-spacer />
             <v-btn prepend-icon="mdi-import" variant="tonal" @click="showImportDialog = true">
                 {{ t('account.importAccount') }}
@@ -270,8 +270,6 @@ const qrExpirySeconds = ref(0)
                 {{ t('account.addAccount') }}
             </v-btn>
         </div>
-
-        <v-divider class="mt-2 mb-4" thickness="3" />
 
         <!-- Loading -->
         <v-row v-if="loading" justify="center" class="mt-6">

@@ -591,8 +591,9 @@ const allPurchaseGroups = computed(() => {
         <v-row v-if="loading" justify="center" class="mt-6"><v-progress-circular indeterminate
                 color="primary" /></v-row>
         <div v-else-if="group">
-            <h1>{{ group.name }}</h1>
-            <v-divider class="mt-2 mb-4" thickness="3" />
+            <div class="page-title-bar">
+                <h1 class="page-title">{{ group.name }}</h1>
+            </div>
 
             <!-- Task group scheduling config -->
             <v-card class="mb-4" elevation="2">

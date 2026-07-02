@@ -105,11 +105,10 @@ onMounted(async () => {
 
 <template>
     <div>
-        <div class="d-flex align-center">
-            <h1 class="text-h5">{{ t('settings.title') }}</h1>
+        <div class="page-title-bar">
+            <h1 class="page-title">{{ t('settings.title') }}</h1>
             <v-spacer />
         </div>
-        <v-divider thickness="3" class="mb-4" />
 
         <!-- Language -->
         <v-card variant="outlined" class="mb-4">

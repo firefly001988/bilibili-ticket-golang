@@ -386,17 +386,16 @@ function accountDisplayName(acc: BuyerAccountBadge) {
     return acc.accountName || acc.uid || acc.accountId
 }
 
-function accountSummary(accounts: BuyerAccountBadge[]) {
-    if (!accounts || accounts.length === 0) return ''
-    if (accounts.length === 1) return accountDisplayName(accounts[0])
-    return t('buyer.accountSummary', { name: accountDisplayName(accounts[0]), count: accounts.length })
+function accountSummarySuffix(accounts: BuyerAccountBadge[]) {
+    if (!accounts || accounts.length <= 1) return ''
+    return t('buyer.accountSummarySuffix', { count: accounts.length })
 }
 </script>
 
 <template>
     <v-container>
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <h1 style="margin: 0;">{{ t('buyer.title') }}</h1>
+        <div class="page-title-bar" style="gap:12px;flex-wrap:wrap">
+            <h1 class="page-title">{{ t('buyer.title') }}</h1>
             <v-spacer />
             <div style="display:flex;gap:.5rem;flex-wrap:wrap">
                 <v-btn prepend-icon="mdi-refresh" variant="tonal" :loading="syncingAll" @click="refreshAllBuyers">
@@ -411,8 +410,6 @@ function accountSummary(accounts: BuyerAccountBadge[]) {
                 </v-btn>
             </div>
         </div>
-
-        <v-divider class="mt-2 mb-4" thickness="3" />
 
         <!-- Filter bar -->
         <div v-if="!loading && buyers.length > 0"
@@ -539,9 +536,14 @@ function accountSummary(accounts: BuyerAccountBadge[]) {
                     <td style="max-width:200px">
                         <v-tooltip v-if="b.accounts && b.accounts.length > 1" location="bottom">
                             <template #activator="{ props }">
-                                <v-chip v-bind="props" size="x-small" color="primary" variant="tonal">
-                                    {{ accountSummary(b.accounts) }}
-                                </v-chip>
+                                <span v-bind="props" class="d-inline-flex align-center">
+                                    <v-chip size="x-small" color="primary" variant="tonal">
+                                        {{ accountDisplayName(b.accounts[0]) }}
+                                    </v-chip>
+                                    <span class="text-caption text-medium-emphasis ml-1">
+                                        {{ accountSummarySuffix(b.accounts) }}
+                                    </span>
+                                </span>
                             </template>
                             <div class="d-flex flex-column" style="gap:4px">
                                 <div v-for="acc in b.accounts" :key="acc.accountId" class="text-caption">

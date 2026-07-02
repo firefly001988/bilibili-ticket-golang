@@ -32,11 +32,13 @@ function selectLanguage(loc: string) {
 
 const calculatedPath = computed(() => {
   const p = router.currentRoute.value.path.replace('/', '');
+  if (p === '') return 'home'
+  if (p.startsWith('cluster/task-group/')) return 'task-groups'
   // Match partial paths (e.g. "account/list" should match "account")
-  for (const seg of ['home', 'account', 'cluster', 'notify', 'settings', 'scheduler']) {
-    if (p.startsWith(seg)) return seg;
+  for (const seg of ['account/list', 'account/buyers', 'cluster/worker', 'cluster/logs', 'cluster/events', 'cluster/orders', 'notify', 'settings']) {
+    if (p.startsWith(seg)) return seg
   }
-  return p;
+  return p
 })
 
 const isPayQR = computed(() => router.currentRoute.value.path.startsWith('/pay-qr'))
@@ -129,7 +131,7 @@ onMounted(async () => {
 
         <v-divider class="mt-1" />
         <v-list-subheader>
-          {{ t('nav.account') }}
+          {{ t('nav.accountArea') }}
         </v-list-subheader>
         <v-list-item :title="t('nav.account')" value="account/list" @click="router.push('/account/list')"
           prepend-icon="mdi-account-multiple" />
@@ -142,13 +144,11 @@ onMounted(async () => {
         </v-list-subheader>
         <v-list-item :title="t('nav.worker')" value="cluster/worker" @click="router.push('/cluster/worker')"
           prepend-icon="mdi-server-network" />
-        <v-list-item :title="t('nav.logs')" value="cluster/logs" @click="router.push('/cluster/logs')"
-          prepend-icon="mdi-text-box-search-outline" />
-        <v-list-item :title="t('nav.events')" value="cluster/events" @click="router.push('/cluster/events')"
-          prepend-icon="mdi-monitor-dashboard" />
-        <v-list-item :title="t('nav.orders')" value="cluster/orders" @click="router.push('/cluster/orders')"
-          prepend-icon="mdi-receipt-text-check-outline" />
 
+        <v-divider class="mt-1" />
+        <v-list-subheader>
+          {{ t('nav.taskOrderArea') }}
+        </v-list-subheader>
         <!-- Collapsible task group section -->
         <v-list-group value="task-groups">
           <template v-slot:activator="{ props }">
@@ -172,6 +172,17 @@ onMounted(async () => {
             </template>
           </v-list-item>
         </v-list-group>
+        <v-list-item :title="t('nav.orders')" value="cluster/orders" @click="router.push('/cluster/orders')"
+          prepend-icon="mdi-receipt-text-check-outline" />
+
+        <v-divider class="mt-1" />
+        <v-list-subheader>
+          {{ t('nav.logsArea') }}
+        </v-list-subheader>
+        <v-list-item :title="t('nav.logs')" value="cluster/logs" @click="router.push('/cluster/logs')"
+          prepend-icon="mdi-text-box-search-outline" />
+        <v-list-item :title="t('nav.events')" value="cluster/events" @click="router.push('/cluster/events')"
+          prepend-icon="mdi-monitor-dashboard" />
 
         <v-divider class="mt-1" />
         <v-list-subheader>
@@ -202,5 +213,40 @@ onMounted(async () => {
   max-width: 1185px;
   padding-left: 24px !important;
   padding-right: 24px !important;
+}
+
+.v-main>.v-container>.v-container {
+  padding-top: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.page-title-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+  margin-bottom: 32px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 2.5rem;
+}
+
+.v-table .v-chip,
+.v-data-table .v-chip {
+  min-height: 22px;
+  height: 22px;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.v-table .v-chip .v-chip__content,
+.v-data-table .v-chip .v-chip__content {
+  line-height: 1rem;
 }
 </style>

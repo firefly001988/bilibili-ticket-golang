@@ -54,18 +54,21 @@
     },
     "nav": {
         "home": "Home",
+        "accountArea": "Accounts & Buyers",
         "account": "Account Management",
-        "buyers": "Buyers",
+        "buyers": "Buyer Management",
         "clusterArea": "Cluster",
-        "worker": "Worker",
-        "logs": "Logs",
+        "worker": "Worker Management",
+        "taskOrderArea": "Tasks & Orders",
+        "logs": "Scheduler Logs",
+        "logsArea": "Logs",
         "events": "Cluster Events",
         "orders": "Order Records",
         "taskGroups": "Task Groups",
         "groupNamePlaceholder": "Group name",
         "settingsArea": "Settings",
-        "notify": "Notify",
-        "settings": "Settings"
+        "notify": "Notification Settings",
+        "settings": "General Settings"
     },
     "logs": {
         "title": "Scheduler Logs",
@@ -582,7 +585,7 @@
         "colAccounts": "Accounts",
         "colActions": "Actions",
         "noAccounts": "No accounts",
-        "accountSummary": "{name} and {count} accounts",
+        "accountSummarySuffix": "and {count} accounts",
         "unnamed": "Unnamed",
         "batchSelected": "{count} selected",
         "batchSyncAll": "Sync to All",
@@ -613,7 +616,7 @@
         "checking": "Checking..."
     },
     "index": {
-        "title": "Bilibili Ticket System",
+        "title": "BanG Dream! It’s BtGO!!!!!",
         "mirrorLabel": "Switch Mirror",
         "errorBanner": "Failed to fetch announcements: {error}. Showing cached content. Try switching mirrors.",
         "empty": "No announcements, all clear 🎉"

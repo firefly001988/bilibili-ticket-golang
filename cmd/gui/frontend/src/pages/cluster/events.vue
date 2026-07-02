@@ -118,8 +118,8 @@ const tableHeaders = computed(() => [
 
 <template>
     <v-container>
-        <div class="d-flex align-center mb-4">
-            <h1 class="text-h5">{{ t('events.title') }}</h1>
+        <div class="page-title-bar">
+            <h1 class="page-title">{{ t('events.title') }}</h1>
         </div>
 
         <!-- Event log table -->
