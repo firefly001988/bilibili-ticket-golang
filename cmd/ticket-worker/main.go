@@ -96,6 +96,7 @@ func workerFactory(config *worker.Config) (worker.BackendFactory, func(), func(g
 			libPath = filepath.Join(filepath.Dir(exe), "libs")
 		}
 	}
+	os.MkdirAll(libPath, 0755)
 	if !gc.IsAvailable(libPath) {
 		return nil, func() {}, nil, fmt.Errorf("captcha DLL not found at %s", libPath)
 	}

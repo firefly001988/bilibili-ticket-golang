@@ -235,6 +235,7 @@ func main() {
 	}
 
 	// 初始化 captcha DLL
+	os.MkdirAll("./libs", 0755)
 	if err := gc.Init("./libs"); err != nil {
 		log.Printf("[main] captcha DLL init: %v", err)
 	} else {

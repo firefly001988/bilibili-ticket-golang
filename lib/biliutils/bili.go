@@ -258,41 +258,6 @@ func (c *BiliClient) GetBrowserUA() string {
 	)
 }
 
-// GetQRCodeUrlAndKey fetches a QR code URL and key for Bilibili login.
-// Returns the QR code image URL and the poll key for status checking.
-func (c *BiliClient) GetQRCodeUrlAndKey() (*api.QRLoginKeyStruct, error) {
-	res, err := c.client.R().Get("https://passport.bilibili.com/x/passport-login/web/qrcode/generate?source=main-fe-header")
-	if err != nil {
-		return nil, err
-	}
-	var r api.MainApiDataRoot[*api.QRLoginKeyStruct]
-	err = res.Unmarshal(&r)
-	if err != nil {
-		return nil, err
-	}
-	if err = r.CheckValid(); err != nil {
-		return nil, err
-	}
-	return r.Data, nil
-}
-
-// GetQRLoginState polls the QR code login status.
-// qrcodeKey is the key returned by GetQRCodeUrlAndKey.
-// Returns Code=0 and RefreshToken when scan is confirmed, other codes otherwise.
-func (c *BiliClient) GetQRLoginState(qrcodeKey string) (*api.VerifyQRLoginStateStruct, error) {
-	res, err := c.client.R().SetQueryParam("qrcode_key", qrcodeKey).Get("https://passport.bilibili.com/x/passport-login/web/qrcode/poll")
-	if err != nil {
-		return nil, err
-	}
-	var r api.MainApiDataRoot[*api.VerifyQRLoginStateStruct]
-	err = res.Unmarshal(&r)
-	if err != nil {
-		return nil, err
-	}
-	c.SetRefreshToken(r.Data.RefreshToken)
-	return r.Data, nil
-}
-
 // GetAccountStatus returns the current login status and user info.
 // Calls Bilibili's nav endpoint. If logged in, returns name and UID.
 func (c *BiliClient) GetAccountStatus() (*api.GetLoginInfoStruct, error) {

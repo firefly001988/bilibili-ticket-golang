@@ -154,3 +154,55 @@ type TicketProjectInformationNewStruct struct {
 type VoucherStruct struct {
 	Voucher string `json:"v_voucher"`
 }
+
+type CountryListStruct struct {
+	Common []CountryCidStruct `json:"common"`
+	Others []CountryCidStruct `json:"others"`
+}
+
+type CountryCidStruct struct {
+	Id        int    `json:"id"`
+	CName     string `json:"cname"`
+	CountryId int    `json:"country_id"`
+}
+
+type LoginCaptchaStruct struct {
+	Type    string `json:"type"`
+	Geetest struct {
+		Gt        string `json:"gt"`
+		Challenge string `json:"challenge"`
+	} `json:"geetest"`
+	Token string `json:"token"`
+}
+
+type SendSMSCodeResponseStruct struct {
+	CaptchaKey string `json:"captcha_key"`
+}
+
+// PasswordKeyStruct 密码登录第一步：获取公钥和盐。
+// 对应 POST /x/passport-login/web/key
+type PasswordKeyStruct struct {
+	Hash string `json:"hash"` // 密码盐值，16字符，有效20秒
+	Key  string `json:"key"`  // RSA 公钥，PEM 格式
+}
+
+// PasswordLoginResponseStruct 密码登录返回。
+// 对应 POST /x/passport-login/web/login
+type PasswordLoginResponseStruct struct {
+	Message      string `json:"message"`
+	RefreshToken string `json:"refresh_token"`
+	Status       int    `json:"status"`
+	Timestamp    int64  `json:"timestamp"`
+	URL          string `json:"url"`          // 游戏分站跨域登录URL
+	IsNew        bool   `json:"is_new"`       // 风险验证时存在
+	Hint         string `json:"hint"`         // 风险验证时存在
+	InRegAudit   int    `json:"in_reg_audit"` // 风险验证时存在
+}
+
+type VerifySMSCodeResponseStruct struct {
+	RefreshToken string `json:"refresh_token"`
+	IsNew        bool   `json:"is_new"`
+	Hint         string `json:"hint"`
+	Status       int    `json:"status"`
+	Message      string `json:"message"`
+}
