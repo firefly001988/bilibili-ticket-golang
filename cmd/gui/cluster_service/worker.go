@@ -224,9 +224,6 @@ func (s *ClusterService) AddLocalWorker(id, name, listen string) error {
 	}
 	ctx := context.Background()
 	pluginName := ""
-	if _, statErr := os.Stat("plugins/captcha-plugin"); statErr == nil {
-		pluginName = "captcha-plugin"
-	}
 	node, err := s.local.AddWorker(ctx, s.client, id, name, listen, employer.LocalWorkerOptions{
 		PluginDir:     "plugins",
 		CaptchaPlugin: pluginName,
@@ -256,9 +253,6 @@ func (s *ClusterService) AddLocalWorker(id, name, listen string) error {
 func (s *ClusterService) StartLocalWorker(workerID string) error {
 	ctx := context.Background()
 	pluginName := ""
-	if _, statErr := os.Stat("plugins/captcha-plugin"); statErr == nil {
-		pluginName = "captcha-plugin"
-	}
 	opts := employer.LocalWorkerOptions{
 		PluginDir:     "plugins",
 		CaptchaPlugin: pluginName,

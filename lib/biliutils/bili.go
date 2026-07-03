@@ -5,7 +5,6 @@ import (
 	"bilibili-ticket-golang/lib/global"
 	"bilibili-ticket-golang/lib/models/bili/api"
 	"bilibili-ticket-golang/lib/models/errors"
-	"bilibili-ticket-golang/lib/plugins"
 	"bilibili-ticket-golang/lib/utils"
 	"encoding/base64"
 	"fmt"
@@ -386,22 +385,6 @@ func (c *BiliClient) CheckForUpdate() *githubutils.UpdateInfo {
 		}
 	}
 	return info
-}
-
-// GetAvailablePlugins returns the list of known plugin definitions.
-func (c *BiliClient) GetAvailablePlugins() []plugins.PluginDefinition {
-	return plugins.AvailablePlugins()
-}
-
-// FetchPluginList fetches the latest releases for all known plugins and returns
-// platform-specific download URLs.
-func (c *BiliClient) FetchPluginList() *plugins.PluginListResult {
-	return plugins.FetchPluginList()
-}
-
-// FetchPluginListByName fetches releases for a single plugin by its name.
-func (c *BiliClient) FetchPluginListByName(name string) *plugins.PluginListResult {
-	return plugins.FetchPluginListByName(name)
 }
 
 // getBuvid34AndBnut fetches buvid3 and buvid4 cookies from Bilibili after login.

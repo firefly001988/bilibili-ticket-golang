@@ -15,8 +15,8 @@ import (
 	"bilibili-ticket-golang/cluster/worker"
 	biliclock "bilibili-ticket-golang/lib/biliutils/clock"
 	"bilibili-ticket-golang/lib/global"
-	"bilibili-ticket-golang/lib/plugins"
-	"bilibili-ticket-golang/lib/plugins/captcha"
+
+	gc "bilibili-ticket-golang/captcha-solver"
 )
 
 func main() {
@@ -78,58 +78,81 @@ func workerFactory(config *worker.Config) (worker.BackendFactory, func(), error)
 	if config.CaptchaPlugin == "" {
 		return nil, func() {}, nil
 	}
+
 	dir := config.PluginDir
 	if dir == "" {
 		dir = "plugins"
 	}
-	manager := plugins.NewPluginManager(dir)
-	if err := manager.LoadPlugin(config.CaptchaPlugin); err != nil {
-		return nil, func() {}, err
+
+	// 初始化 captcha DLL（本地库替换 gRPC 插件）
+	// libraryPath 为 libs/ 目录所在位置；worker 部署时 libs/ 在 data/ 旁
+	libPath := filepath.Join(dir, "..", "libs")
+	if err := gc.Init(libPath); err != nil {
+		return nil, func() {}, fmt.Errorf("captcha Init: %w", err)
 	}
-	solver, err := captcha.Dispense(manager.GetClient(config.CaptchaPlugin))
-	if err != nil {
-		manager.UnloadAll()
-		return nil, func() {}, err
-	}
+
+	v, _ := gc.Version()
+	config.PluginVersion = v.Version + "+" + v.GitCommit
+
 	solverFunc := func(gt, challenge string) (string, error) {
-		id, err := solver.Create(gt, challenge)
+		captType, err := gc.GetType(gt, challenge, "")
 		if err != nil {
 			return "", err
 		}
-		defer solver.Destroy(id)
-		if _, err = solver.GetCS(id, ""); err != nil {
-			return "", err
+
+		var args *gc.NewCSArgs
+		switch captType {
+		case gc.TypeClick:
+			args, err = gc.GetNewCSArgsClick(gt, challenge)
+		case gc.TypeSlide:
+			args, err = gc.GetNewCSArgsSlide(gt, challenge)
+		default:
+			return "", fmt.Errorf("unknown captcha type: %s", captType)
 		}
-		captchaType, err := solver.GetType(id, "")
 		if err != nil {
 			return "", err
 		}
-		args, err := solver.GetNewCSArgs(id)
-		if err != nil {
-			return "", err
-		}
+
 		started := time.Now()
-		key, err := solver.CalculateKey(id, args)
+
+		var key string
+		switch captType {
+		case gc.TypeClick:
+			key, err = gc.CalculateKeyClick(args.PicURL)
+		case gc.TypeSlide:
+			key, err = gc.CalculateKeySlide(args.FullBgURL, args.MissBgURL, args.SliderURL)
+		}
 		if err != nil {
 			return "", err
 		}
-		w, err := solver.GenerateW(id, key, args)
+
+		var w string
+		switch captType {
+		case gc.TypeClick:
+			w, err = gc.GenerateWClick(key, gt, challenge, args.C, args.S)
+		case gc.TypeSlide:
+			w, err = gc.GenerateWSlide(key, gt, challenge, args.C, args.S)
+		}
 		if err != nil {
 			return "", err
 		}
-		if captchaType == captcha.CaptchaType_CLICK {
+
+		if captType == gc.TypeClick {
 			if elapsed := time.Since(started); elapsed < 2*time.Second {
 				time.Sleep(2*time.Second - elapsed)
 			}
 		}
-		return solver.Verify(id, w)
+
+		result, err := gc.Verify(gt, challenge, w)
+		if err != nil {
+			return "", err
+		}
+		return result.Validate, nil
 	}
-	if info, versionErr := manager.GetVersion(config.CaptchaPlugin); versionErr == nil {
-		config.PluginVersion = info.Version + "+" + info.GitCommit
-	}
+
 	return func(spec domain.ExecutionSpec) (executor.Backend, error) {
 		return executor.NewBilibiliBackendWithSolver(spec.Credentials, solverFunc)
-	}, manager.UnloadAll, nil
+	}, func() {}, nil
 }
 
 func run(args []string) {

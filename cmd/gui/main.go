@@ -12,8 +12,6 @@ import (
 	"bilibili-ticket-golang/lib/global"
 	"bilibili-ticket-golang/lib/models/bili/api"
 	gcaptcha "bilibili-ticket-golang/lib/models/bili/captcha"
-	"bilibili-ticket-golang/lib/plugins"
-	"bilibili-ticket-golang/lib/plugins/captcha"
 	"bytes"
 	"context"
 	"embed"
@@ -26,6 +24,8 @@ import (
 	"sync"
 	"time"
 
+	gc "bilibili-ticket-golang/captcha-solver"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -36,38 +36,37 @@ func init() {
 	application.RegisterEvent[scheduler.LogEntry]("ticket:log")
 }
 
-func testCaptchaPlugin(solverFunc func(gt string, challenge string) (string, error), pm *plugins.PluginManager, pluginName string) {
+func testCaptcha(solverFunc func(gt string, challenge string) (string, error)) {
 	go func() {
 		req, reqErr := http.NewRequest("GET", "https://passport.bilibili.com/x/passport-login/captcha?source=main_web", nil)
 		if reqErr != nil {
-			pm.SetTestResult(pluginName, i18n.T("plugin.test.captcha_failed", map[string]interface{}{"Error": reqErr}))
+			log.Printf("[captcha-test] request error: %v", reqErr)
 			return
 		}
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
 
-		httpClient := &http.Client{}
-		resp, err := httpClient.Do(req)
+		resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 		if err != nil {
-			pm.SetTestResult(pluginName, i18n.T("plugin.test.captcha_failed", map[string]interface{}{"Error": err}))
+			log.Printf("[captcha-test] HTTP error: %v", err)
 			return
 		}
 		defer resp.Body.Close()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			pm.SetTestResult(pluginName, i18n.T("plugin.test.captcha_failed", map[string]interface{}{"Error": err}))
+			log.Printf("[captcha-test] read error: %v", err)
 			return
 		}
 
 		var r api.MainApiDataRoot[gcaptcha.RegisterVoucherResponse]
 		err = json.Unmarshal(body, &r)
 		if err != nil {
-			pm.SetTestResult(pluginName, i18n.T("plugin.test.parse_failed", map[string]interface{}{"Error": err, "Resp": string(body)}))
+			log.Printf("[captcha-test] parse error: %v (body: %.200s)", err, string(body))
 			return
 		}
 
 		if r.Code != 0 {
-			pm.SetTestResult(pluginName, i18n.T("plugin.test.api_error", map[string]interface{}{"Resp": string(body)}))
+			log.Printf("[captcha-test] API error code=%d", r.Code)
 			return
 		}
 
@@ -75,13 +74,13 @@ func testCaptchaPlugin(solverFunc func(gt string, challenge string) (string, err
 		challenge := r.Data.Geetest.Challenge
 
 		start := time.Now()
-		_, err = solverFunc(gt, challenge)
+		validate, err := solverFunc(gt, challenge)
 		elapsed := time.Since(start)
 
 		if err != nil {
-			pm.SetTestResult(pluginName, i18n.T("plugin.test.failed", map[string]interface{}{"Elapsed": elapsed, "Error": err}))
+			log.Printf("[captcha-test] failed (elapsed=%v): %v", elapsed, err)
 		} else {
-			pm.SetTestResult(pluginName, i18n.T("plugin.test.success", map[string]interface{}{"Elapsed": elapsed}))
+			log.Printf("[captcha-test] success (elapsed=%v) validate=%s", elapsed, validate)
 		}
 	}()
 }
@@ -226,68 +225,79 @@ func main() {
 	})
 
 	var solverFunc = func(gt string, challenge string) (string, error) {
-		// Placeholder solver that always fails. Will be replaced if captcha plugin loads successfully.
-		return "", fmt.Errorf("captcha solver not available")
+		// 分步求解流水线 — 不使用一键 Solve（存在 bug）
+		_ = challenge // pre-declare
+
+		captType, err := gc.GetType(gt, challenge, "")
+		if err != nil {
+			return "", fmt.Errorf("GetType error: %w", err)
+		}
+
+		var args *gc.NewCSArgs
+		switch captType {
+		case gc.TypeClick:
+			args, err = gc.GetNewCSArgsClick(gt, challenge)
+		case gc.TypeSlide:
+			args, err = gc.GetNewCSArgsSlide(gt, challenge)
+		default:
+			return "", fmt.Errorf("unknown captcha type: %s", captType)
+		}
+		if err != nil {
+			return "", fmt.Errorf("GetNewCSArgs error: %w", err)
+		}
+
+		before := time.Now()
+
+		var key string
+		switch captType {
+		case gc.TypeClick:
+			key, err = gc.CalculateKeyClick(args.PicURL)
+		case gc.TypeSlide:
+			key, err = gc.CalculateKeySlide(args.FullBgURL, args.MissBgURL, args.SliderURL)
+		}
+		if err != nil {
+			return "", fmt.Errorf("CalculateKey error: %w", err)
+		}
+
+		var w string
+		switch captType {
+		case gc.TypeClick:
+			w, err = gc.GenerateWClick(key, gt, challenge, args.C, args.S)
+		case gc.TypeSlide:
+			w, err = gc.GenerateWSlide(key, gt, challenge, args.C, args.S)
+		}
+		if err != nil {
+			return "", fmt.Errorf("GenerateW error: %w", err)
+		}
+
+		// 点选验证码生成 w 后需要等待 2 秒提交
+		if captType == gc.TypeClick {
+			use := time.Since(before)
+			if use < 2*time.Second {
+				time.Sleep(2*time.Second - use)
+			}
+		}
+
+		result, err := gc.Verify(gt, challenge, w)
+		if err != nil {
+			return "", fmt.Errorf("Verify error: %w", err)
+		}
+		return result.Validate, nil
 	}
 
-	pluginManager := plugins.NewPluginManager("plugins")
-
-	defer pluginManager.UnloadAll()
-
-	err = pluginManager.LoadPlugin("captcha-plugin")
-	if err != nil {
-		log.Printf("[main] Failed to load captcha plugin: %v", err)
+	// 初始化 captcha DLL（本地库替换 gRPC 插件）
+	if err := gc.Init("./libs"); err != nil {
+		log.Printf("[main] captcha DLL init failed: %v", err)
 	} else {
-		//Captcha Solver Plugin
-		solver, dispenseErr := captcha.Dispense(pluginManager.GetClient("captcha-plugin"))
-		if dispenseErr != nil {
-			log.Printf("[main] Failed to dispense captcha plugin: %v", dispenseErr)
-		} else {
-			solverFunc = func(gt string, challenge string) (string, error) {
-				id, err := solver.Create(gt, challenge)
-				if err != nil {
-					return "", fmt.Errorf("Create error: %w", err)
-				}
-				defer func() { _ = solver.Destroy(id) }()
+		v, _ := gc.Version()
+		log.Printf("[main] captcha DLL loaded (version=%s, commit=%s)", v.Version, v.GitCommit)
 
-				cs, err := solver.GetCS(id, "")
-				if err != nil {
-					return "", fmt.Errorf("GetCS error: %w", err)
-				}
-				_ = cs
+		// Wire the solver into BiliClient so voucher errors are auto-resolved.
+		c.SetCaptchaSolver(solverFunc)
+		log.Printf("[main] captcha solver installed — vouchers will be auto-resolved")
 
-				t, err := solver.GetType(id, "")
-				if err != nil {
-					return "", fmt.Errorf("GetType error: %w", err)
-				}
-				args, err := solver.GetNewCSArgs(id)
-				if err != nil {
-					return "", fmt.Errorf("GetNewCSArgs error: %w", err)
-				}
-				before := time.Now()
-				key, err := solver.CalculateKey(id, args)
-				if err != nil {
-					return "", fmt.Errorf("CalculateKey error: %w", err)
-				}
-				w, err := solver.GenerateW(id, key, args)
-				if err != nil {
-					return "", fmt.Errorf("GenerateW error: %w", err)
-				}
-				if t == captcha.CaptchaType_CLICK {
-					use := time.Since(before)
-					if use < 2*time.Second {
-						time.Sleep(2*time.Second - use)
-					}
-				}
-				return solver.Verify(id, w)
-			}
-			// Wire the solver into BiliClient so voucher errors are auto-resolved.
-			c.SetCaptchaSolver(solverFunc)
-			log.Printf("[main] Captcha solver installed — vouchers will be auto-resolved")
-
-			// Test the captcha plugin with a generic web captcha
-			testCaptchaPlugin(solverFunc, pluginManager, "captcha-plugin")
-		}
+		// 测试验证码识别
+		testCaptcha(solverFunc)
 	}
 
 	// Create Wails v3 application.
@@ -313,7 +323,6 @@ func main() {
 	wailsApp.RegisterService(application.NewService(c))
 	wailsApp.RegisterService(application.NewService(logBroker))
 	wailsApp.RegisterService(application.NewService(schedSvc))
-	wailsApp.RegisterService(application.NewService(pluginManager))
 
 	wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "bilibili-ticket-golang",

@@ -1,7 +1,6 @@
 package plugins
 
 import (
-	"bilibili-ticket-golang/lib/plugins/captcha"
 	"bilibili-ticket-golang/lib/plugins/pcommon"
 	"bytes"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 )
 
@@ -122,34 +120,8 @@ func (pm *PluginManager) LoadPlugin(name string) error {
 	// Set the plugin's working directory to its own folder so it can find
 	// relative resources such as ONNX models in ./models/.
 	cmd.Dir = pm.mainPluginFolder
-	if name == "captcha-plugin" {
-		client := plugin.NewClient(&plugin.ClientConfig{
-			HandshakeConfig: captcha.Handshake,
-			Plugins: map[string]plugin.Plugin{
-				"captcha-plugin": &captcha.CaptchaPlugin{},
-			},
-			Cmd:              cmd,
-			AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
-			SyncStdout:       io.Discard,
-			SyncStderr:       io.Discard,
-			Logger: hclog.New(&hclog.LoggerOptions{
-				Output:      pm.pluginLogWriter,
-				DisableTime: true,
-			}),
-		})
-		pm.mu.Lock()
-		if old, exists := pm.plugins[name]; exists {
-			// Kill the previous client and wait briefly for the OS to
-			// release resources (file handles, ports, etc.).
-			old.Kill()
-			time.Sleep(200 * time.Millisecond)
-		}
-		pm.plugins[name] = client
-		pm.mu.Unlock()
-		return nil
-	} else {
-		return fmt.Errorf("unknown plugin name: %s", name)
-	}
+
+	return fmt.Errorf("unknown plugin name: %s", name)
 }
 
 func (pm *PluginManager) UnloadPlugin(name string) {

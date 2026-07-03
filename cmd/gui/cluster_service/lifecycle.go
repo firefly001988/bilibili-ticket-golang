@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
-	"runtime"
 	"time"
 
 	"bilibili-ticket-golang/cluster/accounts"
@@ -217,13 +215,6 @@ func (s *ClusterService) Start(parent context.Context) error {
 		return global.NewFault("列出 Worker", err, "检查集群数据库 data/employer.db 是否可读")
 	}
 	pluginName := ""
-	pluginFile := "plugins/captcha-plugin"
-	if runtime.GOOS == "windows" {
-		pluginFile += ".exe"
-	}
-	if _, statErr := os.Stat(pluginFile); statErr == nil {
-		pluginName = "captcha-plugin"
-	}
 	// Recover all local workers persisted in the repository and ensure
 	// the primary "local" worker always exists — it can never be deleted.
 	hasLocal := false
