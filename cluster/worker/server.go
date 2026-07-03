@@ -93,6 +93,10 @@ func (c *Config) Normalize() error {
 
 type BackendFactory func(domain.ExecutionSpec) (executor.Backend, error)
 
+// CaptchaTester is called by the TestCaptcha RPC to verify captcha solving
+// on this worker. It must fetch a live captcha and return the validate string.
+type CaptchaTester func() (elapsed string, validate string, captchaType string, err error)
+
 type task struct {
 	spec          domain.ExecutionSpec
 	specHash      string
@@ -124,6 +128,7 @@ type Server struct {
 	now               func() time.Time
 	completedNotifier func(t *task) // called when a task completes to push result over heartbeat
 	grpcServer        *grpc.Server  // set by ServeOn/ListenAndServe; nil until serving
+	captchaTester     CaptchaTester // optional; enables TestCaptcha RPC
 
 	// Global configuration pushed by the employer via Configure RPC.
 	globalConfig   GlobalConfig
@@ -168,6 +173,13 @@ func NewServer(config Config, factory BackendFactory) (*Server, error) {
 // This is exported for testing and for callers that manage their own gRPC server.
 func NewGRPCService(s *Server) pb.WorkerServiceServer {
 	return &workerService{server: s}
+}
+
+// SetCaptchaTester installs a captcha testing function. When set, the gRPC
+// TestCaptcha RPC becomes functional. When nil (default), TestCaptcha returns
+// UNIMPLEMENTED.
+func (s *Server) SetCaptchaTester(t CaptchaTester) {
+	s.captchaTester = t
 }
 
 // Stop immediately terminates the gRPC server and all active connections.
@@ -1313,4 +1325,32 @@ func redactLogLine(line string) string {
 		}
 	}
 	return line
+}
+
+// =============================================================================
+// TestCaptcha – 雇主端测试 worker 的验证码求解能力
+// =============================================================================
+
+func (ws *workerService) TestCaptcha(_ context.Context, _ *pb.TestCaptchaRequest) (*pb.TestCaptchaResponse, error) {
+	if ws.server.captchaTester == nil {
+		return &pb.TestCaptchaResponse{
+			Success: false,
+			Error:   "captcha solver not installed on this worker",
+		}, nil
+	}
+	elapsed, validate, captType, err := ws.server.captchaTester()
+	if err != nil {
+		return &pb.TestCaptchaResponse{
+			Success: false,
+			Elapsed: elapsed,
+			Error:   err.Error(),
+			Type:    captType,
+		}, nil
+	}
+	return &pb.TestCaptchaResponse{
+		Success:  true,
+		Elapsed:  elapsed,
+		Validate: validate,
+		Type:     captType,
+	}, nil
 }

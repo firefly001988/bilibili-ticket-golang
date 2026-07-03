@@ -232,8 +232,7 @@ onMounted(async () => {
             </v-card-text>
             <v-card-actions class="px-4 pb-4">
                 <v-spacer />
-                <v-btn color="primary" variant="tonal" :loading="savingBuyerWorkers"
-                    @click="saveBuyerManagerWorkers">
+                <v-btn color="primary" variant="tonal" :loading="savingBuyerWorkers" @click="saveBuyerManagerWorkers">
                     {{ t('settings.saveSettings') }}
                 </v-btn>
             </v-card-actions>

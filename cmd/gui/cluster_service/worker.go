@@ -737,3 +737,52 @@ func (s *ClusterService) ForceAddWorkerFromEncodedConfig(encodedConfig string, o
 	}
 	return nil
 }
+
+// =============================================================================
+// Captcha 测试 —— 供前端检测与测试
+// =============================================================================
+
+// TestWorkerCaptcha 通过 gRPC 要求指定 worker 获取真实 Bilibili 验证码并求解。
+func (s *ClusterService) TestWorkerCaptcha(workerID string) employer.TestCaptchaResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	node, err := s.repository.Worker(ctx, workerID)
+	if err != nil {
+		return employer.TestCaptchaResult{Success: false, Error: fmt.Sprintf("worker not found: %v", err)}
+	}
+
+	result, err := s.client.TestCaptcha(ctx, node)
+	if err != nil {
+		return employer.TestCaptchaResult{Success: false, Error: fmt.Sprintf("gRPC TestCaptcha: %v", err)}
+	}
+	return *result
+}
+
+// TestAllWorkersCaptcha 对所有远程 worker 执行验证码测试，汇总结果。
+func (s *ClusterService) TestAllWorkersCaptcha() []employer.TestCaptchaResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	workers, err := s.repository.ListWorkers(ctx)
+	if err != nil {
+		return []employer.TestCaptchaResult{{Success: false, Error: fmt.Sprintf("list workers: %v", err)}}
+	}
+
+	results := make([]employer.TestCaptchaResult, 0, len(workers))
+	for _, node := range workers {
+		if node.Type == domain.WorkerTypeLocal {
+			continue // local worker 通过 App.TestCaptchaSolver 测试
+		}
+		r, err := s.client.TestCaptcha(ctx, node)
+		if err != nil {
+			results = append(results, employer.TestCaptchaResult{
+				Success: false,
+				Error:   fmt.Sprintf("%s: %v", node.ID, err),
+			})
+			continue
+		}
+		results = append(results, *r)
+	}
+	return results
+}

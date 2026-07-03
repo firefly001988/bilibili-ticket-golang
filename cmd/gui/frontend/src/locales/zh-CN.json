@@ -69,6 +69,7 @@
         "settingsArea": "设置",
         "notify": "通知设置",
         "bwsReservation": "BWS 预约",
+        "captchaTest": "验证码测试",
         "settings": "常规设置"
     },
     "logs": {
@@ -1008,5 +1009,21 @@
             "success": "成功",
             "info": "信息"
         }
+    },
+    "captcha": {
+        "title": "验证码求解器",
+        "employerDLL": "雇主端本地库",
+        "employerTest": "雇主端测试",
+        "workerTest": "Worker 测试",
+        "testAll": "测试所有 Worker",
+        "testing": "测试中...",
+        "test": "测试",
+        "dllNotFound": "未检测到验证码求解库 (libs/libcaptcha-*.dll)",
+        "dllFound": "验证码求解库已加载 ({Version})",
+        "solverNotInstalled": "求解器未安装",
+        "solverInstalled": "求解器已就绪",
+        "testSuccess": "{Target} 测试成功 ({Elapsed}, {Type})",
+        "testFailed": "{Target} 测试失败 ({Elapsed}): {Error}",
+        "workerTestResult": "{ID} {Result}"
     }
 }

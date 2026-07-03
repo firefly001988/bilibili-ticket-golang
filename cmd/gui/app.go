@@ -6,18 +6,28 @@ import (
 	"bilibili-ticket-golang/cmd/gui/store/configuration"
 	"bilibili-ticket-golang/lib/biliutils"
 	"bilibili-ticket-golang/lib/global"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"time"
+
+	gc "bilibili-ticket-golang/captcha-solver"
+	api "bilibili-ticket-golang/lib/models/bili/api"
+	gcaptcha "bilibili-ticket-golang/lib/models/bili/captcha"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // App is exposed as a Wails v3 service.
 type App struct {
-	bili     *biliutils.BiliClient
-	store    *configuration.DataStorage
-	wailsApp *application.App
+	bili          *biliutils.BiliClient
+	store         *configuration.DataStorage
+	wailsApp      *application.App
+	captchaSolver biliutils.CaptchaSolverFn
 }
 
 // NewApp creates a new App application struct
@@ -144,4 +154,105 @@ func (a *App) OpenPayQRWindow(options PayQRWindowOptions) {
 	}
 
 	payqr.OpenWindow(a.wailsApp, title, values)
+}
+
+// =============================================================================
+// Captcha solver —— 供前端检测和测试
+// =============================================================================
+
+// SetCaptchaSolver stores the captcha solving function.
+func (a *App) SetCaptchaSolver(solver biliutils.CaptchaSolverFn) {
+	a.captchaSolver = solver
+}
+
+// HasCaptchaSolver returns whether a captcha solver is installed and available.
+func (a *App) HasCaptchaSolver() bool {
+	return a.bili.HasCaptchaSolver()
+}
+
+// CaptchaTestResult is returned by TestCaptchaSolver.
+type CaptchaTestResult struct {
+	Success  bool   `json:"success"`
+	Elapsed  string `json:"elapsed"`
+	Validate string `json:"validate,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Type     string `json:"type,omitempty"`
+}
+
+// TestCaptchaSolver 从 Bilibili 获取真实验证码并测试求解器。
+// 返回 CaptchaTestResult 供前端展示。
+func (a *App) TestCaptchaSolver() CaptchaTestResult {
+	if a.captchaSolver == nil && !a.bili.HasCaptchaSolver() {
+		return CaptchaTestResult{Success: false, Error: "验证码求解器未安装"}
+	}
+
+	req, _ := http.NewRequest("GET",
+		"https://passport.bilibili.com/x/passport-login/captcha?source=main_web", nil)
+	req.Header.Set("User-Agent",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return CaptchaTestResult{Success: false, Error: fmt.Sprintf("请求验证码失败: %v", err)}
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return CaptchaTestResult{Success: false, Error: fmt.Sprintf("读取响应失败: %v", err)}
+	}
+
+	var r api.MainApiDataRoot[gcaptcha.RegisterVoucherResponse]
+	if err := json.Unmarshal(body, &r); err != nil {
+		return CaptchaTestResult{Success: false, Error: fmt.Sprintf("解析失败: %v (raw: %.200s)", err, string(body))}
+	}
+	if r.Code != 0 {
+		return CaptchaTestResult{Success: false, Error: fmt.Sprintf("API 错误 code=%d: %s", r.Code, r.Message)}
+	}
+
+	gt := r.Data.Geetest.Gt
+	challenge := r.Data.Geetest.Challenge
+	captTypeStr := r.Data.Type
+
+	solver := a.captchaSolver
+	if solver == nil {
+		return CaptchaTestResult{Success: false, Error: "验证码求解函数未设置"}
+	}
+
+	start := time.Now()
+	validate, err := solver(gt, challenge)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		return CaptchaTestResult{
+			Success: false,
+			Elapsed: elapsed.String(),
+			Error:   err.Error(),
+			Type:    captTypeStr,
+		}
+	}
+	return CaptchaTestResult{
+		Success:  true,
+		Elapsed:  elapsed.String(),
+		Validate: validate,
+		Type:     captTypeStr,
+	}
+}
+
+// HasCaptchaDLL returns whether the native captcha DLL was loaded.
+func (a *App) HasCaptchaDLL() bool {
+	// 尝试多个可能的 libs 目录
+	for _, dir := range []string{"./libs", "../libs", "../../libs"} {
+		if gc.IsAvailable(dir) {
+			return true
+		}
+	}
+	// 运行时从可执行文件同目录查找
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Join(filepath.Dir(exe), "libs")
+		if gc.IsAvailable(exeDir) {
+			return true
+		}
+	}
+	return false
 }

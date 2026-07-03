@@ -10,8 +10,6 @@ import (
 	"bilibili-ticket-golang/lib/biliutils/notify"
 	"bilibili-ticket-golang/lib/biliutils/scheduler"
 	"bilibili-ticket-golang/lib/global"
-	"bilibili-ticket-golang/lib/models/bili/api"
-	gcaptcha "bilibili-ticket-golang/lib/models/bili/captcha"
 	"bytes"
 	"context"
 	"embed"
@@ -34,55 +32,6 @@ var assets embed.FS
 
 func init() {
 	application.RegisterEvent[scheduler.LogEntry]("ticket:log")
-}
-
-func testCaptcha(solverFunc func(gt string, challenge string) (string, error)) {
-	go func() {
-		req, reqErr := http.NewRequest("GET", "https://passport.bilibili.com/x/passport-login/captcha?source=main_web", nil)
-		if reqErr != nil {
-			log.Printf("[captcha-test] request error: %v", reqErr)
-			return
-		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
-
-		resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-		if err != nil {
-			log.Printf("[captcha-test] HTTP error: %v", err)
-			return
-		}
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("[captcha-test] read error: %v", err)
-			return
-		}
-
-		var r api.MainApiDataRoot[gcaptcha.RegisterVoucherResponse]
-		err = json.Unmarshal(body, &r)
-		if err != nil {
-			log.Printf("[captcha-test] parse error: %v (body: %.200s)", err, string(body))
-			return
-		}
-
-		if r.Code != 0 {
-			log.Printf("[captcha-test] API error code=%d", r.Code)
-			return
-		}
-
-		gt := r.Data.Geetest.Gt
-		challenge := r.Data.Geetest.Challenge
-
-		start := time.Now()
-		validate, err := solverFunc(gt, challenge)
-		elapsed := time.Since(start)
-
-		if err != nil {
-			log.Printf("[captcha-test] failed (elapsed=%v): %v", elapsed, err)
-		} else {
-			log.Printf("[captcha-test] success (elapsed=%v) validate=%s", elapsed, validate)
-		}
-	}()
 }
 
 func main() {
@@ -285,21 +234,18 @@ func main() {
 		return result.Validate, nil
 	}
 
-	// 初始化 captcha DLL（本地库替换 gRPC 插件）
-	if !gc.IsAvailable("./libs") {
-		log.Printf("[main] captcha DLL not found — captcha solving disabled")
-	} else if err := gc.Init("./libs"); err != nil {
-		log.Printf("[main] captcha DLL init failed: %v", err)
+	// 初始化 captcha DLL
+	if err := gc.Init("./libs"); err != nil {
+		log.Printf("[main] captcha DLL init: %v", err)
 	} else {
 		v, _ := gc.Version()
 		log.Printf("[main] captcha DLL loaded (version=%s, commit=%s)", v.Version, v.GitCommit)
 
 		// Wire the solver into BiliClient so voucher errors are auto-resolved.
 		c.SetCaptchaSolver(solverFunc)
+		app.SetCaptchaSolver(solverFunc)
+		clusterSvc.SetLocalWorkerSolver(solverFunc, makeCaptchaTester(solverFunc))
 		log.Printf("[main] captcha solver installed — vouchers will be auto-resolved")
-
-		// 测试验证码识别
-		testCaptcha(solverFunc)
 	}
 
 	// Create Wails v3 application.
@@ -336,6 +282,56 @@ func main() {
 
 	if err = wailsApp.Run(); err != nil {
 		log.Printf("[main] Error: %v", err)
+	}
+}
+
+// makeCaptchaTester wraps the solver into a CaptchaTester that fetches a live
+// captcha from Bilibili and tests the solver. Used by the local worker manager.
+func makeCaptchaTester(solver func(gt, challenge string) (string, error)) func() (elapsed, validate, captchaType string, err error) {
+	return func() (elapsed, validate, captchaType string, err error) {
+		req, _ := http.NewRequest("GET",
+			"https://passport.bilibili.com/x/passport-login/captcha?source=main_web", nil)
+		req.Header.Set("User-Agent",
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+
+		resp, httpErr := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+		if httpErr != nil {
+			err = fmt.Errorf("HTTP: %w", httpErr)
+			return
+		}
+		defer resp.Body.Close()
+
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			err = fmt.Errorf("read: %w", readErr)
+			return
+		}
+
+		var r struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+			Data    struct {
+				Type    string `json:"type"`
+				Geetest struct {
+					Gt        string `json:"gt"`
+					Challenge string `json:"challenge"`
+				} `json:"geetest"`
+			} `json:"data"`
+		}
+		if jsonErr := json.Unmarshal(body, &r); jsonErr != nil {
+			err = fmt.Errorf("parse: %w", jsonErr)
+			return
+		}
+		if r.Code != 0 {
+			err = fmt.Errorf("API code=%d: %s", r.Code, r.Message)
+			return
+		}
+
+		captchaType = r.Data.Type
+		start := time.Now()
+		validate, err = solver(r.Data.Geetest.Gt, r.Data.Geetest.Challenge)
+		elapsed = time.Since(start).String()
+		return
 	}
 }
 

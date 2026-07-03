@@ -344,6 +344,18 @@ message BindBWSTicketResponse {
 // WorkerService
 // =============================================================================
 
+// TestCaptchaRequest is sent by the employer to test worker captcha solving.
+message TestCaptchaRequest {}
+
+// TestCaptchaResponse reports the result of a captcha test on the worker.
+message TestCaptchaResponse {
+  bool   success  = 1;
+  string elapsed  = 2;   // e.g. "2.3s"
+  string validate = 3;   // the solve result on success
+  string error    = 4;   // error details on failure
+  string type     = 5;   // "click" or "slide"
+}
+
 service WorkerService {
   // Health returns the worker's health and metadata.
   rpc Health(HealthRequest) returns (HealthResponse);
@@ -420,4 +432,8 @@ service WorkerService {
 
   // BindBWSTicket binds a real‑name identity to an electronic ticket.
   rpc BindBWSTicket(BindBWSTicketRequest) returns (BindBWSTicketResponse);
+
+  // TestCaptcha asks the worker to fetch a live Bilibili captcha and solve it.
+  // Returns success/failure, elapsed time, and any error details.
+  rpc TestCaptcha(TestCaptchaRequest) returns (TestCaptchaResponse);
 }

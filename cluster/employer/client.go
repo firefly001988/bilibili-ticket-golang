@@ -561,6 +561,34 @@ func (c *WorkerClient) HealthForce(ctx context.Context, node domain.WorkerNode) 
 	return info, err
 }
 
+// TestCaptchaResult mirrors the proto TestCaptchaResponse.
+type TestCaptchaResult struct {
+	Success  bool   `json:"success"`
+	Elapsed  string `json:"elapsed"`
+	Validate string `json:"validate,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Type     string `json:"type,omitempty"`
+}
+
+// TestCaptcha asks the worker to fetch a live Bilibili captcha and solve it.
+func (c *WorkerClient) TestCaptcha(ctx context.Context, node domain.WorkerNode) (*TestCaptchaResult, error) {
+	cli, err := c.getClient(node)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := cli.TestCaptcha(ctx, &pb.TestCaptchaRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return &TestCaptchaResult{
+		Success:  resp.Success,
+		Elapsed:  resp.Elapsed,
+		Validate: resp.Validate,
+		Error:    resp.Error,
+		Type:     resp.Type,
+	}, nil
+}
+
 // health performs the Health RPC and returns the response map plus a
 // bool indicating whether the protocol version check passed.  The caller
 // always receives the full HealthResponse map regardless of the version

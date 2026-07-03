@@ -12,6 +12,7 @@ const routes = [
   { path: '/cluster/orders', component: () => import('@/pages/cluster/orders.vue') },
   { path: '/pay-qr', component: () => import('@/pages/pay-qr.vue') },
   { path: '/settings', component: () => import('@/pages/settings.vue') },
+  { path: '/captcha-test', component: () => import('@/pages/captcha-test.vue') },
   { path: '/bws-reservation', component: () => import('@/pages/bws-reservation.vue') },
 ]
 

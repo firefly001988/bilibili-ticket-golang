@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.34.1
-// source: cluster/worker/proto/worker.proto
+// source: worker.proto
 
 package proto
 
@@ -35,6 +35,7 @@ const (
 	WorkerService_CheckBWSBind_FullMethodName          = "/worker.WorkerService/CheckBWSBind"
 	WorkerService_GetBWSReservationInfo_FullMethodName = "/worker.WorkerService/GetBWSReservationInfo"
 	WorkerService_BindBWSTicket_FullMethodName         = "/worker.WorkerService/BindBWSTicket"
+	WorkerService_TestCaptcha_FullMethodName           = "/worker.WorkerService/TestCaptcha"
 )
 
 // WorkerServiceClient is the client API for WorkerService service.
@@ -99,6 +100,9 @@ type WorkerServiceClient interface {
 	GetBWSReservationInfo(ctx context.Context, in *BWSReservationInfoRequest, opts ...grpc.CallOption) (*BWSReservationInfoResponse, error)
 	// BindBWSTicket binds a real‑name identity to an electronic ticket.
 	BindBWSTicket(ctx context.Context, in *BindBWSTicketRequest, opts ...grpc.CallOption) (*BindBWSTicketResponse, error)
+	// TestCaptcha asks the worker to fetch a live Bilibili captcha and solve it.
+	// Returns success/failure, elapsed time, and any error details.
+	TestCaptcha(ctx context.Context, in *TestCaptchaRequest, opts ...grpc.CallOption) (*TestCaptchaResponse, error)
 }
 
 type workerServiceClient struct {
@@ -272,6 +276,16 @@ func (c *workerServiceClient) BindBWSTicket(ctx context.Context, in *BindBWSTick
 	return out, nil
 }
 
+func (c *workerServiceClient) TestCaptcha(ctx context.Context, in *TestCaptchaRequest, opts ...grpc.CallOption) (*TestCaptchaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TestCaptchaResponse)
+	err := c.cc.Invoke(ctx, WorkerService_TestCaptcha_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkerServiceServer is the server API for WorkerService service.
 // All implementations must embed UnimplementedWorkerServiceServer
 // for forward compatibility.
@@ -334,6 +348,9 @@ type WorkerServiceServer interface {
 	GetBWSReservationInfo(context.Context, *BWSReservationInfoRequest) (*BWSReservationInfoResponse, error)
 	// BindBWSTicket binds a real‑name identity to an electronic ticket.
 	BindBWSTicket(context.Context, *BindBWSTicketRequest) (*BindBWSTicketResponse, error)
+	// TestCaptcha asks the worker to fetch a live Bilibili captcha and solve it.
+	// Returns success/failure, elapsed time, and any error details.
+	TestCaptcha(context.Context, *TestCaptchaRequest) (*TestCaptchaResponse, error)
 	mustEmbedUnimplementedWorkerServiceServer()
 }
 
@@ -391,6 +408,9 @@ func (UnimplementedWorkerServiceServer) GetBWSReservationInfo(context.Context, *
 }
 func (UnimplementedWorkerServiceServer) BindBWSTicket(context.Context, *BindBWSTicketRequest) (*BindBWSTicketResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BindBWSTicket not implemented")
+}
+func (UnimplementedWorkerServiceServer) TestCaptcha(context.Context, *TestCaptchaRequest) (*TestCaptchaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TestCaptcha not implemented")
 }
 func (UnimplementedWorkerServiceServer) mustEmbedUnimplementedWorkerServiceServer() {}
 func (UnimplementedWorkerServiceServer) testEmbeddedByValue()                       {}
@@ -690,6 +710,24 @@ func _WorkerService_BindBWSTicket_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkerService_TestCaptcha_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TestCaptchaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).TestCaptcha(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_TestCaptcha_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).TestCaptcha(ctx, req.(*TestCaptchaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkerService_ServiceDesc is the grpc.ServiceDesc for WorkerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -757,6 +795,10 @@ var WorkerService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "BindBWSTicket",
 			Handler:    _WorkerService_BindBWSTicket_Handler,
 		},
+		{
+			MethodName: "TestCaptcha",
+			Handler:    _WorkerService_TestCaptcha_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -766,5 +808,5 @@ var WorkerService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "cluster/worker/proto/worker.proto",
+	Metadata: "worker.proto",
 }

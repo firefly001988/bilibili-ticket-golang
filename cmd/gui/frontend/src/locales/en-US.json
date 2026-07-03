@@ -69,6 +69,7 @@
         "settingsArea": "Settings",
         "notify": "Notification Settings",
         "bwsReservation": "BWS Reservation",
+        "captchaTest": "Captcha Test",
         "settings": "General Settings"
     },
     "logs": {
@@ -1008,5 +1009,21 @@
             "success": "Success",
             "info": "Info"
         }
+    },
+    "captcha": {
+        "title": "Captcha Solver",
+        "employerDLL": "Employer Local Library",
+        "employerTest": "Employer Test",
+        "workerTest": "Worker Test",
+        "testAll": "Test All Workers",
+        "testing": "Testing...",
+        "test": "Test",
+        "dllNotFound": "Captcha solving library not found (libs/libcaptcha-*.dll)",
+        "dllFound": "Captcha solving library loaded ({Version})",
+        "solverNotInstalled": "Solver not installed",
+        "solverInstalled": "Solver ready",
+        "testSuccess": "{Target} test passed ({Elapsed}, {Type})",
+        "testFailed": "{Target} test failed ({Elapsed}): {Error}",
+        "workerTestResult": "{ID} {Result}"
     }
 }

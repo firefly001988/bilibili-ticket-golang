@@ -99,6 +99,17 @@ func (s *ClusterService) SetNotifier(notify func(string)) { s.notify = notify }
 // SetApp stores the Wails app reference for opening payment QR windows.
 func (s *ClusterService) SetApp(app *application.App) { s.wailsApp = app }
 
+// SetLocalWorkerSolver installs a captcha solving function on the local
+// worker manager. When set, local workers will use this solver for
+// voucher resolution, and the TestCaptcha gRPC RPC will be functional.
+func (s *ClusterService) SetLocalWorkerSolver(
+	solver func(gt, challenge string) (string, error),
+	tester func() (elapsed, validate, captchaType string, err error),
+) {
+	s.local.SetSolver(solver)
+	s.local.SetCaptchaTester(tester)
+}
+
 func (s *ClusterService) openPayQRWindow(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
 	log.Printf("[cluster] openPayQRWindow called: intent=%s success=%v orderID=%s paymentURL=%q wailsApp=%v",
 		intent.ID, result.Success, result.OrderID, result.PaymentURL, s.wailsApp != nil)

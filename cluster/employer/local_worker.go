@@ -26,16 +26,31 @@ type localWorkerSlot struct {
 }
 
 type LocalWorkerManager struct {
-	mu     sync.Mutex
-	client *WorkerClient
-	slots  map[string]*localWorkerSlot
-	opts   LocalWorkerOptions
+	mu            sync.Mutex
+	client        *WorkerClient
+	slots         map[string]*localWorkerSlot
+	opts          LocalWorkerOptions
+	workerSolver  func(gt, challenge string) (string, error)
+	captchaTester worker.CaptchaTester
 }
 
 type LocalWorkerOptions struct {
 	PluginDir     string
 	CaptchaPlugin string
 	Version       string
+}
+
+// SetSolver installs a captcha solving function on the local worker manager.
+// When set, all local worker backends will use this solver, and the TestCaptcha
+// gRPC RPC will be functional on local workers.
+func (m *LocalWorkerManager) SetSolver(solver func(gt, challenge string) (string, error)) {
+	m.workerSolver = solver
+}
+
+// SetCaptchaTester installs a captcha testing function on the local worker
+// manager. When set, local worker servers gain the TestCaptcha gRPC RPC.
+func (m *LocalWorkerManager) SetCaptchaTester(tester worker.CaptchaTester) {
+	m.captchaTester = tester
 }
 
 // AddWorker creates and starts a new in-process worker. Use id="" for
@@ -215,12 +230,19 @@ func (m *LocalWorkerManager) startLocked(ctx context.Context, id, name, listen, 
 	_ = os.WriteFile(filepath.Join(dataDir, "worker.json"), configData, 0600)
 
 	factory := func(spec domain.ExecutionSpec) (executor.Backend, error) {
+		if m.workerSolver != nil {
+			return executor.NewBilibiliBackendWithSolver(spec.Credentials, m.workerSolver)
+		}
 		return executor.NewBilibiliBackend(spec.Credentials)
 	}
 
 	server, err := worker.NewServer(config, factory)
 	if err != nil {
 		return domain.WorkerNode{}, fmt.Errorf("init local worker %s: %w", id, err)
+	}
+
+	if m.captchaTester != nil {
+		server.SetCaptchaTester(m.captchaTester)
 	}
 
 	lis, err := net.Listen("tcp", listen)

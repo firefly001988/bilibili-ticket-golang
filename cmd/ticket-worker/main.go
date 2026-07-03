@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -60,7 +61,7 @@ func serve(args []string) {
 	// stale.  The version check in the Health handler compares this
 	// against the employer's own commit on every request.
 	config.Version = global.GitCommit
-	factory, cleanup, err := workerFactory(&config)
+	factory, cleanup, solver, err := workerFactory(&config)
 	if err != nil {
 		fatal("initialize captcha plugin: %v", err)
 	}
@@ -69,14 +70,17 @@ func serve(args []string) {
 	if err != nil {
 		fatal("initialize worker: %v", err)
 	}
+	if solver != nil {
+		server.SetCaptchaTester(makeCaptchaTester(solver))
+	}
 	if err := server.ListenAndServe(); err != nil {
 		fatal("serve worker: %v", err)
 	}
 }
 
-func workerFactory(config *worker.Config) (worker.BackendFactory, func(), error) {
+func workerFactory(config *worker.Config) (worker.BackendFactory, func(), func(gt, challenge string) (string, error), error) {
 	if config.CaptchaPlugin == "" {
-		return nil, func() {}, nil
+		return nil, func() {}, nil, nil
 	}
 
 	dir := config.PluginDir
@@ -85,13 +89,18 @@ func workerFactory(config *worker.Config) (worker.BackendFactory, func(), error)
 	}
 
 	// 初始化 captcha DLL（本地库替换 gRPC 插件）
-	// libraryPath 为 libs/ 目录所在位置；worker 部署时 libs/ 在 data/ 旁
+	// 优先查找可执行文件同目录下的 libs/，其次查找 plugins/../libs
 	libPath := filepath.Join(dir, "..", "libs")
 	if !gc.IsAvailable(libPath) {
-		return nil, func() {}, fmt.Errorf("captcha DLL not found at %s", libPath)
+		if exe, err := os.Executable(); err == nil {
+			libPath = filepath.Join(filepath.Dir(exe), "libs")
+		}
+	}
+	if !gc.IsAvailable(libPath) {
+		return nil, func() {}, nil, fmt.Errorf("captcha DLL not found at %s", libPath)
 	}
 	if err := gc.Init(libPath); err != nil {
-		return nil, func() {}, fmt.Errorf("captcha Init: %w", err)
+		return nil, func() {}, nil, fmt.Errorf("captcha Init: %w", err)
 	}
 
 	v, _ := gc.Version()
@@ -155,7 +164,59 @@ func workerFactory(config *worker.Config) (worker.BackendFactory, func(), error)
 
 	return func(spec domain.ExecutionSpec) (executor.Backend, error) {
 		return executor.NewBilibiliBackendWithSolver(spec.Credentials, solverFunc)
-	}, func() {}, nil
+	}, func() {}, solverFunc, nil
+}
+
+// makeCaptchaTester wraps the solver into a worker.CaptchaTester that
+// fetches a live captcha from Bilibili and tests the solver.
+func makeCaptchaTester(solver func(gt, challenge string) (string, error)) worker.CaptchaTester {
+	netHTTP := func() (*http.Response, error) {
+		req, _ := http.NewRequest("GET",
+			"https://passport.bilibili.com/x/passport-login/captcha?source=main_web", nil)
+		req.Header.Set("User-Agent",
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+		return (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	}
+
+	return func() (elapsed string, validate string, captchaType string, err error) {
+		resp, httpErr := netHTTP()
+		if httpErr != nil {
+			return "", "", "", fmt.Errorf("HTTP request: %w", httpErr)
+		}
+		defer resp.Body.Close()
+
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return "", "", "", fmt.Errorf("read body: %w", readErr)
+		}
+
+		var r struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+			Data    struct {
+				Type    string `json:"type"`
+				Geetest struct {
+					Gt        string `json:"gt"`
+					Challenge string `json:"challenge"`
+				} `json:"geetest"`
+			} `json:"data"`
+		}
+		if jsonErr := json.Unmarshal(body, &r); jsonErr != nil {
+			return "", "", "", fmt.Errorf("parse JSON: %w", jsonErr)
+		}
+		if r.Code != 0 {
+			return "", "", "", fmt.Errorf("API error code=%d: %s", r.Code, r.Message)
+		}
+
+		gt := r.Data.Geetest.Gt
+		challenge := r.Data.Geetest.Challenge
+		captchaType = r.Data.Type
+
+		start := time.Now()
+		validate, err = solver(gt, challenge)
+		elapsed = time.Since(start).String()
+		return
+	}
 }
 
 func run(args []string) {
@@ -177,7 +238,7 @@ func run(args []string) {
 		fatal("decode task: %v", err)
 	}
 	pluginConfig := worker.Config{PluginDir: *pluginDir, CaptchaPlugin: *captchaPlugin}
-	factory, cleanup, err := workerFactory(&pluginConfig)
+	factory, cleanup, _, err := workerFactory(&pluginConfig)
 	if err != nil {
 		fatal("initialize captcha plugin: %v", err)
 	}
