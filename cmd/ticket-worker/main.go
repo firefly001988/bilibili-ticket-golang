@@ -87,6 +87,9 @@ func workerFactory(config *worker.Config) (worker.BackendFactory, func(), error)
 	// 初始化 captcha DLL（本地库替换 gRPC 插件）
 	// libraryPath 为 libs/ 目录所在位置；worker 部署时 libs/ 在 data/ 旁
 	libPath := filepath.Join(dir, "..", "libs")
+	if !gc.IsAvailable(libPath) {
+		return nil, func() {}, fmt.Errorf("captcha DLL not found at %s", libPath)
+	}
 	if err := gc.Init(libPath); err != nil {
 		return nil, func() {}, fmt.Errorf("captcha Init: %w", err)
 	}

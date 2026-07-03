@@ -3,6 +3,7 @@ package captcha
 import (
 	"encoding/hex"
 	"fmt"
+	"os"
 	"sync"
 	"unsafe"
 
@@ -54,6 +55,13 @@ func Init(rootPath string) error {
 		initErr = registerAll()
 	})
 	return initErr
+}
+
+// IsAvailable 检查库文件是否存在于 rootPath 目录中，不实际加载。
+func IsAvailable(rootPath string) bool {
+	libPath := fmt.Sprintf("%s/%s", rootPath, getSystemLibraryPath())
+	_, err := os.Stat(libPath)
+	return err == nil
 }
 
 func registerAll() error {

@@ -286,7 +286,9 @@ func main() {
 	}
 
 	// 初始化 captcha DLL（本地库替换 gRPC 插件）
-	if err := gc.Init("./libs"); err != nil {
+	if !gc.IsAvailable("./libs") {
+		log.Printf("[main] captcha DLL not found — captcha solving disabled")
+	} else if err := gc.Init("./libs"); err != nil {
 		log.Printf("[main] captcha DLL init failed: %v", err)
 	} else {
 		v, _ := gc.Version()
