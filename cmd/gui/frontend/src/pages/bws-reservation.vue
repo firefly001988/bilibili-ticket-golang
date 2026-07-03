@@ -249,6 +249,32 @@ async function stopTask(entry: BWSEntry) {
     }
 }
 
+// ── Force start task ────────────────────────────────────
+async function forceStartTask(entry: BWSEntry) {
+    if (!entry.workerId) return
+    try {
+        await StopBWSTask(entry.workerId, entry.id)
+        // Re-submit with reserveTime set to now so the worker starts immediately
+        // (Engine.Run skips the scheduled-wait block when StartAt is in the past)
+        const input = {
+            accountId: selectedAccount.value,
+            workerId: entry.workerId,
+            activityId: entry.activityId,
+            ticketNo: entry.ticketNo,
+            activityTitle: entry.activityTitle,
+            reserveTime: Math.floor(Date.now() / 1000) - 10, // 10s ago → immediate
+            reserveDate: entry.reserveDate,
+            startDelayMs: 0,
+            loopDelayMs: entry.loopDelayMs,
+        }
+        await SubmitBWS(JSON.stringify(input))
+        await loadEntries()
+        messages.add({ text: t('bwsReservation.forceStarted'), color: 'success', timeout: 2000 })
+    } catch (e: any) {
+        messages.add({ text: t('bwsReservation.forceStartFailed', { error: String(e) }), color: 'error', timeout: 4000 })
+    }
+}
+
 // ── Delete entry ────────────────────────────────────────
 async function deleteEntry(entry: BWSEntry) {
     // Stop the task first if still running.
@@ -433,8 +459,8 @@ onUnmounted(() => {
             </v-alert>
         </v-card>
 
-        <!-- Action: Fetch activity (sticky) -->
-        <div v-if="isBound" class="mb-4" style="position: sticky; top: 0; z-index: 10;">
+        <!-- Action: Fetch activity -->
+        <div v-if="isBound" class="mb-4">
             <v-card variant="outlined" class="pa-3">
                 <div class="d-flex ga-2 align-center flex-wrap">
                     <v-text-field v-model="reserveDates" :label="t('bwsReservation.datesLabel')"
@@ -473,41 +499,43 @@ onUnmounted(() => {
                     size="small" style="max-width: 200px;" @click.stop />
             </v-card-title>
             <v-divider />
-            <v-expand-transition>
-                <v-card-text v-if="showResults" class="pa-0" style="max-height: 500px; overflow-y: auto;">
-                    <v-table density="compact">
-                        <thead>
-                            <tr>
-                                <th>{{ t('bwsReservation.colId') }}</th>
-                                <th>{{ t('bwsReservation.colActivity') }}</th>
-                                <th>{{ t('bwsReservation.colDate') }}</th>
-                                <th>{{ t('bwsReservation.colTicketNo') }}</th>
-                                <th>{{ t('bwsReservation.colGrabTime') }}</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="act in filteredActivities" :key="act.reserveId"
-                                :class="{ 'text-grey': !canAdd(act) }">
-                                <td>{{ act.reserveId }}</td>
-                                <td class="text-no-wrap">
-                                    {{ act.actTitle }}
-                                    <v-chip :color="canAdd(act) ? 'green' : act.state === 4 ? 'blue' : 'grey'"
-                                        size="x-small" variant="tonal">{{ stateLabel(act.state) }}</v-chip>
-                                </td>
-                                <td>{{ act.reserveDate }}</td>
-                                <td><code>{{ (getTicketForDate(act.reserveDate) || '—').slice(-4) }}</code></td>
-                                <td>{{ formatTime(act.reserveBeginTime) }}</td>
-                                <td>
-                                    <v-btn v-if="canAdd(act)" icon="mdi-plus-circle-outline" size="x-small"
-                                        variant="text" color="primary"
-                                        @click="openAddDialog({ ...act, ticket: getTicketForDate(act.reserveDate) })" />
-                                </td>
-                            </tr>
-                        </tbody>
-                    </v-table>
-                </v-card-text>
-            </v-expand-transition>
+            <v-card-text class="pa-0">
+                <v-expand-transition>
+                    <div v-if="showResults" style="max-height: 500px; overflow-y: auto;">
+                        <v-table density="compact">
+                            <thead>
+                                <tr>
+                                    <th>{{ t('bwsReservation.colId') }}</th>
+                                    <th>{{ t('bwsReservation.colActivity') }}</th>
+                                    <th>{{ t('bwsReservation.colDate') }}</th>
+                                    <th>{{ t('bwsReservation.colTicketNo') }}</th>
+                                    <th>{{ t('bwsReservation.colGrabTime') }}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="act in filteredActivities" :key="act.reserveId"
+                                    :class="{ 'text-grey': !canAdd(act) }">
+                                    <td>{{ act.reserveId }}</td>
+                                    <td class="text-no-wrap">
+                                        {{ act.actTitle }}
+                                        <v-chip :color="canAdd(act) ? 'green' : act.state === 4 ? 'blue' : 'grey'"
+                                            size="x-small" variant="tonal">{{ stateLabel(act.state) }}</v-chip>
+                                    </td>
+                                    <td>{{ act.reserveDate }}</td>
+                                    <td><code>{{ (getTicketForDate(act.reserveDate) || '—').slice(-4) }}</code></td>
+                                    <td>{{ formatTime(act.reserveBeginTime) }}</td>
+                                    <td>
+                                        <v-btn v-if="canAdd(act)" icon="mdi-plus-circle-outline" size="x-small"
+                                            variant="text" color="primary"
+                                            @click="openAddDialog({ ...act, ticket: getTicketForDate(act.reserveDate) })" />
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </v-table>
+                    </div>
+                </v-expand-transition>
+            </v-card-text>
         </v-card>
         <v-card v-else-if="fetchingInfo" variant="outlined" class="mb-4 pa-6 text-center">
             <v-progress-circular indeterminate size="24" class="mb-2" />
@@ -541,14 +569,16 @@ onUnmounted(() => {
                             <span class="text-caption text-grey">
                                 {{ e.accountId || '—' }} @ {{ e.workerId || '—' }} · ID: {{ e.activityId || '—' }} · {{
                                     e.reserveDate ||
-                                '—' }} ·
+                                    '—' }} ·
                                 {{ t('bwsReservation.ticketNoLabel') }} {{ e.ticketNo || '—' }}
                             </span>
                         </template>
                         <template #append>
                             <div class="d-flex ga-0">
-                                <v-btn v-if="e.status === 'waiting' || e.status === 'running'" icon="mdi-stop"
-                                    size="x-small" variant="text" color="error" @click.stop="stopTask(e)" />
+                                <v-btn v-if="e.status === 'waiting'" icon="mdi-fast-forward" size="x-small"
+                                    variant="text" color="warning" @click.stop="forceStartTask(e)" />
+                                <v-btn v-if="e.status === 'running'" icon="mdi-stop" size="x-small" variant="text"
+                                    color="error" @click.stop="stopTask(e)" />
                                 <v-btn icon="mdi-delete-outline" size="x-small" variant="text" color="grey"
                                     @click.stop="deleteEntry(e)" />
                             </div>

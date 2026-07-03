@@ -826,6 +826,8 @@
         "deleteEntry": "Delete",
         "taskStarted": "Task started",
         "taskStopped": "Task stopped",
+        "forceStarted": "Started immediately",
+        "forceStartFailed": "Force start failed: {error}",
         "entryDeleted": "Reservation deleted",
         "startFailed": "Start failed: {error}",
         "stopFailed": "Stop failed: {error}",

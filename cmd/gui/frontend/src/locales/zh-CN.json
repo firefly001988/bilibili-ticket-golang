@@ -826,6 +826,8 @@
         "deleteEntry": "删除",
         "taskStarted": "任务已启动",
         "taskStopped": "任务已停止",
+        "forceStarted": "已立即启动",
+        "forceStartFailed": "立即启动失败: {error}",
         "entryDeleted": "预约已删除",
         "startFailed": "启动失败: {error}",
         "stopFailed": "停止失败: {error}",

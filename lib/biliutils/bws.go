@@ -76,7 +76,7 @@ func (c *BiliClient) GetBWSReservationInfo(reserveDates string, reserveType int)
 
 // GetBWSMyReservations fetches the user's current BWS reservations.
 func (c *BiliClient) GetBWSMyReservations() (*api.BWSMyReservationsStruct, error) {
-	resp, err := c.client.R().Get("https://api.bilibili.com/x/activity/bws/online/park/myreserve")
+	resp, err := c.client.R().SetQueryParam("year", year).Get("https://api.bilibili.com/x/activity/bws/online/park/myreserve")
 	if err != nil {
 		return nil, fmt.Errorf("BWS myreserve request failed: %w", err)
 	}
@@ -109,6 +109,7 @@ func (c *BiliClient) MakeBWSReservation(ticketNo string, reservationID int) (cod
 		"ticket_no":        ticketNo,
 		"csrf":             csrf,
 		"inter_reserve_id": strconv.Itoa(reservationID),
+		"year":             year,
 	}
 
 	resp, reqErr := c.client.R().
@@ -152,6 +153,7 @@ func (c *BiliClient) BindBWSTicket(bid int, idType int, personalID string, ticke
 		"personal_id": personalID,
 		"ticket_no":   ticketNo,
 		"user_name":   userName,
+		"year":        year,
 	}
 
 	resp, reqErr := c.client.R().
