@@ -70,10 +70,10 @@ const filteredAttempts = computed(() => stateFilter.value === 'all' ? attempts.v
 
 const selectedAttempt = computed(() => attempts.value.find(a => a.id === selectedAttemptId.value))
 
-const stateColor = (s: string): string => ({ running: 'info', waiting: 'warning', queued: 'grey', pending: 'warning', success: 'success', succeeded: 'success', completed: 'success', failed: 'error', stopped: 'grey', stopping: 'orange', cancelled: 'grey' } as any)[s] || 'grey'
-const stateIcon = (s: string): string => ({ running: 'mdi-play-circle-outline', waiting: 'mdi-clock-outline', queued: 'mdi-timer-sand', pending: 'mdi-clock-outline', success: 'mdi-check-circle-outline', succeeded: 'mdi-check-circle-outline', completed: 'mdi-check-circle-outline', failed: 'mdi-close-circle-outline', stopped: 'mdi-stop-circle-outline', stopping: 'mdi-stop-circle-outline', cancelled: 'mdi-cancel' } as any)[s] || 'mdi-help-circle-outline'
+const stateColor = (s: string): string => ({ running: 'info', waiting: 'warning', queued: 'grey', pending: 'warning', cooldown: 'orange', success: 'success', succeeded: 'success', completed: 'success', failed: 'error', stopped: 'grey', stopping: 'orange', cancelled: 'grey' } as any)[s] || 'grey'
+const stateIcon = (s: string): string => ({ running: 'mdi-play-circle-outline', waiting: 'mdi-clock-outline', queued: 'mdi-timer-sand', pending: 'mdi-clock-outline', cooldown: 'mdi-snowflake', success: 'mdi-check-circle-outline', succeeded: 'mdi-check-circle-outline', completed: 'mdi-check-circle-outline', failed: 'mdi-close-circle-outline', stopped: 'mdi-stop-circle-outline', stopping: 'mdi-stop-circle-outline', cancelled: 'mdi-cancel' } as any)[s] || 'mdi-help-circle-outline'
 const stateLabel = (s: string): string => {
-    const m: Record<string, string> = { running: t('logs.stateRunning'), waiting: t('logs.stateWaiting'), queued: t('logs.stateQueued'), pending: t('logs.statePending'), success: t('logs.stateSuccess'), succeeded: t('logs.stateCompleted'), completed: t('logs.stateCompleted'), failed: t('logs.stateFailed'), stopped: t('logs.stateCancelled'), stopping: t('logs.stateCancelled'), cancelled: t('logs.stateCancelled') }
+    const m: Record<string, string> = { running: t('logs.stateRunning'), waiting: t('logs.stateWaiting'), queued: t('logs.stateQueued'), pending: t('logs.statePending'), cooldown: t('logs.stateCooldown'), success: t('logs.stateSuccess'), succeeded: t('logs.stateCompleted'), completed: t('logs.stateCompleted'), failed: t('logs.stateFailed'), stopped: t('logs.stateCancelled'), stopping: t('logs.stateCancelled'), cancelled: t('logs.stateCancelled') }
     return m[s] || s || '—'
 }
 
@@ -82,6 +82,7 @@ const stateOptions = [
     { title: t('logs.stateRunning'), value: 'running' },
     { title: t('logs.stateWaiting'), value: 'waiting' },
     { title: t('logs.statePending'), value: 'pending' },
+    { title: t('logs.stateCooldown'), value: 'cooldown' },
     { title: t('logs.stateSuccess'), value: 'success' },
     { title: t('logs.stateFailed'), value: 'failed' },
     { title: t('logs.stateCancelled'), value: 'stopped' },

@@ -30,6 +30,7 @@ const (
 	AttemptQueued    AttemptState = "queued"
 	AttemptWaiting   AttemptState = "waiting"
 	AttemptRunning   AttemptState = "running"
+	AttemptCooldown  AttemptState = "cooldown"
 	AttemptStopping  AttemptState = "stopping"
 	AttemptStopped   AttemptState = "stopped"
 	AttemptSucceeded AttemptState = "succeeded"

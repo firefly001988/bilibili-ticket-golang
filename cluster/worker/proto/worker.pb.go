@@ -7,12 +7,13 @@
 package proto
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -32,6 +33,7 @@ const (
 	AttemptState_ATTEMPT_STOPPED   AttemptState = 4
 	AttemptState_ATTEMPT_SUCCEEDED AttemptState = 5
 	AttemptState_ATTEMPT_FAILED    AttemptState = 6
+	AttemptState_ATTEMPT_COOLDOWN  AttemptState = 7
 )
 
 // Enum value maps for AttemptState.
@@ -44,6 +46,7 @@ var (
 		4: "ATTEMPT_STOPPED",
 		5: "ATTEMPT_SUCCEEDED",
 		6: "ATTEMPT_FAILED",
+		7: "ATTEMPT_COOLDOWN",
 	}
 	AttemptState_value = map[string]int32{
 		"ATTEMPT_QUEUED":    0,
@@ -53,6 +56,7 @@ var (
 		"ATTEMPT_STOPPED":   4,
 		"ATTEMPT_SUCCEEDED": 5,
 		"ATTEMPT_FAILED":    6,
+		"ATTEMPT_COOLDOWN":  7,
 	}
 )
 

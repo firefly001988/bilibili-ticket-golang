@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"bilibili-ticket-golang/cluster/dispatcher"
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/lib/global"
 )
@@ -202,7 +203,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	// ── Attempts: merge dispatcher in-memory + DB historical records ──────────
 	seen := make(map[string]bool)
 	for _, value := range s.dispatcher.Attempts() {
-		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, PaymentURL: value.Result.PaymentURL, Reason: value.Result.Reason})
+		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, PaymentURL: value.Result.PaymentURL, Reason: value.Result.Reason, CooldownRemainingMs: cooldownRemaining(s.dispatcher, value.ID)})
 		seen[value.ID] = true
 	}
 	// Also load terminal attempts from DB that were purged from dispatcher
@@ -217,4 +218,16 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 		}
 	}
 	return result, nil
+}
+
+func cooldownRemaining(d *dispatcher.Dispatcher, attemptID string) int64 {
+	endAt := d.AttemptCooldownEnd(attemptID)
+	if endAt.IsZero() {
+		return 0
+	}
+	ms := endAt.Sub(time.Now()).Milliseconds()
+	if ms < 0 {
+		return 0
+	}
+	return ms
 }

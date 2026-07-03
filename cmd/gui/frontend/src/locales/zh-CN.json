@@ -93,6 +93,7 @@
         "stateCompleted": "已完成",
         "stateFailed": "失败",
         "stateCancelled": "已取消",
+        "stateCooldown": "冷却中",
         "autoRefreshOn": "自动刷新中",
         "autoRefreshOff": "自动刷新已暂停",
         "loading": "加载中…",

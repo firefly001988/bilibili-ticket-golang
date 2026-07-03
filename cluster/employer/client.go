@@ -717,6 +717,8 @@ func attemptStateFromProto(s pb.AttemptState) domain.AttemptState {
 		return domain.AttemptSucceeded
 	case pb.AttemptState_ATTEMPT_FAILED:
 		return domain.AttemptFailed
+	case pb.AttemptState_ATTEMPT_COOLDOWN:
+		return domain.AttemptCooldown
 	default:
 		return domain.AttemptQueued
 	}

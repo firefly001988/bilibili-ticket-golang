@@ -50,6 +50,7 @@ type attempt struct {
 	value         domain.ExecutionAttempt
 	planID        string
 	isolatedUntil time.Time
+	cooldownUntil time.Time // attempt-level cooldown (412 rate limit)
 }
 
 type Dispatcher struct {
@@ -409,6 +410,17 @@ func (d *Dispatcher) Plans() []IntentPlan {
 	return result
 }
 
+// AttemptCooldownEnd returns the cooldown end time for an attempt, or zero
+// if the attempt is not in cooldown.
+func (d *Dispatcher) AttemptCooldownEnd(attemptID string) time.Time {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if a, ok := d.attempts[attemptID]; ok && a.cooldownUntil.After(d.now()) {
+		return a.cooldownUntil
+	}
+	return time.Time{}
+}
+
 func (d *Dispatcher) PunctualStopped() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -621,6 +633,15 @@ func (d *Dispatcher) poll(ctx context.Context) error {
 		current.value.Result.Credentials = domain.Credentials{}
 		if d.repository != nil {
 			_ = d.repository.PutAttempt(ctx, current.value)
+		}
+		// Track attempt-level cooldown for UI countdown display.
+		if status.State == domain.AttemptCooldown {
+			if current.cooldownUntil.IsZero() {
+				current.cooldownUntil = d.now().Add(5 * time.Minute)
+			}
+		} else if current.cooldownUntil.After(d.now()) {
+			// Cooldown ended — clear it so the UI stops showing the countdown.
+			current.cooldownUntil = time.Time{}
 		}
 		if !status.State.Terminal() {
 			continue

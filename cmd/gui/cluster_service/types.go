@@ -93,14 +93,15 @@ type MacroSummary struct {
 
 // AttemptSummary is a lightweight view of an execution attempt for the UI.
 type AttemptSummary struct {
-	ID         string               `json:"id"`
-	IntentID   string               `json:"intentId"`
-	AccountID  string               `json:"accountId"`
-	WorkerID   string               `json:"workerId"`
-	State      domain.AttemptState  `json:"state"`
-	OrderID    string               `json:"orderId,omitempty"`
-	PaymentURL string               `json:"paymentUrl,omitempty"`
-	Reason     domain.FailureReason `json:"reason,omitempty"`
+	ID                  string               `json:"id"`
+	IntentID            string               `json:"intentId"`
+	AccountID           string               `json:"accountId"`
+	WorkerID            string               `json:"workerId"`
+	State               domain.AttemptState  `json:"state"`
+	OrderID             string               `json:"orderId,omitempty"`
+	PaymentURL          string               `json:"paymentUrl,omitempty"`
+	Reason              domain.FailureReason `json:"reason,omitempty"`
+	CooldownRemainingMs int64                `json:"cooldownRemainingMs"` // >0 when cooling, remaining milliseconds
 }
 
 // ClusterEventKind categorises a cluster-wide event for the unified log.

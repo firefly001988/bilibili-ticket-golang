@@ -94,14 +94,15 @@ func (c *Config) Normalize() error {
 type BackendFactory func(domain.ExecutionSpec) (executor.Backend, error)
 
 type task struct {
-	spec       domain.ExecutionSpec
-	specHash   string
-	state      domain.AttemptState
-	result     domain.ExecutionResult
-	leaseUntil time.Time
-	cancel     context.CancelFunc
-	logs       []LogEntry
-	logSeq     int64
+	spec          domain.ExecutionSpec
+	specHash      string
+	state         domain.AttemptState
+	result        domain.ExecutionResult
+	leaseUntil    time.Time
+	cooldownUntil time.Time // zero when not cooling
+	cancel        context.CancelFunc
+	logs          []LogEntry
+	logSeq        int64
 }
 
 type LogEntry struct {
@@ -997,6 +998,8 @@ func attemptStateToProto(s domain.AttemptState) pb.AttemptState {
 		return pb.AttemptState_ATTEMPT_SUCCEEDED
 	case domain.AttemptFailed:
 		return pb.AttemptState_ATTEMPT_FAILED
+	case domain.AttemptCooldown:
+		return pb.AttemptState_ATTEMPT_COOLDOWN
 	default:
 		return pb.AttemptState_ATTEMPT_QUEUED
 	}
@@ -1123,6 +1126,17 @@ func (s *Server) run(ctx context.Context, t *task) {
 		Clock:   executionClock,
 		Observe: func(event executor.Event) {
 			s.logTask(t, event.Stage, event.Message, event.Code, event.Retryable)
+			if !event.CooldownEnd.IsZero() {
+				s.mu.Lock()
+				t.state = domain.AttemptCooldown
+				t.cooldownUntil = event.CooldownEnd
+				s.mu.Unlock()
+			} else if t.state == domain.AttemptCooldown {
+				s.mu.Lock()
+				t.state = domain.AttemptRunning
+				t.cooldownUntil = time.Time{}
+				s.mu.Unlock()
+			}
 		},
 		// Dynamic retry interval — reads the global config pushed by the
 		// employer via Configure RPC, so changes take effect immediately

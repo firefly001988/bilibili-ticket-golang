@@ -18,6 +18,7 @@ enum AttemptState {
   ATTEMPT_STOPPED   = 4;
   ATTEMPT_SUCCEEDED = 5;
   ATTEMPT_FAILED    = 6;
+  ATTEMPT_COOLDOWN  = 7;
 }
 
 enum StartMode {

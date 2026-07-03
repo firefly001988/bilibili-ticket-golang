@@ -93,6 +93,7 @@
         "stateCompleted": "Completed",
         "stateFailed": "Failed",
         "stateCancelled": "Cancelled",
+        "stateCooldown": "Cooling",
         "autoRefreshOn": "Auto-refresh",
         "autoRefreshOff": "Paused",
         "loading": "Loading…",

@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
@@ -44,7 +45,7 @@ func (DefaultClassifier) Classify(o Outcome) Classification {
 	case 100016, 100017:
 		return Classification{Reason: domain.FailureUnrecoverable}
 	case 412:
-		return Classification{Reason: domain.FailureHTTP412}
+		return Classification{Reason: domain.FailureHTTP412, Retryable: true, Backoff: 5 * time.Minute}
 	case -101, -111:
 		return Classification{Reason: domain.FailureCookieInvalid}
 	case -352:
@@ -89,11 +90,12 @@ type Engine struct {
 }
 
 type Event struct {
-	Time      time.Time
-	Stage     string
-	Message   string
-	Code      int
-	Retryable bool
+	Time        time.Time
+	Stage       string
+	Message     string
+	Code        int
+	Retryable   bool
+	CooldownEnd time.Time // zero = no cooldown; non-zero = cooldown ends at this time
 }
 
 func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.ExecutionResult {
@@ -109,6 +111,11 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 	emit := func(stage, message string, code int, retryable bool) {
 		if e.Observe != nil {
 			e.Observe(Event{Time: now(), Stage: stage, Message: message, Code: code, Retryable: retryable})
+		}
+	}
+	emitCooldown := func(stage, message string, code int, retryable bool, cooldownEnd time.Time) {
+		if e.Observe != nil {
+			e.Observe(Event{Time: now(), Stage: stage, Message: message, Code: code, Retryable: retryable, CooldownEnd: cooldownEnd})
 		}
 	}
 	result := domain.ExecutionResult{AttemptID: spec.AttemptID, IntentID: spec.IntentID, SpecHash: spec.Hash(), State: domain.AttemptRunning, StartedAt: now()}
@@ -199,7 +206,13 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 		if remaining := spec.Deadline.Sub(now()); wait > remaining {
 			wait = remaining
 		}
-		emit("retry", "retrying after "+wait.String(), outcome.Code, true)
+		const cooldownThreshold = 10 * time.Second
+		if wait >= cooldownThreshold {
+			cooldownEnd := now().Add(wait)
+			emitCooldown("cooldown", fmt.Sprintf("cooling down for %s", wait.Truncate(time.Second)), outcome.Code, true, cooldownEnd)
+		} else {
+			emit("retry", "retrying after "+wait.String(), outcome.Code, true)
+		}
 		if err := e.Clock.Sleep(ctx, wait); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 			return finish(domain.AttemptStopped, domain.FailureStopped, err.Error(), false)
 		}
