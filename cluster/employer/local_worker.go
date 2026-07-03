@@ -7,12 +7,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/executor"
 	"bilibili-ticket-golang/cluster/worker"
+	"bilibili-ticket-golang/lib/global"
 )
 
 // localWorkerSlot tracks a single in-process worker instance.
@@ -223,7 +225,11 @@ func (m *LocalWorkerManager) startLocked(ctx context.Context, id, name, listen, 
 
 	lis, err := net.Listen("tcp", listen)
 	if err != nil {
-		return domain.WorkerNode{}, fmt.Errorf("listen %s: %w", listen, err)
+		hint := "检查端口是否被其他程序占用"
+		if strings.Contains(err.Error(), "address already in use") || strings.Contains(err.Error(), "Only one usage") {
+			hint = "端口 " + listen + " 被占用。上次程序可能未完全退出，请等待几秒后重试，或使用 netstat 检查端口占用"
+		}
+		return domain.WorkerNode{}, global.NewFault("启动 Worker "+id+" 监听 "+listen, err, hint)
 	}
 
 	errCh := make(chan error, 1)

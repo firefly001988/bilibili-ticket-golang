@@ -121,18 +121,18 @@ func (s *ClusterService) Start(parent context.Context) error {
 	s.cancel = cancel
 	accountsList, err := s.repository.ListAccounts(ctx)
 	if err != nil {
-		return err
+		return global.NewFault("列出账号", err, "检查集群数据库 data/employer.db 是否可读")
 	}
 	for _, account := range accountsList {
 		if account.ID == "migrated-account" && !account.Enabled {
 			if deleteErr := s.repository.DeleteAccount(ctx, account.ID); deleteErr != nil && !errors.Is(deleteErr, sql.ErrNoRows) {
-				return deleteErr
+				return global.NewFault("清理迁移账号", deleteErr, "数据库操作失败，检查 data/employer.db 完整性")
 			}
 		}
 	}
 	accountsList, err = s.repository.ListAccounts(ctx)
 	if err != nil {
-		return err
+		return global.NewFault("重新列出账号", err, "检查集群数据库 data/employer.db 是否可读")
 	}
 	// Refresh credentials for every enabled account so workers always
 	// operate on fresh cookies.  Workers MUST NOT refresh cookies on
@@ -214,7 +214,7 @@ func (s *ClusterService) Start(parent context.Context) error {
 
 	workers, err := s.repository.ListWorkers(ctx)
 	if err != nil {
-		return err
+		return global.NewFault("列出 Worker", err, "检查集群数据库 data/employer.db 是否可读")
 	}
 	pluginName := ""
 	pluginFile := "plugins/captcha-plugin"
@@ -279,7 +279,7 @@ func (s *ClusterService) Start(parent context.Context) error {
 
 	workers, err = s.repository.ListWorkers(ctx)
 	if err != nil {
-		return err
+		return global.NewFault("重新列出 Worker", err, "检查集群数据库 data/employer.db 是否可读")
 	}
 	// Load TLS for every worker into the client *after* all local workers
 	// have been started and their TLS keys persisted to the database.
@@ -305,7 +305,7 @@ func (s *ClusterService) Start(parent context.Context) error {
 	s.pushGlobalConfigToAll(context.Background())
 	macros, err := s.repository.ListMacroTasks(ctx)
 	if err != nil {
-		return err
+		return global.NewFault("列出宏任务", err, "检查集群数据库 data/employer.db 是否可读")
 	}
 	macroByID := make(map[string]domain.MacroTask, len(macros))
 	for _, macro := range macros {
@@ -313,7 +313,7 @@ func (s *ClusterService) Start(parent context.Context) error {
 	}
 	groups, err := s.repository.ListTaskGroups(ctx)
 	if err != nil {
-		return err
+		return global.NewFault("列出任务组", err, "检查集群数据库 data/employer.db 是否可读")
 	}
 	taskGroupByID := make(map[string]domain.TaskGroup, len(groups))
 	for _, taskGroup := range groups {
@@ -322,7 +322,7 @@ func (s *ClusterService) Start(parent context.Context) error {
 	}
 	intents, err := s.repository.ListIntents(ctx)
 	if err != nil {
-		return err
+		return global.NewFault("列出意图", err, "检查集群数据库 data/employer.db 是否可读")
 	}
 	intentByID := make(map[string]domain.LogicalOrderIntent, len(intents))
 	for _, intent := range intents {
@@ -334,7 +334,7 @@ func (s *ClusterService) Start(parent context.Context) error {
 	}
 	attempts, err := s.repository.ListAttempts(ctx)
 	if err != nil {
-		return err
+		return global.NewFault("列出尝试记录", err, "检查集群数据库 data/employer.db 是否可读")
 	}
 	for _, value := range attempts {
 		if intent, known := intentByID[value.IntentID]; known && !intent.Armed && !value.State.Terminal() {
@@ -342,12 +342,12 @@ func (s *ClusterService) Start(parent context.Context) error {
 			value.UpdatedAt = time.Now()
 			value.Result = domain.ExecutionResult{AttemptID: value.ID, IntentID: value.IntentID, SpecHash: value.SpecHash, State: domain.AttemptStopped, Reason: domain.FailureStopped, Message: "legacy unarmed attempt stopped during recovery", FinishedAt: value.UpdatedAt}
 			if err := s.repository.PutAttempt(ctx, value); err != nil {
-				return err
+				return global.NewFault("保存已停止的尝试记录", err, "检查集群数据库 data/employer.db 是否可写")
 			}
 			continue
 		}
 		if err := s.dispatcher.RestoreAttempt(value); err != nil {
-			return err
+			return global.NewFault("恢复尝试记录", err, "尝试记录数据可能已损坏，可尝试删除 data/employer.db 重建")
 		}
 	}
 	go func() {
@@ -390,7 +390,38 @@ func (s *ClusterService) Start(parent context.Context) error {
 			}
 		}
 	}()
+	// Wait for local workers to become healthy before returning.
+	// This prevents the frontend from immediately dispatching tasks before
+	// the gRPC servers are ready to accept connections.
+	s.waitForLocalWorkers(ctx, 5*time.Second)
 	return nil
+}
+
+// waitForLocalWorkers polls all known local worker slots until they are
+// healthy or the timeout expires.  It logs a warning for any worker that
+// does not become healthy in time.
+func (s *ClusterService) waitForLocalWorkers(ctx context.Context, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	workers, err := s.repository.ListWorkers(ctx)
+	if err != nil {
+		log.Printf("[cluster] waitForLocalWorkers: unable to list workers: %v", err)
+		return
+	}
+	for _, node := range workers {
+		if node.Type != domain.WorkerTypeLocal {
+			continue
+		}
+		for time.Now().Before(deadline) {
+			if s.local.Healthy(node.ID) {
+				log.Printf("[cluster] local worker %s is healthy", node.ID)
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		if !s.local.Healthy(node.ID) {
+			log.Printf("[cluster] WARNING: local worker %s did not become healthy within %v", node.ID, timeout)
+		}
+	}
 }
 
 // Close shuts down the cluster: cancels the reconciliation loop, stops

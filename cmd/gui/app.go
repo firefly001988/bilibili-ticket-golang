@@ -5,6 +5,7 @@ import (
 	"bilibili-ticket-golang/cmd/gui/payqr"
 	"bilibili-ticket-golang/cmd/gui/store/configuration"
 	"bilibili-ticket-golang/lib/biliutils"
+	"bilibili-ticket-golang/lib/global"
 	"fmt"
 	"net/url"
 	"os"
@@ -56,9 +57,14 @@ func (a *App) Verify(input string) bool {
 	return os.WriteFile("data/.verified", []byte("1"), 0644) == nil
 }
 
-// GetBiliClient returns the underlying BiliClient.
-func (a *App) GetBiliClient() *biliutils.BiliClient {
-	return a.bili
+// TestFaultError triggers a test Fault error for verifying the frontend error
+// display.  It returns a Fault with file:line, operation name, a simulated
+// underlying error, and a human-readable hint.
+func (a *App) TestFaultError() error {
+	return global.NewFault("测试错误报告功能",
+		fmt.Errorf("这是一个模拟的底层错误: 数据库连接超时"),
+		"这只是一个测试错误，用于验证 cause 字段是否正确显示文件:行号信息",
+	)
 }
 
 // SetLocale sets the application locale and persists it.

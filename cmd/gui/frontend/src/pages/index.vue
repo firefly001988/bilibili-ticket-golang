@@ -1,16 +1,30 @@
 <script lang="ts" setup>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AnnouncementCard from '@/components/AnnouncementFloatingCard.vue'
 import { useAnnouncements } from '@/composables/useAnnouncements'
+import { useMessagesStore } from '@/stores/snackbar'
+import { TestFaultError } from '../../bindings/bilibili-ticket-golang/cmd/gui/app'
 
 const { t } = useI18n()
+const messages = useMessagesStore()
 
 const { announcements, refresh, loading, error, mirrorOptions, activeMirrorIndex, switchMirror } = useAnnouncements()
 
 onMounted(() => {
     refresh()
 })
+
+const testLoading = ref(false)
+async function triggerTestError() {
+    testLoading.value = true
+    try {
+        await TestFaultError()
+    } catch (e: any) {
+        messages.addError(e)
+    }
+    testLoading.value = false
+}
 </script>
 
 <template>
@@ -21,6 +35,10 @@ onMounted(() => {
                 <h1 class="page-title">{{ t('index.title') }}</h1>
             </div>
             <v-spacer />
+            <v-btn color="error" variant="outlined" size="small" :loading="testLoading" class="mr-2"
+                @click="triggerTestError">
+                🧪 测试报错
+            </v-btn>
             <v-select v-if="error && mirrorOptions.length > 1" :model-value="activeMirrorIndex" :items="mirrorOptions"
                 item-title="title" item-value="value" :label="t('index.mirrorLabel')" variant="outlined"
                 density="compact" hide-details style="max-width: 180px;" class="mr-2"

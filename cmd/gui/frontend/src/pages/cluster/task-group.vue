@@ -534,7 +534,7 @@ async function startAllMacros() {
         await StartTaskGroup(group.value.id, '')
         await loadAll(group.value.id); messages.add({ text: t('taskGroup.allStarted'), color: 'success' })
     }
-    catch (e: any) { messages.add({ text: t('taskGroup.allStartFailed', { error: String(e) }), color: 'error' }) }
+    catch (e: any) { messages.addError(e, t('taskGroup.allStartFailed', { error: String(e) })) }
     dispatchingAll.value = false
 }
 
@@ -558,7 +558,7 @@ async function startReflowNow() {
         await loadAll(group.value.id)
         messages.add({ text: t('taskGroup.reflowNowStarted'), color: 'success' })
     }
-    catch (e: any) { messages.add({ text: t('taskGroup.reflowNowFailed', { error: String(e) }), color: 'error' }) }
+    catch (e: any) { messages.addError(e, t('taskGroup.reflowNowFailed', { error: String(e) })) }
     dispatchingAll.value = false
 }
 
@@ -735,7 +735,7 @@ const allPurchaseGroups = computed(() => {
                         <span class="text-subtitle-2">{{ t('taskGroup.dispatch') }}</span>
                         <v-chip v-if="groupStats.total > 0" size="small" variant="tonal" color="grey">{{
                             t('taskGroup.intents', { count: groupStats.total })
-                            }}</v-chip>
+                        }}</v-chip>
                         <v-chip v-if="groupStats.deficit > 0" size="small" variant="tonal" color="warning">{{
                             t('taskGroup.queued', { count: groupStats.deficit }) }}</v-chip>
                         <v-chip v-if="groupStats.running > 0" size="small" color="info" variant="tonal">{{
@@ -780,7 +780,7 @@ const allPurchaseGroups = computed(() => {
             <v-card v-if="allPurchaseGroups.length > 0" class="mb-4" elevation="2">
                 <v-card-title class="text-subtitle-1 py-2 px-4">{{ t('taskGroup.purchaseGroups') }} ({{
                     allPurchaseGroups.length
-                }})</v-card-title>
+                    }})</v-card-title>
                 <v-card-text class="py-1 px-4">
                     <div v-for="row in allPurchaseGroups" :key="row.pg.id"
                         style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0">
@@ -804,260 +804,254 @@ const allPurchaseGroups = computed(() => {
             <!-- Macro list -->
             <v-card elevation="2">
                 <v-card-title class="text-subtitle-1">{{ t('taskGroup.macroList') }} ({{ macros.length
-                }})</v-card-title>
+                    }})</v-card-title>
                 <v-expansion-panels v-model="expandedMacro" variant="accordion"
                     @update:model-value="onMacroPanelChange">
-                        <v-expansion-panel v-for="(m, idx) in macros" :key="m.id" :value="idx + 1" class="macro-panel">
-                            <v-expansion-panel-title class="macro-panel-title">
-                                <div class="macro-summary">
-                                    <div class="macro-summary__top">
-                                        <div class="macro-summary__identity">
-                                            <div class="macro-summary__project text-truncate">
-                                                {{ m.projectName || '—' }}
-                                            </div>
-                                            <div class="macro-summary__sku-line">
-                                                <v-chip size="x-small" variant="tonal" color="primary">
-                                                    {{ m.screenName || m.screenId }}
-                                                </v-chip>
-                                                <span class="macro-summary__sku text-truncate">{{ m.skuName || m.skuId
-                                                    }}</span>
-                                                <span class="macro-summary__ids">SKU {{ m.skuId }}</span>
-                                            </div>
+                    <v-expansion-panel v-for="(m, idx) in macros" :key="m.id" :value="idx + 1" class="macro-panel">
+                        <v-expansion-panel-title class="macro-panel-title">
+                            <div class="macro-summary">
+                                <div class="macro-summary__top">
+                                    <div class="macro-summary__identity">
+                                        <div class="macro-summary__project text-truncate">
+                                            {{ m.projectName || '—' }}
                                         </div>
-                                        <div class="macro-summary__actions">
-                                            <v-chip v-if="macroStatusLabel(m)" size="x-small" variant="tonal"
-                                                :color="macroStatusColor(m)" class="macro-summary__status">
-                                                {{ macroStatusLabel(m) }}
+                                        <div class="macro-summary__sku-line">
+                                            <v-chip size="x-small" variant="tonal" color="primary">
+                                                {{ m.screenName || m.screenId }}
                                             </v-chip>
-                                            <v-tooltip :text="t('common.delete')" location="top">
-                                                <template #activator="{ props: tipProps }">
-                                                    <v-btn icon="mdi-delete-outline" size="small" variant="text"
-                                                        color="error" class="macro-summary__delete"
-                                                        :loading="deletingMacro[m.id]" :disabled="editingDisabled"
-                                                        v-bind="tipProps" @click.stop="removeMacro(m)" />
-                                                </template>
-                                            </v-tooltip>
+                                            <span class="macro-summary__sku text-truncate">{{ m.skuName || m.skuId
+                                            }}</span>
+                                            <span class="macro-summary__ids">SKU {{ m.skuId }}</span>
                                         </div>
                                     </div>
+                                    <div class="macro-summary__actions">
+                                        <v-chip v-if="macroStatusLabel(m)" size="x-small" variant="tonal"
+                                            :color="macroStatusColor(m)" class="macro-summary__status">
+                                            {{ macroStatusLabel(m) }}
+                                        </v-chip>
+                                        <v-tooltip :text="t('common.delete')" location="top">
+                                            <template #activator="{ props: tipProps }">
+                                                <v-btn icon="mdi-delete-outline" size="small" variant="text"
+                                                    color="error" class="macro-summary__delete"
+                                                    :loading="deletingMacro[m.id]" :disabled="editingDisabled"
+                                                    v-bind="tipProps" @click.stop="removeMacro(m)" />
+                                            </template>
+                                        </v-tooltip>
+                                    </div>
+                                </div>
 
-                                    <div class="macro-summary__meta">
-                                        <div class="macro-meta">
-                                            <v-icon size="16" color="primary">mdi-calendar-month</v-icon>
-                                            <div class="macro-meta__content">
-                                                <span>{{ t('taskGroup.eventDay') }}</span>
-                                                <strong>{{ formatEventDay(m.eventDay) }}</strong>
-                                            </div>
-                                        </div>
-                                        <div class="macro-meta">
-                                            <v-icon size="16" color="info">mdi-clock-start</v-icon>
-                                            <div class="macro-meta__content">
-                                                <span>{{ t('taskGroup.saleStartTime') }}</span>
-                                                <strong>{{ formatDateTime(m.startAt) }}</strong>
-                                            </div>
-                                        </div>
-                                        <div class="macro-meta macro-meta--wide">
-                                            <v-icon size="16" color="medium-emphasis">mdi-timer-sand</v-icon>
-                                            <div class="macro-meta__content">
-                                                <span>{{ t('taskGroup.saleTime') }}</span>
-                                                <strong>{{ formatDateTimeRange(m.startAt, m.deadline) }}</strong>
-                                            </div>
+                                <div class="macro-summary__meta">
+                                    <div class="macro-meta">
+                                        <v-icon size="16" color="primary">mdi-calendar-month</v-icon>
+                                        <div class="macro-meta__content">
+                                            <span>{{ t('taskGroup.eventDay') }}</span>
+                                            <strong>{{ formatEventDay(m.eventDay) }}</strong>
                                         </div>
                                     </div>
-
-                                    <div class="macro-group-preview">
-                                        <div class="macro-group-preview__header">
-                                            <v-icon size="15" color="primary">mdi-account-group</v-icon>
-                                            <span>{{ t('taskGroup.purchaseGroups') }}</span>
-                                            <v-chip size="x-small" variant="tonal">{{ (m.purchaseGroups || []).length
-                                            }}</v-chip>
+                                    <div class="macro-meta">
+                                        <v-icon size="16" color="info">mdi-clock-start</v-icon>
+                                        <div class="macro-meta__content">
+                                            <span>{{ t('taskGroup.saleStartTime') }}</span>
+                                            <strong>{{ formatDateTime(m.startAt) }}</strong>
                                         </div>
-                                        <div v-if="(m.purchaseGroups || []).length > 0"
-                                            class="macro-group-preview__list">
-                                            <div v-for="pg in sortedPurchaseGroups(m)" :key="pg.id"
-                                                class="pg-mini-card">
-                                                <span class="pg-mini-card__buyers text-truncate">
-                                                    {{ purchaseGroupBuyerNames(pg) }}
-                                                </span>
-                                                <span class="pg-mini-card__meta">×{{ pg.weight || 1 }} · P{{
-                                                    pg.priority || 0 }}</span>
-                                                <v-chip v-if="pg.allowSplit" size="x-small" variant="tonal"
-                                                    color="primary">
+                                    </div>
+                                    <div class="macro-meta macro-meta--wide">
+                                        <v-icon size="16" color="medium-emphasis">mdi-timer-sand</v-icon>
+                                        <div class="macro-meta__content">
+                                            <span>{{ t('taskGroup.saleTime') }}</span>
+                                            <strong>{{ formatDateTimeRange(m.startAt, m.deadline) }}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="macro-group-preview">
+                                    <div class="macro-group-preview__header">
+                                        <v-icon size="15" color="primary">mdi-account-group</v-icon>
+                                        <span>{{ t('taskGroup.purchaseGroups') }}</span>
+                                        <v-chip size="x-small" variant="tonal">{{ (m.purchaseGroups || []).length
+                                        }}</v-chip>
+                                    </div>
+                                    <div v-if="(m.purchaseGroups || []).length > 0" class="macro-group-preview__list">
+                                        <div v-for="pg in sortedPurchaseGroups(m)" :key="pg.id" class="pg-mini-card">
+                                            <span class="pg-mini-card__buyers text-truncate">
+                                                {{ purchaseGroupBuyerNames(pg) }}
+                                            </span>
+                                            <span class="pg-mini-card__meta">×{{ pg.weight || 1 }} · P{{
+                                                pg.priority || 0 }}</span>
+                                            <v-chip v-if="pg.allowSplit" size="x-small" variant="tonal" color="primary">
+                                                {{ t('taskGroup.pgAllowSplit') }}
+                                            </v-chip>
+                                        </div>
+                                    </div>
+                                    <span v-else class="text-caption text-medium-emphasis">
+                                        {{ t('taskGroup.pgEmpty') }}
+                                    </span>
+                                </div>
+
+                                <div v-if="isPendingAutoStart(m) && startBlockers(m).length > 0"
+                                    class="macro-summary__warnings">
+                                    <div v-for="blocker in startBlockers(m)" :key="blocker">
+                                        ⚠ {{ blocker }}
+                                    </div>
+                                </div>
+                            </div>
+                        </v-expansion-panel-title>
+                        <v-expansion-panel-text>
+                            <!-- Dispatch stats -->
+                            <v-card v-if="dispatchStats(m).total > 0" variant="outlined" class="mb-3 pa-2">
+                                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                                    <span class="text-caption text-medium-emphasis">{{ t('taskGroup.dispatchStatus')
+                                    }}:</span>
+                                    <v-chip v-if="dispatchStats(m).deficit > 0" size="x-small" variant="tonal"
+                                        color="warning">{{
+                                            t('taskGroup.queued', { count: dispatchStats(m).deficit }) }}</v-chip>
+                                    <v-chip v-if="dispatchStats(m).running > 0" size="x-small" variant="tonal"
+                                        color="info">{{
+                                            t('taskGroup.running', { count: dispatchStats(m).running }) }}</v-chip>
+                                    <v-chip v-if="dispatchStats(m).succeeded > 0" size="x-small" variant="tonal"
+                                        color="success">{{
+                                            t('taskGroup.succeeded', { count: dispatchStats(m).succeeded }) }}</v-chip>
+                                    <v-chip v-if="dispatchStats(m).failed > 0" size="x-small" variant="tonal"
+                                        color="error">{{
+                                            t('taskGroup.failed', { count: dispatchStats(m).failed }) }}</v-chip>
+                                    <span v-if="dispatchStats(m).deficit === 0 && dispatchStats(m).running === 0"
+                                        class="text-caption text-medium-emphasis">—</span>
+                                </div>
+                                <!-- Intent list -->
+                                <v-list v-if="dispatchStats(m).intents.length > 0" density="compact" class="py-0 mt-1">
+                                    <v-list-item v-for="i in dispatchStats(m).intents" :key="i.id" class="px-2"
+                                        :density="'compact'">
+                                        <template #title>
+                                            <span class="text-caption">{{ i.id.slice(0, 12) }}…</span>
+                                            <v-chip size="x-small" variant="outlined" class="ml-1" color="info">×{{
+                                                i.weight }}</v-chip>
+                                            <v-chip v-if="i.priority !== 0" size="x-small" variant="outlined"
+                                                class="ml-1" :color="i.priority > 0 ? 'success' : 'warning'">P{{
+                                                    i.priority }}</v-chip>
+                                        </template>
+                                        <template #append>
+                                            <v-chip size="x-small" variant="tonal"
+                                                :color="i.deficit > 0 ? 'warning' : i.activeCount > 0 ? 'info' : 'grey'">
+                                                {{ i.activeCount }}/{{ i.weight }}
+                                                <span v-if="i.deficit > 0" class="ml-1">(-{{ i.deficit }})</span>
+                                            </v-chip>
+                                            <v-btn v-if="i.activeCount > 0" icon="mdi-stop" size="x-small"
+                                                variant="text" color="error" class="ml-1"
+                                                @click.stop="stopSingleIntent(i.id)" />
+                                        </template>
+                                    </v-list-item>
+                                </v-list>
+                            </v-card>
+                            <div class="purchase-group-section mb-3">
+                                <div class="purchase-group-section__header">
+                                    <div>
+                                        <div class="purchase-group-section__title">
+                                            {{ t('taskGroup.purchaseGroups') }}
+                                        </div>
+                                    </div>
+                                    <v-chip size="small" variant="tonal" color="primary">
+                                        {{ (m.purchaseGroups || []).length }}
+                                    </v-chip>
+                                </div>
+                                <div v-if="(m.purchaseGroups || []).length > 0" class="purchase-group-grid">
+                                    <div v-for="pg in sortedPurchaseGroups(m)" :key="pg.id" class="purchase-group-card">
+                                        <div class="purchase-group-card__main">
+                                            <div class="purchase-group-card__buyers">
+                                                <v-chip v-for="b in (pg.buyers || [])" :key="b.logicalId" size="small"
+                                                    variant="tonal">
+                                                    {{ buyerDisplayNameFullId(b) }}
+                                                </v-chip>
+                                            </div>
+                                            <div class="purchase-group-card__meta">
+                                                <v-chip size="x-small" variant="outlined" color="info">
+                                                    ×{{ pg.weight || 1 }}
+                                                </v-chip>
+                                                <v-chip size="x-small" variant="outlined"
+                                                    :color="(pg.priority || 0) > 0 ? 'success' : (pg.priority || 0) < 0 ? 'warning' : ''">
+                                                    P{{ pg.priority || 0 }}
+                                                </v-chip>
+                                                <v-chip v-if="pg.allowSplit" color="primary" size="x-small"
+                                                    variant="tonal">
                                                     {{ t('taskGroup.pgAllowSplit') }}
                                                 </v-chip>
                                             </div>
                                         </div>
-                                        <span v-else class="text-caption text-medium-emphasis">
-                                            {{ t('taskGroup.pgEmpty') }}
-                                        </span>
-                                    </div>
-
-                                    <div v-if="isPendingAutoStart(m) && startBlockers(m).length > 0"
-                                        class="macro-summary__warnings">
-                                        <div v-for="blocker in startBlockers(m)" :key="blocker">
-                                            ⚠ {{ blocker }}
+                                        <div class="purchase-group-card__actions">
+                                            <v-tooltip :text="t('taskGroup.pgEdit')" location="top">
+                                                <template #activator="{ props: tipProps }">
+                                                    <v-btn icon="mdi-pencil" size="small" variant="text" color="primary"
+                                                        v-bind="tipProps" :disabled="editingDisabled"
+                                                        @click.stop="openEditPg(m.id, pg)" />
+                                                </template>
+                                            </v-tooltip>
+                                            <v-tooltip :text="t('taskGroup.pgDelete')" location="top">
+                                                <template #activator="{ props: tipProps }">
+                                                    <v-btn icon="mdi-delete-outline" size="small" variant="text"
+                                                        color="error" :loading="deletingPg[pg.id]"
+                                                        :disabled="editingDisabled" v-bind="tipProps"
+                                                        @click.stop="removePurchaseGroup(m.id, pg.id)" />
+                                                </template>
+                                            </v-tooltip>
                                         </div>
                                     </div>
                                 </div>
-                            </v-expansion-panel-title>
-                            <v-expansion-panel-text>
-                                <!-- Dispatch stats -->
-                                <v-card v-if="dispatchStats(m).total > 0" variant="outlined" class="mb-3 pa-2">
-                                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                                        <span class="text-caption text-medium-emphasis">{{ t('taskGroup.dispatchStatus')
-                                        }}:</span>
-                                        <v-chip v-if="dispatchStats(m).deficit > 0" size="x-small" variant="tonal"
-                                            color="warning">{{
-                                                t('taskGroup.queued', { count: dispatchStats(m).deficit }) }}</v-chip>
-                                        <v-chip v-if="dispatchStats(m).running > 0" size="x-small" variant="tonal"
-                                            color="info">{{
-                                                t('taskGroup.running', { count: dispatchStats(m).running }) }}</v-chip>
-                                        <v-chip v-if="dispatchStats(m).succeeded > 0" size="x-small" variant="tonal"
-                                            color="success">{{
-                                                t('taskGroup.succeeded', { count: dispatchStats(m).succeeded }) }}</v-chip>
-                                        <v-chip v-if="dispatchStats(m).failed > 0" size="x-small" variant="tonal"
-                                            color="error">{{
-                                                t('taskGroup.failed', { count: dispatchStats(m).failed }) }}</v-chip>
-                                        <span v-if="dispatchStats(m).deficit === 0 && dispatchStats(m).running === 0"
-                                            class="text-caption text-medium-emphasis">—</span>
-                                    </div>
-                                    <!-- Intent list -->
-                                    <v-list v-if="dispatchStats(m).intents.length > 0" density="compact"
-                                        class="py-0 mt-1">
-                                        <v-list-item v-for="i in dispatchStats(m).intents" :key="i.id" class="px-2"
-                                            :density="'compact'">
-                                            <template #title>
-                                                <span class="text-caption">{{ i.id.slice(0, 12) }}…</span>
-                                                <v-chip size="x-small" variant="outlined" class="ml-1" color="info">×{{
-                                                    i.weight }}</v-chip>
-                                                <v-chip v-if="i.priority !== 0" size="x-small" variant="outlined"
-                                                    class="ml-1" :color="i.priority > 0 ? 'success' : 'warning'">P{{
-                                                        i.priority }}</v-chip>
-                                            </template>
-                                            <template #append>
-                                                <v-chip size="x-small" variant="tonal"
-                                                    :color="i.deficit > 0 ? 'warning' : i.activeCount > 0 ? 'info' : 'grey'">
-                                                    {{ i.activeCount }}/{{ i.weight }}
-                                                    <span v-if="i.deficit > 0" class="ml-1">(-{{ i.deficit }})</span>
-                                                </v-chip>
-                                                <v-btn v-if="i.activeCount > 0" icon="mdi-stop" size="x-small"
-                                                    variant="text" color="error" class="ml-1"
-                                                    @click.stop="stopSingleIntent(i.id)" />
-                                            </template>
-                                        </v-list-item>
-                                    </v-list>
-                                </v-card>
-                                <div class="purchase-group-section mb-3">
-                                    <div class="purchase-group-section__header">
-                                        <div>
-                                            <div class="purchase-group-section__title">
-                                                {{ t('taskGroup.purchaseGroups') }}
-                                            </div>
-                                        </div>
-                                        <v-chip size="small" variant="tonal" color="primary">
-                                            {{ (m.purchaseGroups || []).length }}
-                                        </v-chip>
-                                    </div>
-                                    <div v-if="(m.purchaseGroups || []).length > 0" class="purchase-group-grid">
-                                        <div v-for="pg in sortedPurchaseGroups(m)" :key="pg.id"
-                                            class="purchase-group-card">
-                                            <div class="purchase-group-card__main">
-                                                <div class="purchase-group-card__buyers">
-                                                    <v-chip v-for="b in (pg.buyers || [])" :key="b.logicalId"
-                                                        size="small" variant="tonal">
-                                                        {{ buyerDisplayNameFullId(b) }}
-                                                    </v-chip>
-                                                </div>
-                                                <div class="purchase-group-card__meta">
-                                                    <v-chip size="x-small" variant="outlined" color="info">
-                                                        ×{{ pg.weight || 1 }}
-                                                    </v-chip>
-                                                    <v-chip size="x-small" variant="outlined"
-                                                        :color="(pg.priority || 0) > 0 ? 'success' : (pg.priority || 0) < 0 ? 'warning' : ''">
-                                                        P{{ pg.priority || 0 }}
-                                                    </v-chip>
-                                                    <v-chip v-if="pg.allowSplit" color="primary" size="x-small"
-                                                        variant="tonal">
-                                                        {{ t('taskGroup.pgAllowSplit') }}
-                                                    </v-chip>
-                                                </div>
-                                            </div>
-                                            <div class="purchase-group-card__actions">
-                                                <v-tooltip :text="t('taskGroup.pgEdit')" location="top">
-                                                    <template #activator="{ props: tipProps }">
-                                                        <v-btn icon="mdi-pencil" size="small" variant="text"
-                                                            color="primary" v-bind="tipProps"
-                                                            :disabled="editingDisabled"
-                                                            @click.stop="openEditPg(m.id, pg)" />
-                                                    </template>
-                                                </v-tooltip>
-                                                <v-tooltip :text="t('taskGroup.pgDelete')" location="top">
-                                                    <template #activator="{ props: tipProps }">
-                                                        <v-btn icon="mdi-delete-outline" size="small" variant="text"
-                                                            color="error" :loading="deletingPg[pg.id]"
-                                                            :disabled="editingDisabled" v-bind="tipProps"
-                                                            @click.stop="removePurchaseGroup(m.id, pg.id)" />
-                                                    </template>
-                                                </v-tooltip>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div v-else class="purchase-group-empty">
-                                        <v-icon size="20" color="medium-emphasis">mdi-account-multiple-plus</v-icon>
-                                        <span>{{ t('taskGroup.pgEmpty') }}</span>
-                                    </div>
+                                <div v-else class="purchase-group-empty">
+                                    <v-icon size="20" color="medium-emphasis">mdi-account-multiple-plus</v-icon>
+                                    <span>{{ t('taskGroup.pgEmpty') }}</span>
                                 </div>
-                                <v-card variant="text"><v-card-text class="pa-0">
-                                        <div class="purchase-group-form-title">
-                                            {{ editingPgId && editingPgMacroId === m.id ? t('taskGroup.pgEditTitle') :
-                                                t('taskGroup.pgAdd') }}
-                                        </div>
-                                        <v-select v-if="allBuyers.length > 0" :model-value="selectedPgBuyerIds"
-                                            @update:model-value="onBuyerSelectionChange" :items="allBuyers"
-                                            :item-title="buyerDisplayName" item-value="logicalId"
-                                            :label="`${t('taskGroup.pgSelectBuyerShort')} (${t('taskGroup.pgMaxLabel', { max: currentMacroOrderCapacity })})`"
-                                            variant="outlined" density="compact" multiple chips closable-chips
-                                            hide-details class="mb-2" :disabled="editingDisabled">
-                                            <template #chip="{ props, item }">
-                                                <v-chip v-bind="props" size="small">
-                                                    {{ buyerDisplayName(item.raw || item) }}
-                                                </v-chip>
-                                            </template>
-                                            <template #item="{ props, item }"><v-list-item v-bind="props"
-                                                    :title="buyerDisplayName(item.raw || item)"
-                                                    :subtitle="buyerSubtitle(item.raw || item)" /></template>
-                                        </v-select>
-                                        <v-checkbox-btn v-model="allowSplit" color="primary" density="compact"
-                                            :label="t('taskGroup.pgAllowSplitHint')" hide-details class="mb-2"
-                                            :disabled="editingDisabled" />
-                                        <v-row dense class="mb-2">
-                                            <v-col cols="6">
-                                                <v-text-field v-model.number="pgWeight" :label="t('taskGroup.pgWeight')"
-                                                    type="number" min="1" variant="outlined" density="compact"
-                                                    hide-details :hint="t('taskGroup.pgWeightHint')" persistent-hint
-                                                    :disabled="editingDisabled" />
-                                            </v-col>
-                                            <v-col cols="6">
-                                                <v-text-field v-model.number="pgPriority"
-                                                    :label="t('taskGroup.pgPriority')" type="number" variant="outlined"
-                                                    density="compact" hide-details :hint="t('taskGroup.pgPriorityHint')"
-                                                    persistent-hint :disabled="editingDisabled" />
-                                            </v-col>
-                                        </v-row>
-                                        <p v-if="allBuyers.length === 0" class="text-caption text-medium-emphasis mb-2">
-                                            {{
-                                                t('taskGroup.pgNoBuyers') }}</p>
-                                        <v-btn color="primary" :loading="savingPg"
-                                            :disabled="editingDisabled || selectedPgBuyerIds.length === 0 || allBuyers.length === 0"
-                                            @click="savePurchaseGroup(m)">{{
-                                                editingPgId && editingPgMacroId === m.id ? t('taskGroup.pgSave') :
-                                                    t('taskGroup.pgAdd')
-                                            }}</v-btn>
-                                        <v-btn v-if="editingPgId && editingPgMacroId === m.id" variant="text"
-                                            class="ml-1" @click="cancelEditPg">{{ t('common.cancel')
-                                            }}</v-btn>
-                                    </v-card-text></v-card>
-                            </v-expansion-panel-text>
-                        </v-expansion-panel>
+                            </div>
+                            <v-card variant="text"><v-card-text class="pa-0">
+                                    <div class="purchase-group-form-title">
+                                        {{ editingPgId && editingPgMacroId === m.id ? t('taskGroup.pgEditTitle') :
+                                            t('taskGroup.pgAdd') }}
+                                    </div>
+                                    <v-select v-if="allBuyers.length > 0" :model-value="selectedPgBuyerIds"
+                                        @update:model-value="onBuyerSelectionChange" :items="allBuyers"
+                                        :item-title="buyerDisplayName" item-value="logicalId"
+                                        :label="`${t('taskGroup.pgSelectBuyerShort')} (${t('taskGroup.pgMaxLabel', { max: currentMacroOrderCapacity })})`"
+                                        variant="outlined" density="compact" multiple chips closable-chips hide-details
+                                        class="mb-2" :disabled="editingDisabled">
+                                        <template #chip="{ props, item }">
+                                            <v-chip v-bind="props" size="small">
+                                                {{ buyerDisplayName(item.raw || item) }}
+                                            </v-chip>
+                                        </template>
+                                        <template #item="{ props, item }"><v-list-item v-bind="props"
+                                                :title="buyerDisplayName(item.raw || item)"
+                                                :subtitle="buyerSubtitle(item.raw || item)" /></template>
+                                    </v-select>
+                                    <v-checkbox-btn v-model="allowSplit" color="primary" density="compact"
+                                        :label="t('taskGroup.pgAllowSplitHint')" hide-details class="mb-2"
+                                        :disabled="editingDisabled" />
+                                    <v-row dense class="mb-2">
+                                        <v-col cols="6">
+                                            <v-text-field v-model.number="pgWeight" :label="t('taskGroup.pgWeight')"
+                                                type="number" min="1" variant="outlined" density="compact" hide-details
+                                                :hint="t('taskGroup.pgWeightHint')" persistent-hint
+                                                :disabled="editingDisabled" />
+                                        </v-col>
+                                        <v-col cols="6">
+                                            <v-text-field v-model.number="pgPriority" :label="t('taskGroup.pgPriority')"
+                                                type="number" variant="outlined" density="compact" hide-details
+                                                :hint="t('taskGroup.pgPriorityHint')" persistent-hint
+                                                :disabled="editingDisabled" />
+                                        </v-col>
+                                    </v-row>
+                                    <p v-if="allBuyers.length === 0" class="text-caption text-medium-emphasis mb-2">
+                                        {{
+                                            t('taskGroup.pgNoBuyers') }}</p>
+                                    <v-btn color="primary" :loading="savingPg"
+                                        :disabled="editingDisabled || selectedPgBuyerIds.length === 0 || allBuyers.length === 0"
+                                        @click="savePurchaseGroup(m)">{{
+                                            editingPgId && editingPgMacroId === m.id ? t('taskGroup.pgSave') :
+                                                t('taskGroup.pgAdd')
+                                        }}</v-btn>
+                                    <v-btn v-if="editingPgId && editingPgMacroId === m.id" variant="text" class="ml-1"
+                                        @click="cancelEditPg">{{ t('common.cancel')
+                                        }}</v-btn>
+                                </v-card-text></v-card>
+                        </v-expansion-panel-text>
+                    </v-expansion-panel>
                     <v-expansion-panel :value="-1">
                         <v-expansion-panel-title class="add-macro-title">
                             <div class="add-macro-title__content">
@@ -1095,142 +1089,148 @@ const allPurchaseGroups = computed(() => {
                                         </v-btn>
                                     </div>
                                 </v-card>
-                            <v-expand-transition>
-                                <div v-if="projectInfo" class="add-sku-results">
-                                    <v-card class="project-overview-card" variant="outlined">
-                                        <div class="project-overview-card__head">
-                                            <div class="project-overview-card__identity">
-                                                <div class="project-overview-card__name">
-                                                    {{ projectInfo.ProjectName }}
-                                                </div>
-                                                <div class="project-overview-card__id">
-                                                    {{ t('taskGroup.projectId') }} {{ projectInfo.ProjectID }}
-                                                </div>
-                                            </div>
-                                            <div class="project-overview-card__badges">
-                                                <v-chip v-if="projectInfo.IsHotProject" color="error" size="small"
-                                                    variant="tonal">
-                                                    {{ t('taskGroup.hot') }}
-                                                </v-chip>
-                                                <v-chip v-if="projectInfo.IsForceRealName" color="warning" size="small"
-                                                    variant="tonal">
-                                                    {{ t('taskGroup.realNameRequired') }}
-                                                </v-chip>
-                                                <v-chip v-if="projectInfo.contactRequired" color="warning" size="small"
-                                                    variant="tonal">
-                                                    {{ t('taskGroup.contactRequired') }}
-                                                </v-chip>
-                                            </div>
-                                        </div>
-                                        <v-divider class="my-3" />
-                                        <div class="project-overview-card__meta">
-                                            <div class="macro-meta">
-                                                <v-icon size="16" color="info">mdi-clock-start</v-icon>
-                                                <div class="macro-meta__content">
-                                                    <span>{{ t('taskGroup.sale') }}</span>
-                                                    <strong>
-                                                        {{ formatDateTimeRange(projectInfo.StartTime,
-                                                            projectInfo.EndTime) }}
-                                                    </strong>
-                                                </div>
-                                            </div>
-                                            <div class="macro-meta">
-                                                <v-icon size="16" color="primary">mdi-ticket-confirmation</v-icon>
-                                                <div class="macro-meta__content">
-                                                    <span>{{ t('taskGroup.tickets', { count: tickets.length }) }}</span>
-                                                    <strong>{{ tickets.length }}</strong>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </v-card>
-                                    <v-card v-if="tickets.length > 0" class="sku-picker-card" variant="outlined">
-                                        <div class="sku-picker-card__head" @click="showSkuList = !showSkuList">
-                                            <div class="add-sku-step">
-                                                <v-avatar color="primary" variant="tonal" size="28">2</v-avatar>
-                                                <div>
-                                                    <div class="add-sku-step__title">
-                                                        {{ t('taskGroup.tickets', { count: tickets.length }) }}
+                                <v-expand-transition>
+                                    <div v-if="projectInfo" class="add-sku-results">
+                                        <v-card class="project-overview-card" variant="outlined">
+                                            <div class="project-overview-card__head">
+                                                <div class="project-overview-card__identity">
+                                                    <div class="project-overview-card__name">
+                                                        {{ projectInfo.ProjectName }}
                                                     </div>
-                                                    <div class="text-caption text-medium-emphasis">
-                                                        {{ selectedSkuId ? `${selectedScreenId} / SKU ${selectedSkuId}` :
+                                                    <div class="project-overview-card__id">
+                                                        {{ t('taskGroup.projectId') }} {{ projectInfo.ProjectID }}
+                                                    </div>
+                                                </div>
+                                                <div class="project-overview-card__badges">
+                                                    <v-chip v-if="projectInfo.IsHotProject" color="error" size="small"
+                                                        variant="tonal">
+                                                        {{ t('taskGroup.hot') }}
+                                                    </v-chip>
+                                                    <v-chip v-if="projectInfo.IsForceRealName" color="warning"
+                                                        size="small" variant="tonal">
+                                                        {{ t('taskGroup.realNameRequired') }}
+                                                    </v-chip>
+                                                    <v-chip v-if="projectInfo.contactRequired" color="warning"
+                                                        size="small" variant="tonal">
+                                                        {{ t('taskGroup.contactRequired') }}
+                                                    </v-chip>
+                                                </div>
+                                            </div>
+                                            <v-divider class="my-3" />
+                                            <div class="project-overview-card__meta">
+                                                <div class="macro-meta">
+                                                    <v-icon size="16" color="info">mdi-clock-start</v-icon>
+                                                    <div class="macro-meta__content">
+                                                        <span>{{ t('taskGroup.sale') }}</span>
+                                                        <strong>
+                                                            {{ formatDateTimeRange(projectInfo.StartTime,
+                                                                projectInfo.EndTime) }}
+                                                        </strong>
+                                                    </div>
+                                                </div>
+                                                <div class="macro-meta">
+                                                    <v-icon size="16" color="primary">mdi-ticket-confirmation</v-icon>
+                                                    <div class="macro-meta__content">
+                                                        <span>{{ t('taskGroup.tickets', { count: tickets.length })
+                                                            }}</span>
+                                                        <strong>{{ tickets.length }}</strong>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </v-card>
+                                        <v-card v-if="tickets.length > 0" class="sku-picker-card" variant="outlined">
+                                            <div class="sku-picker-card__head" @click="showSkuList = !showSkuList">
+                                                <div class="add-sku-step">
+                                                    <v-avatar color="primary" variant="tonal" size="28">2</v-avatar>
+                                                    <div>
+                                                        <div class="add-sku-step__title">
+                                                            {{ t('taskGroup.tickets', { count: tickets.length }) }}
+                                                        </div>
+                                                        <div class="text-caption text-medium-emphasis">
+                                                            {{ selectedSkuId ? `${selectedScreenId} / SKU
+                                                            ${selectedSkuId}` :
                                                             t('taskGroup.filterPlaceholder') }}
+                                                        </div>
                                                     </div>
                                                 </div>
+                                                <v-icon class="sku-chevron"
+                                                    :class="{ 'sku-chevron--open': showSkuList }"
+                                                    size="small">mdi-chevron-down</v-icon>
                                             </div>
-                                            <v-icon class="sku-chevron" :class="{ 'sku-chevron--open': showSkuList }"
-                                                size="small">mdi-chevron-down</v-icon>
-                                        </div>
-                                        <v-expand-transition>
-                                            <div v-show="showSkuList" class="sku-picker-card__body">
-                                                <v-text-field v-model="filterName"
-                                                    :label="t('taskGroup.filterPlaceholder')"
-                                                    prepend-inner-icon="mdi-magnify" variant="outlined"
-                                                    density="compact" hide-details clearable class="mb-2" />
-                                                <v-list class="sku-list" density="compact">
-                                                    <v-list-group v-for="sc in filteredScreens" :key="sc.screenId"
-                                                        :value="'screen-' + sc.screenId">
-                                                        <template #activator="{ props: groupProps }">
-                                                            <v-list-item v-bind="groupProps" class="sku-screen-item"
-                                                                :title="sc.screenName">
+                                            <v-expand-transition>
+                                                <div v-show="showSkuList" class="sku-picker-card__body">
+                                                    <v-text-field v-model="filterName"
+                                                        :label="t('taskGroup.filterPlaceholder')"
+                                                        prepend-inner-icon="mdi-magnify" variant="outlined"
+                                                        density="compact" hide-details clearable class="mb-2" />
+                                                    <v-list class="sku-list" density="compact">
+                                                        <v-list-group v-for="sc in filteredScreens" :key="sc.screenId"
+                                                            :value="'screen-' + sc.screenId">
+                                                            <template #activator="{ props: groupProps }">
+                                                                <v-list-item v-bind="groupProps" class="sku-screen-item"
+                                                                    :title="sc.screenName">
+                                                                    <template #append>
+                                                                        <v-icon
+                                                                            class="screen-chevron">mdi-chevron-down</v-icon>
+                                                                    </template>
+                                                                </v-list-item>
+                                                            </template>
+                                                            <v-list-item v-for="t in sc.tickets"
+                                                                :key="`${t.screenId}-${t.skuId}`"
+                                                                class="sku-ticket-item"
+                                                                :active="selectedScreenId === t.screenId && selectedSkuId === t.skuId"
+                                                                @click="selectedScreenId = t.screenId; selectedSkuId = t.skuId">
+                                                                <template #title>
+                                                                    <div class="sku-ticket-item__title">
+                                                                        <span class="text-body-2 text-truncate"
+                                                                            style="min-width:0">{{ t.desc || t.skuId
+                                                                            }}</span>
+                                                                        <v-chip v-if="t.flags?.display_name"
+                                                                            size="small" variant="tonal"
+                                                                            class="flex-shrink-0"
+                                                                            :color="t.flags.display_name.includes('售罄') || t.flags.display_name.includes('停售') ? 'red' : t.flags.display_name.includes('未开') ? 'grey' : t.flags.display_name.includes('不可') ? 'yellow' : 'green'">
+                                                                            {{ t.flags.display_name }}
+                                                                        </v-chip>
+                                                                    </div>
+                                                                </template>
+                                                                <template #subtitle>
+                                                                    <span class="text-body-2">SKU:{{ t.skuId }} · ¥{{
+                                                                        ((t.price || 0) / 100).toFixed(0) }}</span>
+                                                                </template>
                                                                 <template #append>
-                                                                    <v-icon
-                                                                        class="screen-chevron">mdi-chevron-down</v-icon>
+                                                                    <v-icon class="sku-check-icon"
+                                                                        :class="{ 'sku-check-icon--selected': selectedScreenId === t.screenId && selectedSkuId === t.skuId }"
+                                                                        color="primary">mdi-check-circle</v-icon>
                                                                 </template>
                                                             </v-list-item>
-                                                        </template>
-                                                        <v-list-item v-for="t in sc.tickets"
-                                                            :key="`${t.screenId}-${t.skuId}`" class="sku-ticket-item"
-                                                            :active="selectedScreenId === t.screenId && selectedSkuId === t.skuId"
-                                                            @click="selectedScreenId = t.screenId; selectedSkuId = t.skuId">
-                                                            <template #title>
-                                                                <div class="sku-ticket-item__title">
-                                                                    <span class="text-body-2 text-truncate"
-                                                                        style="min-width:0">{{ t.desc || t.skuId
-                                                                        }}</span>
-                                                                    <v-chip v-if="t.flags?.display_name" size="small"
-                                                                        variant="tonal" class="flex-shrink-0"
-                                                                        :color="t.flags.display_name.includes('售罄') || t.flags.display_name.includes('停售') ? 'red' : t.flags.display_name.includes('未开') ? 'grey' : t.flags.display_name.includes('不可') ? 'yellow' : 'green'">
-                                                                        {{ t.flags.display_name }}
-                                                                    </v-chip>
-                                                                </div>
-                                                            </template>
-                                                            <template #subtitle>
-                                                                <span class="text-body-2">SKU:{{ t.skuId }} · ¥{{
-                                                                    ((t.price || 0) / 100).toFixed(0) }}</span>
-                                                            </template>
-                                                            <template #append>
-                                                                <v-icon class="sku-check-icon"
-                                                                    :class="{ 'sku-check-icon--selected': selectedScreenId === t.screenId && selectedSkuId === t.skuId }"
-                                                                    color="primary">mdi-check-circle</v-icon>
-                                                            </template>
-                                                        </v-list-item>
-                                                    </v-list-group>
-                                                </v-list>
-                                            </div>
-                                        </v-expand-transition>
-                                    </v-card>
-                                    <v-card class="add-sku-confirm-card" variant="outlined">
-                                        <div class="add-sku-step">
-                                            <v-avatar color="success" variant="tonal" size="28">3</v-avatar>
-                                            <div>
-                                                <div class="add-sku-step__title">{{ t('taskGroup.customStartAt') }}</div>
-                                                <div class="text-caption text-medium-emphasis">
-                                                    {{ t('taskGroup.customStartAtHint') }}
+                                                        </v-list-group>
+                                                    </v-list>
+                                                </div>
+                                            </v-expand-transition>
+                                        </v-card>
+                                        <v-card class="add-sku-confirm-card" variant="outlined">
+                                            <div class="add-sku-step">
+                                                <v-avatar color="success" variant="tonal" size="28">3</v-avatar>
+                                                <div>
+                                                    <div class="add-sku-step__title">{{ t('taskGroup.customStartAt') }}
+                                                    </div>
+                                                    <div class="text-caption text-medium-emphasis">
+                                                        {{ t('taskGroup.customStartAtHint') }}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                        <v-text-field ref="customStartRef" v-model="customStartAt"
-                                            :label="t('taskGroup.customStartAt')" type="datetime-local" step="1"
-                                            variant="outlined" density="compact" hide-details
-                                            :disabled="editingDisabled" @click="openDatetimePicker" />
-                                        <v-btn color="success" :loading="addingMacro"
-                                            :disabled="editingDisabled || !selectedScreenId || !selectedSkuId"
-                                            @click="addMacro">
-                                            {{ t('taskGroup.confirmAdd') }}
-                                        </v-btn>
-                                    </v-card>
-                                </div>
-                            </v-expand-transition>
+                                            <v-text-field ref="customStartRef" v-model="customStartAt"
+                                                :label="t('taskGroup.customStartAt')" type="datetime-local" step="1"
+                                                variant="outlined" density="compact" hide-details
+                                                :disabled="editingDisabled" @click="openDatetimePicker" />
+                                            <v-btn color="success" :loading="addingMacro"
+                                                :disabled="editingDisabled || !selectedScreenId || !selectedSkuId"
+                                                @click="addMacro">
+                                                {{ t('taskGroup.confirmAdd') }}
+                                            </v-btn>
+                                        </v-card>
+                                    </div>
+                                </v-expand-transition>
                             </div>
                         </v-expansion-panel-text>
                     </v-expansion-panel>
@@ -1238,7 +1238,7 @@ const allPurchaseGroups = computed(() => {
             </v-card>
         </div>
         <v-card v-else class="mt-4 pa-6 text-center" variant="outlined"><v-card-text>{{ t('taskGroup.notFound')
-        }}</v-card-text></v-card>
+                }}</v-card-text></v-card>
 
         <!-- ═══ Add Macro Confirmation Dialog ═══ -->
         <v-dialog v-model="showAddConfirmDialog" max-width="460" persistent>
@@ -1282,7 +1282,7 @@ const allPurchaseGroups = computed(() => {
                         <div class="info-row" v-if="addingMacroInfo?.isRealName">
                             <span class="info-label"></span>
                             <v-chip color="warning" size="x-small" variant="tonal">{{ t('taskGroup.realName')
-                            }}</v-chip>
+                                }}</v-chip>
                         </div>
                     </v-card>
                     <p class="text-caption text-medium-emphasis">

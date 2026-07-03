@@ -15,6 +15,7 @@ import (
 	"bilibili-ticket-golang/cluster/dispatcher"
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/planner"
+	"bilibili-ticket-golang/lib/global"
 )
 
 const startTaskGroupReflowNowToken = "__cluster_reflow_now__"
@@ -362,22 +363,22 @@ func (s *ClusterService) startTaskGroupPhase(taskGroupID string, phase domain.Ph
 	if started == 0 {
 		rollback("no macro task planned")
 		if len(failures) > 0 {
-			return fmt.Errorf("no macro task started: %s", strings.Join(failures, "; "))
+			return global.NewFault("启动任务组 "+taskGroupID, fmt.Errorf("所有宏任务规划失败: %s", strings.Join(failures, "; ")), "请检查任务配置是否正确")
 		}
-		return fmt.Errorf("no macro task started")
+		return global.NewFault("启动任务组 "+taskGroupID, fmt.Errorf("没有可启动的宏任务"), "请先添加 SKU 宏任务")
 	}
 	if len(failures) > 0 {
 		rollback("partial plan failure")
-		return fmt.Errorf("started %d macro task(s), but some failed: %s", started, strings.Join(failures, "; "))
+		return global.NewFault("启动任务组 "+taskGroupID, fmt.Errorf("已启动 %d 个宏任务，部分失败: %s", started, strings.Join(failures, "; ")), "检查失败的宏任务配置")
 	}
 	if err := s.dispatcher.Reconcile(ctx); err != nil {
 		rollback(err.Error())
-		return err
+		return global.NewFault("调度器协调", err, "检查 Worker 和账号状态")
 	}
 	if s.dispatcher.ActiveAttemptsFor(plannedIntentIDs) == 0 {
 		diagnosis := s.diagnoseNoAttemptStart(ctx, taskGroup, selected, plannedIntentIDs)
 		rollback("no active attempt after reconcile: " + diagnosis)
-		return fmt.Errorf("task group was planned but no attempt started: %s", diagnosis)
+		return global.NewFault("调度任务组 "+taskGroup.ID, fmt.Errorf("已规划但无尝试启动: %s", diagnosis), "请根据诊断信息检查账号、Worker 和买家配置")
 	}
 	s.startTaskGroupWaveController(taskGroup, phase, reflowNow)
 	return nil
@@ -400,16 +401,23 @@ func (s *ClusterService) diagnoseNoAttemptStart(ctx context.Context, taskGroup d
 				}
 			}
 		}
-		enabled := 0
-		for _, account := range selectedAccounts {
-			if account.Enabled && !account.CooldownUntil.After(now) {
-				enabled++
-			}
-		}
 		if len(selectedAccounts) == 0 {
-			reasons = append(reasons, "no selected account exists in account pool")
-		} else if enabled == 0 {
-			reasons = append(reasons, "no selected account is enabled and out of cooldown")
+			reasons = append(reasons, fmt.Sprintf("任务组未选择任何账号（AccountIDs 为空，共 %d 个可用账号）", len(accounts)))
+		} else {
+			enabledCount := 0
+			for id, account := range selectedAccounts {
+				if !account.Enabled {
+					reasons = append(reasons, fmt.Sprintf("账号 %s (%s): 已禁用", id, account.Name))
+				} else if account.CooldownUntil.After(now) {
+					remaining := account.CooldownUntil.Sub(now).Round(time.Second)
+					reasons = append(reasons, fmt.Sprintf("账号 %s (%s): 冷却中 (剩余 %v)", id, account.Name, remaining))
+				} else {
+					enabledCount++
+				}
+			}
+			if enabledCount == 0 {
+				reasons = append(reasons, "所有选定账号均已禁用或冷却中")
+			}
 		}
 	}
 
@@ -419,30 +427,43 @@ func (s *ClusterService) diagnoseNoAttemptStart(ctx context.Context, taskGroup d
 	} else {
 		allowedWorkers := append([]string(nil), taskGroup.PrimaryWorkerIDs...)
 		allowedWorkers = append(allowedWorkers, taskGroup.StandbyWorkerIDs...)
-		selectedWorkers := 0
-		enabledWorkers := 0
-		healthyWorkers := 0
+		allowedSet := make(map[string]bool, len(allowedWorkers))
 		for _, id := range uniqueStrings(allowedWorkers) {
-			for _, worker := range workers {
-				if worker.ID != id {
-					continue
+			allowedSet[id] = true
+		}
+		selectedCount := 0
+		enabledCount := 0
+		healthyCount := 0
+		for _, worker := range workers {
+			if !allowedSet[worker.ID] {
+				continue
+			}
+			selectedCount++
+			status := "健康"
+			if !worker.Enabled {
+				status = "已禁用"
+			} else {
+				enabledCount++
+				isHealthy := s.client != nil && s.client.IsHealthy(worker.ID)
+				isDisconnected := s.client != nil && s.client.IsDisconnected(worker.ID)
+				if isDisconnected {
+					status = "离线 (连接断开)"
+				} else if !isHealthy {
+					status = "不健康 (健康检查失败)"
+				} else {
+					healthyCount++
 				}
-				selectedWorkers++
-				if worker.Enabled {
-					enabledWorkers++
-					if s.client == nil || s.client.IsHealthy(worker.ID) {
-						healthyWorkers++
-					}
-				}
-				break
+			}
+			if status != "健康" {
+				reasons = append(reasons, fmt.Sprintf("worker %s (%s): %s", worker.ID, worker.Name, status))
 			}
 		}
-		if selectedWorkers == 0 {
-			reasons = append(reasons, "no selected worker exists in worker pool")
-		} else if enabledWorkers == 0 {
-			reasons = append(reasons, "all selected workers are disabled")
-		} else if healthyWorkers == 0 {
-			reasons = append(reasons, "all selected enabled workers are unhealthy or disconnected")
+		if selectedCount == 0 {
+			reasons = append(reasons, fmt.Sprintf("任务组未选择任何 Worker（共 %d 个可用 Worker）", len(workers)))
+		} else if enabledCount == 0 {
+			reasons = append(reasons, "所有选定的 Worker 均已禁用")
+		} else if healthyCount == 0 {
+			reasons = append(reasons, "所有选定的已启用 Worker 均不健康——请检查 Worker 连接状态")
 		}
 	}
 

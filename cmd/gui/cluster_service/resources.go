@@ -16,11 +16,11 @@ import (
 func (s *ClusterService) refreshResources(ctx context.Context) error {
 	accountList, err := s.repository.ListAccounts(ctx)
 	if err != nil {
-		return err
+		return global.NewFault("刷新资源: 列出账号", err, "检查集群数据库 data/employer.db")
 	}
 	workers, err := s.repository.ListWorkers(ctx)
 	if err != nil {
-		return err
+		return global.NewFault("刷新资源: 列出 Worker", err, "检查集群数据库 data/employer.db")
 	}
 	dispatchWorkers := make([]domain.WorkerNode, len(workers))
 	copy(dispatchWorkers, workers)

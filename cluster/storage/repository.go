@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"bilibili-ticket-golang/cluster/domain"
+	"bilibili-ticket-golang/lib/global"
 
 	_ "modernc.org/sqlite"
 )
@@ -23,25 +24,52 @@ type Repository struct {
 }
 
 func Open(path string) (*Repository, error) {
+	// Detect orphaned WAL / SHM files that can prevent opening after an
+	// unclean shutdown.  SQLite normally recovers them automatically, but
+	// when the WAL is corrupted the database becomes unreadable.
+	walPath := path + "-wal"
+	shmPath := path + "-shm"
+	_, walErr := os.Stat(walPath)
+	_, shmErr := os.Stat(shmPath)
+	_, dbErr := os.Stat(path)
+	hasOrphanWAL := walErr == nil && dbErr != nil
+	if hasOrphanWAL {
+		return nil, global.NewFaultAt("打开集群数据库",
+			fmt.Errorf("发现残留的 WAL 文件 %s 但数据库文件 %s 不存在", walPath, path),
+			"上次程序可能异常退出。请删除 "+walPath+" 和 "+shmPath+" 后重试",
+			"repository.go", 32)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, err
+		return nil, global.NewFaultAt("创建数据库目录", err,
+			"检查 "+filepath.Dir(path)+" 目录权限",
+			"repository.go", 39)
 	}
 	file, err := os.OpenFile(path, os.O_CREATE, 0600)
 	if err != nil {
-		return nil, err
+		return nil, global.NewFaultAt("创建数据库文件", err,
+			"检查 "+path+" 文件权限，确保程序有读写权限",
+			"repository.go", 44)
 	}
 	_ = file.Close()
 	_ = os.Chmod(path, 0600)
 	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
-		return nil, err
+		suggestion := "检查 " + path + " 文件是否被其他进程占用"
+		if walErr == nil || shmErr == nil {
+			suggestion = "数据库可能被上次异常退出锁定。尝试删除 " + walPath + " 和 " + shmPath + " 后重试"
+		}
+		return nil, global.NewFaultAt("打开 SQLite 数据库", err, suggestion,
+			"repository.go", 53)
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	r := &Repository{db: db, path: path}
 	if err := r.init(context.Background()); err != nil {
 		db.Close()
-		return nil, err
+		return nil, global.NewFaultAt("初始化数据库表结构", err,
+			"数据库 "+path+" 可能已损坏。尝试删除后重新启动程序",
+			"repository.go", 61)
 	}
 	return r, nil
 }

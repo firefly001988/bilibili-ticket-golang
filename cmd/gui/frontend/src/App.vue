@@ -203,6 +203,16 @@ onMounted(async () => {
     </v-main>
     <v-snackbar-queue v-model="messages.queue" closable :total-visible="3" collapsed display-strategy="overflow"
       location="bottom center">
+      <template v-slot:text="{ item }: any">
+        <div class="snackbar-fault" v-if="item.text && (item.text.includes('《') || item.text.includes('\n'))">
+          <div v-for="(line, i) in item.text.split('\n')" :key="i" :class="{
+            'snackbar-fault-header': i === 0,
+            'snackbar-fault-error': line.startsWith('⚠️'),
+            'snackbar-fault-hint': line.startsWith('💡'),
+          }" v-text="line" />
+        </div>
+        <span v-else>{{ item.text }}</span>
+      </template>
       <template v-slot:actions="{ props }">
         <v-icon-btn aria-label="Close" icon="mdi-close" size="small" variant="text" v-bind="props"></v-icon-btn>
       </template>
@@ -211,6 +221,37 @@ onMounted(async () => {
 </template>
 
 <style lang="scss">
+/* ── Snackbar Fault error formatting ── */
+.snackbar-fault {
+  line-height: 1.6;
+  white-space: pre-line;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.snackbar-fault-header {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.snackbar-fault-separator {
+  font-size: 0.6rem;
+  opacity: 0.3;
+  letter-spacing: 2px;
+  user-select: none;
+}
+
+.snackbar-fault-error {
+  opacity: 0.85;
+}
+
+.snackbar-fault-hint {
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+/* ── Existing styles ── */
 .v-container {
   max-width: 1185px;
   padding-left: 24px !important;

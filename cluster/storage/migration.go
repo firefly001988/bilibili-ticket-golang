@@ -11,6 +11,7 @@ import (
 
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cmd/gui/store/configuration"
+	"bilibili-ticket-golang/lib/global"
 )
 
 const LegacyMigrationName = "legacy-messagepack-v1"
@@ -22,19 +23,22 @@ func (r *Repository) MigrateLegacy(ctx context.Context, legacy *configuration.Da
 		return nil
 	}
 	done, err := r.HasMigration(ctx, LegacyMigrationName)
-	if err != nil || done {
-		return err
+	if err != nil {
+		return global.NewFaultAt("检查迁移状态", err, "数据库读取失败", "migration.go", 28)
+	}
+	if done {
+		return nil
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return global.NewFaultAt("开始数据库事务", err, "数据库可能被锁定，检查是否有其他进程占用", "migration.go", 33)
 	}
 	defer tx.Rollback()
 	now := time.Now().UTC()
 	taskGroup := domain.TaskGroup{ID: "migrated-default", Name: "Migrated tickets", CreatedAt: now}
 	groupPayload, _ := json.Marshal(taskGroup)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO task_groups(id,payload) VALUES(?,?)`, taskGroup.ID, groupPayload); err != nil {
-		return err
+		return global.NewFaultAt("迁移: 插入默认任务组", err, "数据库写入失败", "migration.go", 41)
 	}
 
 	cookies := make(map[string]string, len(legacy.Cookies))
@@ -49,7 +53,7 @@ func (r *Repository) MigrateLegacy(ctx context.Context, legacy *configuration.Da
 		account := domain.Account{ID: "migrated-account", Name: "Migrated account", Enabled: true, Credentials: domain.Credentials{Cookies: cookies, CookieJar: cookieJar, RefreshToken: legacy.RefreshToken, Version: 1}}
 		accountPayload, _ := json.Marshal(account)
 		if _, err = tx.ExecContext(ctx, `INSERT INTO accounts(id,role,enabled,credential_version,payload) VALUES(?,?,?,?,?)`, account.ID, "", account.Enabled, account.Credentials.Version, accountPayload); err != nil {
-			return err
+			return global.NewFaultAt("迁移: 插入迁移账号", err, "数据库写入失败", "migration.go", 58)
 		}
 	}
 
@@ -64,7 +68,7 @@ func (r *Repository) MigrateLegacy(ctx context.Context, legacy *configuration.Da
 			macros[macroID] = macro
 			payload, _ := json.Marshal(macro)
 			if _, err = tx.ExecContext(ctx, `INSERT INTO macro_tasks(id,task_group_id,priority,needs_review,payload) VALUES(?,?,?,?,?)`, macro.ID, macro.TaskGroupID, macro.Priority, true, payload); err != nil {
-				return err
+				return global.NewFaultAt("迁移: 插入宏任务 "+macro.ID, err, "数据库写入失败", "migration.go", 76)
 			}
 		}
 		buyers := make([]domain.Buyer, len(entry.Buyers))
@@ -75,13 +79,16 @@ func (r *Repository) MigrateLegacy(ctx context.Context, legacy *configuration.Da
 		purchase := domain.PurchaseGroup{ID: stableID("purchase", entry.Hash()), MacroTaskID: macroID, Buyers: buyers, AllowSplit: false, CreatedAt: now}
 		payload, _ := json.Marshal(purchase)
 		if _, err = tx.ExecContext(ctx, `INSERT INTO purchase_groups(id,macro_task_id,payload) VALUES(?,?,?)`, purchase.ID, purchase.MacroTaskID, payload); err != nil {
-			return err
+			return global.NewFaultAt("迁移: 插入购买组 "+purchase.ID, err, "数据库写入失败", "migration.go", 87)
 		}
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO migration_versions(name,version,applied_at) VALUES(?,?,?)`, LegacyMigrationName, 1, now.Unix()); err != nil {
-		return err
+		return global.NewFaultAt("迁移: 记录迁移版本", err, "数据库写入失败", "migration.go", 91)
 	}
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return global.NewFaultAt("迁移: 提交事务", err, "数据库提交失败，检查磁盘空间和文件权限", "migration.go", 94)
+	}
+	return nil
 }
 
 func stableID(prefix, value string) string {

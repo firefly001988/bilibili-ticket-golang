@@ -9,6 +9,7 @@ import (
 	"bilibili-ticket-golang/lib/biliutils"
 	"bilibili-ticket-golang/lib/biliutils/notify"
 	"bilibili-ticket-golang/lib/biliutils/scheduler"
+	"bilibili-ticket-golang/lib/global"
 	"bilibili-ticket-golang/lib/models/bili/api"
 	gcaptcha "bilibili-ticket-golang/lib/models/bili/captcha"
 	"bilibili-ticket-golang/lib/plugins"
@@ -131,14 +132,17 @@ func main() {
 	store := configuration.NewDataStorage()
 	err = store.Load()
 	if err != nil {
-		panic("Failed to load data:" + err.Error())
+		fault := global.NewFault("加载配置文件 data/store.bin", err, "删除 data/store.bin 以重置配置，或检查文件权限")
+		log.Fatalf("[main] %v", fault)
 	}
 	clusterRepository, err := clusterstorage.Open("data/employer.db")
 	if err != nil {
-		panic("Failed to open cluster database:" + err.Error())
+		fault := global.NewFault("打开集群数据库 data/employer.db", err, "检查文件权限；若存在 data/employer.db-wal 残留文件，删除后重试")
+		log.Fatalf("[main] %v", fault)
 	}
 	if err = clusterRepository.MigrateLegacy(context.Background(), store); err != nil {
-		panic("Failed to migrate legacy tickets:" + err.Error())
+		fault := global.NewFault("迁移旧版数据到集群数据库", err, "数据库可能已损坏，尝试删除 data/employer.db 后重新配置")
+		log.Fatalf("[main] %v", fault)
 	}
 	clusterSvc := cluster_service.NewClusterService(clusterRepository)
 
@@ -151,7 +155,8 @@ func main() {
 	})
 	c, err := biliutils.NewBiliClientWithCookiejar(jar)
 	if err != nil {
-		panic(err)
+		fault := global.NewFault("创建 Bilibili 客户端", err, "检查网络连接和 Cookie 有效性")
+		log.Fatalf("[main] %v", fault)
 	}
 	clusterSvc.SetCatalogClient(c)
 
@@ -191,7 +196,10 @@ func main() {
 	}
 	clusterSvc.SetNotifier(func(message string) { notifier.Notify(message) })
 	if err := clusterSvc.Start(context.Background()); err != nil {
-		log.Fatalf("[main] Failed to start cluster service: %v", err)
+		// The Start method already wraps its internal errors with Fault; if
+		// the error chain already contains a Fault, it will be rendered with
+		// file:line info via the custom MarshalError.
+		log.Fatalf("[main] 启动集群服务失败: %v", err)
 	}
 
 	// Scheduler service — BWS (Bilibili World) reservations and
@@ -288,6 +296,11 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 		},
+		// Custom error marshalling: when a bound method returns an error, the
+		// Wails CallError.Cause field will contain structured JSON with the
+		// source file, line number, operation name, error message and a
+		// human-readable hint — instead of the default opaque "0".
+		MarshalError: global.MarshalError,
 	})
 	logBroker.SetApp(wailsApp)
 	schedSvc.SetApp(wailsApp)
