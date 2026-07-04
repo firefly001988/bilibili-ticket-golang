@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Snapshot, TestWorkerCaptcha, TestAllWorkersCaptcha } from '../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
-import { HasCaptchaDLL, HasCaptchaSolver, TestCaptchaSolver } from '../../bindings/bilibili-ticket-golang/cmd/gui/app'
+import { GetCaptchaStatus, HasCaptchaDLL, HasCaptchaSolver, TestCaptchaSolver } from '../../bindings/bilibili-ticket-golang/cmd/gui/app'
 
 const { t } = useI18n()
 
@@ -11,6 +11,7 @@ const employerDLL = ref(false)
 const employerSolver = ref(false)
 const employerTesting = ref(false)
 const employerResult = ref<{ success?: boolean; elapsed?: string; error?: string; type?: string } | null>(null)
+const captchaStatus = ref<{ loaded?: boolean; version?: string; gitCommit?: string; error?: string }>({})
 
 // ---- worker state ----
 const workers = ref<{ id: string; name: string }[]>([])
@@ -19,12 +20,25 @@ const workerResults = ref<any[]>([])
 
 // ---- refresh employer status ----
 async function refresh() {
-    try { employerDLL.value = !!(await HasCaptchaDLL()) } catch { employerDLL.value = false }
+    try {
+        captchaStatus.value = (await GetCaptchaStatus()) || {}
+        employerDLL.value = !!captchaStatus.value.loaded
+    } catch {
+        captchaStatus.value = {}
+        try { employerDLL.value = !!(await HasCaptchaDLL()) } catch { employerDLL.value = false }
+    }
     try { employerSolver.value = !!(await HasCaptchaSolver()) } catch { employerSolver.value = false }
     try {
         const snap = await Snapshot()
         workers.value = ((snap as any)?.workers || []).filter((w: any) => w.type !== 'local')
     } catch { workers.value = [] }
+}
+
+function captchaVersionText() {
+    const version = captchaStatus.value.version || ''
+    const commit = captchaStatus.value.gitCommit || ''
+    if (version && commit) return `${version}+${commit}`
+    return version || commit || '-'
 }
 
 // ---- employer test ----
@@ -78,8 +92,8 @@ onMounted(refresh)
                     <v-icon :color="employerDLL ? 'success' : 'error'" size="20">
                         {{ employerDLL ? 'mdi-check-circle' : 'mdi-close-circle' }}
                     </v-icon>
-                    <span class="text-body-2">{{ employerDLL ? t('captcha.dllFound', { Version: '' }) :
-                        t('captcha.dllNotFound') }}</span>
+                    <span class="text-body-2">{{ employerDLL ? t('captcha.dllFound', { Version: captchaVersionText() }) :
+                        (captchaStatus.error || t('captcha.dllNotFound')) }}</span>
                     <v-icon :color="employerSolver ? 'success' : 'error'" size="16" class="ml-2">
                         {{ employerSolver ? 'mdi-puzzle-check' : 'mdi-puzzle-remove' }}
                     </v-icon>

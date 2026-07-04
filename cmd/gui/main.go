@@ -181,9 +181,18 @@ func main() {
 	os.MkdirAll("./libs", 0755)
 	if err := gc.Init("./libs"); err != nil {
 		log.Printf("[main] captcha DLL init: %v", err)
+		app.setCaptchaStatus(CaptchaStatus{Loaded: false, Error: err.Error()})
 	} else {
-		v, _ := gc.Version()
-		log.Printf("[main] captcha DLL loaded (version=%s, commit=%s)", v.Version, v.GitCommit)
+		status := CaptchaStatus{Loaded: true}
+		if v, err := gc.Version(); err != nil {
+			status.Error = err.Error()
+			log.Printf("[main] captcha DLL loaded but version query failed: %v", err)
+		} else if v != nil {
+			status.Version = v.Version
+			status.GitCommit = v.GitCommit
+			log.Printf("[main] captcha DLL loaded (version=%s, commit=%s)", v.Version, v.GitCommit)
+		}
+		app.setCaptchaStatus(status)
 
 		// 预热验证码模块，加载 ONNX 模型，避免首次请求耗时过长
 		if err := gc.Warmup(); err != nil {

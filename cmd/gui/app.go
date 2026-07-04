@@ -12,10 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"time"
 
-	gc "bilibili-ticket-golang/captcha-solver"
 	api "bilibili-ticket-golang/lib/models/bili/api"
 	gcaptcha "bilibili-ticket-golang/lib/models/bili/captcha"
 
@@ -28,6 +26,7 @@ type App struct {
 	store         *configuration.DataStorage
 	wailsApp      *application.App
 	captchaSolver biliutils.CaptchaSolverFn
+	captchaStatus CaptchaStatus
 }
 
 // NewApp creates a new App application struct
@@ -169,6 +168,24 @@ func (a *App) SetCaptchaSolver(solver biliutils.CaptchaSolverFn) {
 	a.captchaSolver = solver
 }
 
+// CaptchaStatus describes the native captcha library runtime state.
+type CaptchaStatus struct {
+	Loaded    bool   `json:"loaded"`
+	Version   string `json:"version,omitempty"`
+	GitCommit string `json:"gitCommit,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// setCaptchaStatus stores the native captcha library runtime state.
+func (a *App) setCaptchaStatus(status CaptchaStatus) {
+	a.captchaStatus = status
+}
+
+// GetCaptchaStatus returns the native captcha library runtime state.
+func (a *App) GetCaptchaStatus() CaptchaStatus {
+	return a.captchaStatus
+}
+
 // HasCaptchaSolver returns whether a captcha solver is installed and available.
 func (a *App) HasCaptchaSolver() bool {
 	return a.bili.HasCaptchaSolver()
@@ -245,18 +262,5 @@ func (a *App) TestCaptchaSolver() CaptchaTestResult {
 
 // HasCaptchaDLL returns whether the native captcha DLL was loaded.
 func (a *App) HasCaptchaDLL() bool {
-	// 尝试多个可能的 libs 目录
-	for _, dir := range []string{"./libs", "../libs", "../../libs"} {
-		if gc.IsAvailable(dir) {
-			return true
-		}
-	}
-	// 运行时从可执行文件同目录查找
-	if exe, err := os.Executable(); err == nil {
-		exeDir := filepath.Join(filepath.Dir(exe), "libs")
-		if gc.IsAvailable(exeDir) {
-			return true
-		}
-	}
-	return false
+	return a.captchaStatus.Loaded
 }
