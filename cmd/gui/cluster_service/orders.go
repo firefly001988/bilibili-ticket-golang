@@ -10,6 +10,7 @@ import (
 
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cmd/gui/payqr"
+	"bilibili-ticket-golang/lib/global"
 )
 
 const maxOrderRecords = 1000
@@ -84,6 +85,7 @@ func (s *ClusterService) saveOrderRecord(intent domain.LogicalOrderIntent, resul
 			}
 		}
 	}
+	record = s.hydrateOrderRecordAccount(ctx, record)
 	if s.repository != nil {
 		if err := s.repository.PutOrderRecord(ctx, record); err != nil {
 			return domain.OrderRecord{}, err
@@ -100,19 +102,54 @@ func (s *ClusterService) ListOrderRecords() (OrderRecordList, error) {
 	if err != nil {
 		return OrderRecordList{}, err
 	}
+	ctx := context.Background()
+	for i := range records {
+		records[i] = s.hydrateOrderRecordAccount(ctx, records[i])
+	}
 	return OrderRecordList{Records: records}, nil
 }
 
 func (s *ClusterService) OpenOrderPayment(recordID string) error {
 	if s.repository == nil {
-		return fmt.Errorf("repository is not available")
+		return global.NewFault("打开订单支付二维码", fmt.Errorf("repository is not available"), "请重启应用并确认集群数据库已正常初始化")
 	}
 	record, err := s.repository.OrderRecord(context.Background(), recordID)
 	if err != nil {
-		return err
+		return global.NewFault("读取订单记录", err, "请刷新订单记录；如果问题持续，检查 data/employer.db 是否完整")
+	}
+	record = s.hydrateOrderRecordAccount(context.Background(), record)
+	if orderRecordExpired(record, time.Now()) {
+		return global.NewFault("打开订单支付二维码", fmt.Errorf("order payment has expired"), "该订单支付时间已过期，不能继续付款或复制支付链接")
 	}
 	s.openOrderRecordPaymentWindow(record)
 	return nil
+}
+
+func orderRecordExpired(record domain.OrderRecord, now time.Time) bool {
+	return record.PaymentExpire > 0 && !now.Before(time.Unix(record.PaymentExpire, 0))
+}
+
+func (s *ClusterService) hydrateOrderRecordAccount(ctx context.Context, record domain.OrderRecord) domain.OrderRecord {
+	if s.repository == nil || record.AccountID == "" || record.AccountName != "" {
+		return record
+	}
+	account, err := s.repository.Account(ctx, record.AccountID)
+	if err != nil {
+		return record
+	}
+	record.AccountName = account.Name
+	return record
+}
+
+func orderRecordAccountText(record domain.OrderRecord) string {
+	switch {
+	case record.AccountName != "" && record.AccountID != "":
+		return record.AccountName + " (" + record.AccountID + ")"
+	case record.AccountName != "":
+		return record.AccountName
+	default:
+		return record.AccountID
+	}
 }
 
 func (s *ClusterService) openOrderRecordPaymentWindow(record domain.OrderRecord) {
@@ -131,6 +168,7 @@ func (s *ClusterService) openOrderRecordPaymentWindow(record domain.OrderRecord)
 	values.Set("screen", record.ScreenName)
 	values.Set("sku", record.SKUName)
 	values.Set("buyer", strings.Join(record.BuyerNames, ", "))
+	values.Set("account", orderRecordAccountText(record))
 	if record.PaymentExpire > 0 {
 		values.Set("expire", fmt.Sprint(record.PaymentExpire))
 	}

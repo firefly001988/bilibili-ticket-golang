@@ -25,7 +25,12 @@ export interface FaultInfo {
  */
 export function extractFault(err: any): FaultInfo | null {
     // Strategy 1: direct cause field
-    let jsonObj = JSON.parse(err?.message ?? '{}')
+    let jsonObj: any = {}
+    try {
+        jsonObj = JSON.parse(err?.message ?? '{}')
+    } catch {
+        jsonObj = {}
+    }
     let cause: any = jsonObj?.cause ?? jsonObj?.error?.cause
     if (cause && typeof cause === 'object' && cause.file && cause.line) {
         return {
@@ -102,7 +107,7 @@ export const useMessagesStore = defineStore('messages', () => {
      */
     function addError(err: any, fallbackText?: string) {
         const fault = extractFault(err)
-        const text = err?.message ?? err?.toString() ?? fallbackText ?? 'Unknown error'
+        const text = fallbackText ?? err?.message ?? err?.toString() ?? 'Unknown error'
 
         if (fault) {
             const parts: string[] = []

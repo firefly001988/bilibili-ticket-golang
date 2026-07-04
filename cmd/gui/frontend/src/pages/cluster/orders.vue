@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
 import { ListOrderRecords, OpenOrderPayment } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
@@ -15,6 +15,7 @@ interface OrderRecord {
     macroTaskId: string
     taskGroupId?: string
     accountId?: string
+    accountName?: string
     workerId?: string
     projectId?: number
     projectName?: string
@@ -33,6 +34,8 @@ const records = ref<OrderRecord[]>([])
 const loading = ref(false)
 const opening = ref<Record<string, boolean>>({})
 const search = ref('')
+const nowSec = ref(Math.floor(Date.now() / 1000))
+let statusTimer: ReturnType<typeof setInterval> | null = null
 
 const headers = computed(() => [
     { title: t('orders.colOrder'), key: 'summary', minWidth: 420, sortable: false },
@@ -49,28 +52,29 @@ async function load() {
             return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         })
     } catch (e: any) {
-        messages.add({ text: t('orders.loadFailed', { error: String(e) }), color: 'error' })
+        messages.addError(e, t('orders.loadFailed', { error: String(e) }))
     }
     loading.value = false
 }
 
 async function openPayment(record: OrderRecord) {
+    if (!canPay(record)) return
     opening.value[record.id] = true
     try {
         await OpenOrderPayment(record.id)
     } catch (e: any) {
-        messages.add({ text: t('orders.openFailed', { error: String(e) }), color: 'error' })
+        messages.addError(e, t('orders.openFailed', { error: String(e) }))
     }
     opening.value[record.id] = false
 }
 
 async function copyPaymentURL(record: OrderRecord) {
-    if (!record.paymentUrl) return
+    if (!canPay(record)) return
     try {
         await navigator.clipboard.writeText(record.paymentUrl)
         messages.add({ text: t('orders.copySuccess'), color: 'success' })
     } catch (e: any) {
-        messages.add({ text: t('orders.copyFailed', { error: String(e) }), color: 'error' })
+        messages.addError(e, t('orders.copyFailed', { error: String(e) }))
     }
 }
 
@@ -86,6 +90,14 @@ function fmtExpire(sec?: number): string {
     return fmtDate(sec)
 }
 
+function isExpired(record: OrderRecord): boolean {
+    return !!record.paymentExpire && nowSec.value >= record.paymentExpire
+}
+
+function canPay(record: OrderRecord): boolean {
+    return !!record.paymentUrl && !isExpired(record)
+}
+
 function displayValue(value?: string | number): string {
     if (value === undefined || value === null || String(value) === '') return '—'
     return String(value)
@@ -97,12 +109,26 @@ function buyerText(record: OrderRecord): string {
     return names.join('、')
 }
 
+function accountText(record: OrderRecord): string {
+    if (record.accountName && record.accountId) return `${record.accountName} (${compactID(record.accountId, 14)})`
+    return record.accountName || compactID(record.accountId, 14)
+}
+
 function compactID(id?: string, max = 18): string {
     if (!id) return '—'
     return id.length > max ? `${id.slice(0, max)}…` : id
 }
 
-onMounted(load)
+onMounted(() => {
+    load()
+    statusTimer = setInterval(() => {
+        nowSec.value = Math.floor(Date.now() / 1000)
+    }, 1000)
+})
+
+onUnmounted(() => {
+    if (statusTimer) clearInterval(statusTimer)
+})
 </script>
 
 <template>
@@ -145,10 +171,7 @@ onMounted(load)
                             <span class="text-truncate">{{ displayValue(item.skuName || item.skuId) }}</span>
                         </div>
                         <div class="order-meta text-caption text-medium-emphasis mt-1">
-                            <span>PID {{ item.projectId || '—' }}</span>
-                            <span>Screen {{ item.screenId || '—' }}</span>
-                            <span>SKU {{ item.skuId || '—' }}</span>
-                            <span>A {{ compactID(item.accountId, 14) }}</span>
+                            <span>A {{ accountText(item) }}</span>
                             <span>W {{ compactID(item.workerId, 14) }}</span>
                         </div>
                     </div>
@@ -158,16 +181,23 @@ onMounted(load)
                 </template>
                 <template #item.time="{ item }">
                     <div class="text-caption text-no-wrap">{{ fmtDate(item.createdAt) }}</div>
-                    <div class="text-caption text-medium-emphasis text-no-wrap">{{ fmtExpire(item.paymentExpire) }}</div>
+                    <div class="text-caption text-medium-emphasis text-no-wrap">{{ t('orders.expireAt') }}: {{
+                        fmtExpire(item.paymentExpire) }}</div>
                 </template>
                 <template #item.actions="{ item }">
-                    <div class="d-flex align-center justify-end">
-                        <v-btn size="small" color="primary" variant="tonal" :disabled="!item.paymentUrl"
+                    <div class="d-flex align-center action-cell"
+                        :class="isExpired(item) ? 'justify-start' : 'justify-end'">
+                        <template v-if="canPay(item)">
+                        <v-btn size="small" color="primary" variant="tonal"
                             :loading="opening[item.id]" @click="openPayment(item)">
                             {{ t('orders.openPayment') }}
                         </v-btn>
-                        <v-btn size="small" icon="mdi-content-copy" variant="text" :disabled="!item.paymentUrl"
+                        <v-btn size="small" icon="mdi-content-copy" variant="text"
                             class="ml-1" @click="copyPaymentURL(item)" />
+                        </template>
+                        <v-chip v-else-if="isExpired(item)" size="small" color="error" variant="tonal">
+                            {{ t('orders.statusExpired') }}
+                        </v-chip>
                     </div>
                 </template>
             </v-data-table>
@@ -186,6 +216,15 @@ onMounted(load)
 <style scoped>
 .orders-table :deep(td) {
     vertical-align: middle;
+    white-space: nowrap;
+}
+
+.orders-table :deep(th) {
+    white-space: nowrap;
+}
+
+.orders-table :deep(table) {
+    min-width: 960px;
 }
 
 .order-summary {
@@ -212,15 +251,21 @@ onMounted(load)
 
 .order-meta {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 4px 10px;
     line-height: 1.35;
+    white-space: nowrap;
 }
 
 .buyer-cell {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    display: inline-block;
+    max-width: 150px;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.action-cell {
+    min-width: 116px;
 }
 </style>

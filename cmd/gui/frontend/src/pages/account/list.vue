@@ -269,7 +269,7 @@ async function sendSMSCode() {
         messages.add({ text: t('account.smsSent'), color: 'success' })
     } catch (e: any) {
         loginErrorMsg.value = t('account.smsSendFailed', { error: String(e) })
-        messages.add({ text: loginErrorMsg.value, color: 'error' })
+        messages.addError(e, loginErrorMsg.value)
     } finally {
         smsSending.value = false
     }
@@ -289,7 +289,7 @@ async function finishSMSLogin() {
         messages.add({ text: t('account.loginSuccess'), color: 'success' })
     } catch (e: any) {
         loginErrorMsg.value = t('account.smsLoginFailed', { error: String(e) })
-        messages.add({ text: loginErrorMsg.value, color: 'error' })
+        messages.addError(e, loginErrorMsg.value)
     } finally {
         smsSubmitting.value = false
     }
@@ -322,7 +322,7 @@ async function loginWithPassword() {
         messages.add({ text: t('account.loginSuccess'), color: 'success' })
     } catch (e: any) {
         loginErrorMsg.value = t('account.passwordLoginFailed', { error: String(e) })
-        messages.add({ text: loginErrorMsg.value, color: 'error' })
+        messages.addError(e, loginErrorMsg.value)
     } finally {
         passwordSubmitting.value = false
     }
@@ -355,7 +355,7 @@ async function onCaptchaSolved(result: { validate: string; seccode: string }) {
             messages.add({ text: t('account.smsSent'), color: 'success' })
         } catch (e: any) {
             loginErrorMsg.value = t('account.smsSendFailed', { error: String(e) })
-            messages.add({ text: loginErrorMsg.value, color: 'error' })
+            messages.addError(e, loginErrorMsg.value)
         } finally {
             smsSending.value = false
         }
@@ -383,7 +383,7 @@ async function onCaptchaSolved(result: { validate: string; seccode: string }) {
             messages.add({ text: t('account.loginSuccess'), color: 'success' })
         } catch (e: any) {
             loginErrorMsg.value = t('account.passwordLoginFailed', { error: String(e) })
-            messages.add({ text: loginErrorMsg.value, color: 'error' })
+            messages.addError(e, loginErrorMsg.value)
         } finally {
             passwordSubmitting.value = false
         }
@@ -397,7 +397,7 @@ async function onCaptchaSolved(result: { validate: string; seccode: string }) {
             messages.add({ text: t('account.safecenterSMSSent'), color: 'success' })
         } catch (e: any) {
             loginErrorMsg.value = t('account.safecenterSMSSendFailed', { error: String(e) })
-            messages.add({ text: loginErrorMsg.value, color: 'error' })
+            messages.addError(e, loginErrorMsg.value)
         } finally {
             safecenterSMSSending.value = false
         }
@@ -413,10 +413,16 @@ async function beginSafecenterSMS(sessionId: string) {
     safecenterSMSSent.value = false
     loginStatusMsg.value = t('account.safecenterVerifyRequired')
     if (needsManualCaptcha.value) {
-        pendingManualLogin.value = 'safecenter'
-        const prep = await PrepareSafecenterCaptcha(sessionId)
-        manualCaptchaPrepare.value = { sessionId: prep.sessionId, gt: prep.gt, challenge: prep.challenge }
-        showCaptchaDialog.value = true
+        try {
+            pendingManualLogin.value = 'safecenter'
+            const prep = await PrepareSafecenterCaptcha(sessionId)
+            manualCaptchaPrepare.value = { sessionId: prep.sessionId, gt: prep.gt, challenge: prep.challenge }
+            showCaptchaDialog.value = true
+        } catch (e: any) {
+            loginErrorMsg.value = t('account.safecenterSMSSendFailed', { error: String(e) })
+            messages.addError(e, loginErrorMsg.value)
+            pendingManualLogin.value = null
+        }
         return
     }
     safecenterSMSSending.value = true
@@ -427,7 +433,7 @@ async function beginSafecenterSMS(sessionId: string) {
         messages.add({ text: t('account.safecenterSMSSent'), color: 'success' })
     } catch (e: any) {
         loginErrorMsg.value = t('account.safecenterSMSSendFailed', { error: String(e) })
-        messages.add({ text: loginErrorMsg.value, color: 'error' })
+        messages.addError(e, loginErrorMsg.value)
     } finally {
         safecenterSMSSending.value = false
     }
@@ -452,7 +458,7 @@ async function finishSafecenterLogin() {
         messages.add({ text: t('account.loginSuccess'), color: 'success' })
     } catch (e: any) {
         loginErrorMsg.value = t('account.safecenterVerifyFailed', { error: String(e) })
-        messages.add({ text: loginErrorMsg.value, color: 'error' })
+        messages.addError(e, loginErrorMsg.value)
     } finally {
         safecenterSubmitting.value = false
     }

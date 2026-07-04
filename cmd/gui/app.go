@@ -118,6 +118,7 @@ type PayQRWindowOptions struct {
 	Screen    string `json:"screen,omitempty"`
 	SKU       string `json:"sku,omitempty"`
 	Buyer     string `json:"buyer,omitempty"`
+	Account   string `json:"account,omitempty"`
 	Expire    int64  `json:"expire,omitempty"`
 	OrderTime int64  `json:"orderTime,omitempty"`
 }
@@ -145,6 +146,9 @@ func (a *App) OpenPayQRWindow(options PayQRWindowOptions) {
 	}
 	if options.Buyer != "" {
 		values.Set("buyer", options.Buyer)
+	}
+	if options.Account != "" {
+		values.Set("account", options.Account)
 	}
 	if options.Expire > 0 {
 		values.Set("expire", fmt.Sprint(options.Expire))

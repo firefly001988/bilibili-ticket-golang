@@ -393,6 +393,7 @@ type OrderRecord struct {
 	MacroTaskID   string    `json:"macroTaskId"`
 	TaskGroupID   string    `json:"taskGroupId,omitempty"`
 	AccountID     string    `json:"accountId,omitempty"`
+	AccountName   string    `json:"accountName,omitempty"`
 	WorkerID      string    `json:"workerId,omitempty"`
 	ProjectID     int64     `json:"projectId,omitempty"`
 	ProjectName   string    `json:"projectName,omitempty"`

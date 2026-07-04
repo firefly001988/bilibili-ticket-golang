@@ -59,11 +59,14 @@ function fmtTime(ts: any): string {
     try {
         const d = ts instanceof Date ? ts : new Date(ts)
         if (isNaN(d.getTime())) return String(ts ?? '')
+        const yy = String(d.getFullYear())
+        const mo = String(d.getMonth() + 1).padStart(2, '0')
+        const dd = String(d.getDate()).padStart(2, '0')
         const hh = String(d.getHours()).padStart(2, '0')
         const mi = String(d.getMinutes()).padStart(2, '0')
         const ss = String(d.getSeconds()).padStart(2, '0')
         const ms = String(d.getMilliseconds()).padStart(3, '0')
-        return `${hh}:${mi}:${ss}.${ms}`
+        return `${yy}-${mo}-${dd} ${hh}:${mi}:${ss}.${ms}`
     } catch { return String(ts ?? '') }
 }
 
@@ -108,7 +111,7 @@ function kindColor(k: string): string {
 const searchText = ref('')
 
 const tableHeaders = computed(() => [
-    { title: t('events.colTime'), key: 'time', width: 90, sortable: false },
+    { title: t('events.colTime'), key: 'time', width: 170, sortable: false },
     { title: t('events.colWorker'), key: 'workerId', width: 80, sortable: false },
     { title: t('events.colStage'), key: 'stage', width: 70, sortable: false },
     { title: t('events.colType'), key: 'kind', width: 100, sortable: false },

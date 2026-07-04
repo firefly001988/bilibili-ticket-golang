@@ -15,6 +15,7 @@ const project = ref('')
 const screen = ref('')
 const sku = ref('')
 const buyer = ref('')
+const account = ref('')
 const expire = ref(0)
 const orderTime = ref(0)
 
@@ -25,6 +26,7 @@ onMounted(() => {
     screen.value = (route.query.screen as string) || ''
     sku.value = (route.query.sku as string) || ''
     buyer.value = (route.query.buyer as string) || ''
+    account.value = (route.query.account as string) || ''
     expire.value = parseInt(route.query.expire as string) || 0
     orderTime.value = parseInt(route.query.orderTime as string) || 0
 })
@@ -91,9 +93,10 @@ onUnmounted(() => {
 })
 
 const copied = ref(false)
+const expired = computed(() => expire.value > 0 && remaining.value === t('payQR.expired'))
 
 async function copyLink() {
-    if (!link.value) return
+    if (!link.value || expired.value) return
     try {
         await navigator.clipboard.writeText(link.value)
         copied.value = true
@@ -158,6 +161,10 @@ const displayOrderTime = computed(() => {
                     <span class="info-label">{{ t('payQR.buyer') }}</span>
                     <span class="info-value">{{ buyer }}</span>
                 </div>
+                <div v-if="account" class="info-row">
+                    <span class="info-label">{{ t('payQR.account') }}</span>
+                    <span class="info-value">{{ account }}</span>
+                </div>
                 <div v-if="displayOrderTime" class="info-row">
                     <span class="info-label">{{ t('payQR.orderTime') }}</span>
                     <span class="info-value">{{ displayOrderTime }}</span>
@@ -165,7 +172,7 @@ const displayOrderTime = computed(() => {
             </div>
 
             <!-- Copy link button -->
-            <div class="text-center mt-4">
+            <div v-if="!expired" class="text-center mt-4">
                 <v-btn :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'" variant="tonal" size="small"
                     :color="copied ? 'success' : undefined" @click="copyLink">
                     {{ copied ? t('payQR.copied') : t('payQR.copyLink') }}

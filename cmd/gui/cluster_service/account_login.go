@@ -15,6 +15,7 @@ import (
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cmd/gui/store/cookiejar"
 	"bilibili-ticket-golang/lib/biliutils"
+	"bilibili-ticket-golang/lib/global"
 	api "bilibili-ticket-golang/lib/models/bili/api"
 )
 
@@ -141,7 +142,7 @@ func (s *ClusterService) PollAccountLogin(sessionID string) (AccountLoginPoll, e
 // challenge and validate via PrepareLoginCaptcha + the geetest widget.
 func (s *ClusterService) BeginAccountSMSLogin(phone string, cid int64, name string, captchaSessionId string, challenge string, validate string) (AccountLoginStart, error) {
 	if phone == "" {
-		return AccountLoginStart{}, fmt.Errorf("phone is required")
+		return AccountLoginStart{}, global.NewFault("发送短信验证码", fmt.Errorf("phone is required"), "请填写手机号后再发送验证码")
 	}
 	if cid == 0 {
 		cid = 86
@@ -149,18 +150,18 @@ func (s *ClusterService) BeginAccountSMSLogin(phone string, cid int64, name stri
 	if captchaSessionId != "" {
 		session := s.popLoginCaptchaSession(captchaSessionId)
 		if session == nil {
-			return AccountLoginStart{}, fmt.Errorf("captcha session not found or expired")
+			return AccountLoginStart{}, global.NewFault("发送短信验证码", fmt.Errorf("captcha session not found or expired"), "验证码会话已过期，请重新完成验证码")
 		}
 		return s.beginAccountSMSLogin(phone, cid, name, session.Client, session.Jar, session.Token, challenge, validate)
 	}
 	jar := cookiejar.New(nil)
 	client, err := biliutils.NewBiliClientWithCookiejar(jar)
 	if err != nil {
-		return AccountLoginStart{}, err
+		return AccountLoginStart{}, global.NewFault("发送短信验证码: 创建登录会话", err, "请检查网络连接后重试")
 	}
 	token, challenge2, validate2, err := s.solveLoginCaptcha(client)
 	if err != nil {
-		return AccountLoginStart{}, err
+		return AccountLoginStart{}, global.NewFault("发送短信验证码: 验证码求解", err, "请确认验证码求解器已安装，或重新打开验证码")
 	}
 	return s.beginAccountSMSLogin(phone, cid, name, client, jar, token, challenge2, validate2)
 }
@@ -169,7 +170,7 @@ func (s *ClusterService) BeginAccountSMSLogin(phone string, cid int64, name stri
 func (s *ClusterService) beginAccountSMSLogin(phone string, cid int64, name string, client *biliutils.BiliClient, jar *cookiejar.Jar, token string, challenge string, validate string) (AccountLoginStart, error) {
 	captchaKey, err := client.SendSMSCode(parsePhoneForLogin(phone), cid, token, validate, challenge)
 	if err != nil {
-		return AccountLoginStart{}, err
+		return AccountLoginStart{}, global.NewFault("发送短信验证码", err, "请确认手机号和区号正确，稍后重试")
 	}
 	id := randomClusterID("sms-login")
 	s.mu.Lock()
@@ -182,7 +183,7 @@ func (s *ClusterService) beginAccountSMSLogin(phone string, cid int64, name stri
 // and imports its buyers.
 func (s *ClusterService) FinishAccountSMSLogin(sessionID string, phone string, cid int64, smsCode string) (AccountLoginResult, error) {
 	if phone == "" || smsCode == "" {
-		return AccountLoginResult{}, fmt.Errorf("phone and SMS code are required")
+		return AccountLoginResult{}, global.NewFault("短信验证码登录", fmt.Errorf("phone and SMS code are required"), "请填写手机号和短信验证码")
 	}
 	if cid == 0 {
 		cid = 86
@@ -191,20 +192,20 @@ func (s *ClusterService) FinishAccountSMSLogin(sessionID string, phone string, c
 	session := s.loginSessions[sessionID]
 	s.mu.RUnlock()
 	if session == nil {
-		return AccountLoginResult{}, fmt.Errorf("login session not found")
+		return AccountLoginResult{}, global.NewFault("短信验证码登录", fmt.Errorf("login session not found"), "登录会话不存在，请重新发送短信验证码")
 	}
 	if time.Since(session.CreatedAt) > 5*time.Minute {
 		s.mu.Lock()
 		delete(s.loginSessions, sessionID)
 		s.mu.Unlock()
-		return AccountLoginResult{}, fmt.Errorf("login session expired")
+		return AccountLoginResult{}, global.NewFault("短信验证码登录", fmt.Errorf("login session expired"), "登录会话已过期，请重新发送短信验证码")
 	}
 	if _, err := session.Client.VerifySMSCode(parsePhoneForLogin(phone), cid, session.CaptchaKey, smsCode); err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("短信验证码登录", err, "请确认短信验证码正确且未过期")
 	}
 	result, err := s.persistLoggedInAccount(session.Client, session.Jar, session.Name, "SMS login")
 	if err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("保存短信登录账号", err, "登录成功但保存账号失败，请检查数据库")
 	}
 	s.mu.Lock()
 	delete(s.loginSessions, sessionID)
@@ -220,23 +221,23 @@ func (s *ClusterService) FinishAccountSMSLogin(sessionID string, phone string, c
 // challenge, validate and seccode via PrepareLoginCaptcha + the geetest widget.
 func (s *ClusterService) AccountPasswordLogin(username string, password string, name string, captchaSessionId string, challenge string, validate string, seccode string) (AccountLoginResult, error) {
 	if username == "" || password == "" {
-		return AccountLoginResult{}, fmt.Errorf("username and password are required")
+		return AccountLoginResult{}, global.NewFault("密码登录", fmt.Errorf("username and password are required"), "请填写账号和密码")
 	}
 	if captchaSessionId != "" {
 		session := s.popLoginCaptchaSession(captchaSessionId)
 		if session == nil {
-			return AccountLoginResult{}, fmt.Errorf("captcha session not found or expired")
+			return AccountLoginResult{}, global.NewFault("密码登录", fmt.Errorf("captcha session not found or expired"), "验证码会话已过期，请重新完成验证码")
 		}
 		return s.accountPasswordLogin(session.Client, session.Jar, username, password, name, session.Token, challenge, validate, seccode)
 	}
 	jar := cookiejar.New(nil)
 	client, err := biliutils.NewBiliClientWithCookiejar(jar)
 	if err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("密码登录: 创建登录会话", err, "请检查网络连接后重试")
 	}
 	token, challenge2, validate2, err := s.solveLoginCaptcha(client)
 	if err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("密码登录: 验证码求解", err, "请确认验证码求解器已安装，或重新打开验证码")
 	}
 	return s.accountPasswordLogin(client, jar, username, password, name, token, challenge2, validate2, validate2+"|jordan")
 }
@@ -245,20 +246,20 @@ func (s *ClusterService) AccountPasswordLogin(username string, password string, 
 func (s *ClusterService) accountPasswordLogin(client *biliutils.BiliClient, jar *cookiejar.Jar, username, password, name, token, challenge, validate, seccode string) (AccountLoginResult, error) {
 	salt, pubKey, err := client.GetPasswordKey()
 	if err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("密码登录: 获取加密密钥", err, "请检查网络连接后重试")
 	}
 	encrypted, err := biliutils.EncryptPassword(password, salt, pubKey)
 	if err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("密码登录: 加密密码", err, "密码加密失败，请重试")
 	}
 	loginResp, err := client.PasswordLogin(username, encrypted, token, challenge, validate, seccode)
 	if err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("密码登录", err, "请确认账号、密码和验证码正确")
 	}
 	if loginResp != nil && loginResp.Status == 2 {
 		requestID, tmpToken, parseErr := parseSafecenterVerifyURL(loginResp.URL)
 		if parseErr != nil {
-			return AccountLoginResult{}, parseErr
+			return AccountLoginResult{}, global.NewFault("密码登录: 解析安全验证地址", parseErr, "Bilibili 返回的安全验证地址异常，请稍后重试")
 		}
 		id := randomClusterID("safe-login")
 		s.mu.Lock()
@@ -280,9 +281,13 @@ func (s *ClusterService) accountPasswordLogin(client *biliutils.BiliClient, jar 
 		}, nil
 	}
 	if loginResp != nil && loginResp.Status != 0 {
-		return AccountLoginResult{}, errors.New(firstNonEmpty(loginResp.Message, loginResp.Hint, fmt.Sprintf("password login status %d", loginResp.Status)))
+		return AccountLoginResult{}, global.NewFault("密码登录", errors.New(firstNonEmpty(loginResp.Message, loginResp.Hint, fmt.Sprintf("password login status %d", loginResp.Status))), "请确认账号、密码和验证码正确")
 	}
-	return s.persistLoggedInAccount(client, jar, name, "password login")
+	result, err := s.persistLoggedInAccount(client, jar, name, "password login")
+	if err != nil {
+		return AccountLoginResult{}, global.NewFault("保存密码登录账号", err, "登录成功但保存账号失败，请检查数据库")
+	}
+	return result, nil
 }
 
 // PrepareSafecenterCaptcha fetches the Geetest challenge for a password-login
@@ -290,11 +295,11 @@ func (s *ClusterService) accountPasswordLogin(client *biliutils.BiliClient, jar 
 func (s *ClusterService) PrepareSafecenterCaptcha(sessionID string) (LoginCaptchaPrepareResult, error) {
 	session, err := s.getSafecenterSession(sessionID)
 	if err != nil {
-		return LoginCaptchaPrepareResult{}, err
+		return LoginCaptchaPrepareResult{}, global.NewFault("获取安全中心验证码", err, "安全验证会话无效，请重新进行密码登录")
 	}
 	cpt, err := session.Client.GetSafecenterCaptchaPre()
 	if err != nil {
-		return LoginCaptchaPrepareResult{}, fmt.Errorf("获取安全中心验证码失败: %w", err)
+		return LoginCaptchaPrepareResult{}, global.NewFault("获取安全中心验证码", err, "请检查网络连接后重试")
 	}
 	s.mu.Lock()
 	if current := s.loginSessions[sessionID]; current != nil {
@@ -314,30 +319,30 @@ func (s *ClusterService) PrepareSafecenterCaptcha(sessionID string) (LoginCaptch
 func (s *ClusterService) SendAccountSafecenterSMSCode(sessionID string, challenge string, validate string) (AccountLoginStart, error) {
 	session, err := s.getSafecenterSession(sessionID)
 	if err != nil {
-		return AccountLoginStart{}, err
+		return AccountLoginStart{}, global.NewFault("发送安全中心短信验证码", err, "安全验证会话无效，请重新进行密码登录")
 	}
 	token := session.SafecenterCaptchaToken
 	if validate == "" {
 		if s.captchaSolver == nil {
-			return AccountLoginStart{}, fmt.Errorf("captcha solver is not installed")
+			return AccountLoginStart{}, global.NewFault("发送安全中心短信验证码", fmt.Errorf("captcha solver is not installed"), "请安装验证码求解器，或使用手动验证码")
 		}
 		cpt, err := session.Client.GetSafecenterCaptchaPre()
 		if err != nil {
-			return AccountLoginStart{}, err
+			return AccountLoginStart{}, global.NewFault("发送安全中心短信验证码: 获取验证码", err, "请检查网络连接后重试")
 		}
 		token = cpt.Token
 		challenge = cpt.Challenge
 		validate, err = s.captchaSolver(cpt.Gt, cpt.Challenge)
 		if err != nil {
-			return AccountLoginStart{}, err
+			return AccountLoginStart{}, global.NewFault("发送安全中心短信验证码: 验证码求解", err, "请确认验证码求解器已安装，或重新打开验证码")
 		}
 	}
 	if token == "" {
-		return AccountLoginStart{}, fmt.Errorf("safecenter captcha token is missing")
+		return AccountLoginStart{}, global.NewFault("发送安全中心短信验证码", fmt.Errorf("safecenter captcha token is missing"), "验证码会话无效，请重新完成验证码")
 	}
 	captchaKey, err := session.Client.SendSafecenterSMSCode(session.SafecenterTmpToken, token, challenge, validate)
 	if err != nil {
-		return AccountLoginStart{}, err
+		return AccountLoginStart{}, global.NewFault("发送安全中心短信验证码", err, "请稍后重试，或重新进行密码登录")
 	}
 	s.mu.Lock()
 	if current := s.loginSessions[sessionID]; current != nil {
@@ -352,28 +357,28 @@ func (s *ClusterService) SendAccountSafecenterSMSCode(sessionID string, challeng
 // returned oauth code for cookies, persists the account, and imports buyers.
 func (s *ClusterService) FinishAccountSafecenterSMSLogin(sessionID string, smsCode string) (AccountLoginResult, error) {
 	if smsCode == "" {
-		return AccountLoginResult{}, fmt.Errorf("SMS code is required")
+		return AccountLoginResult{}, global.NewFault("安全中心短信验证", fmt.Errorf("SMS code is required"), "请填写短信验证码")
 	}
 	session, err := s.getSafecenterSession(sessionID)
 	if err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("安全中心短信验证", err, "安全验证会话无效，请重新进行密码登录")
 	}
 	if session.CaptchaKey == "" {
-		return AccountLoginResult{}, fmt.Errorf("safecenter SMS code has not been sent")
+		return AccountLoginResult{}, global.NewFault("安全中心短信验证", fmt.Errorf("safecenter SMS code has not been sent"), "请先发送安全中心短信验证码")
 	}
 	verifyResp, err := session.Client.VerifySafecenterSMSCode(session.SafecenterTmpToken, session.SafecenterCaptchaToken, session.CaptchaKey, session.SafecenterRequestID, smsCode)
 	if err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("安全中心短信验证", err, "请确认短信验证码正确且未过期")
 	}
 	if verifyResp == nil || verifyResp.OauthCode == "" {
-		return AccountLoginResult{}, fmt.Errorf("safecenter verify did not return oauth code")
+		return AccountLoginResult{}, global.NewFault("安全中心短信验证", fmt.Errorf("safecenter verify did not return oauth code"), "Bilibili 未返回登录凭证，请重新进行密码登录")
 	}
 	if _, err = session.Client.ExhangeCookieByOauthCode(verifyResp.OauthCode); err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("安全中心短信验证: 换取登录 Cookie", err, "请稍后重试，或重新进行密码登录")
 	}
 	result, err := s.persistLoggedInAccount(session.Client, session.Jar, session.Name, "password safecenter login")
 	if err != nil {
-		return AccountLoginResult{}, err
+		return AccountLoginResult{}, global.NewFault("保存密码登录账号", err, "登录成功但保存账号失败，请检查数据库")
 	}
 	s.mu.Lock()
 	delete(s.loginSessions, sessionID)
@@ -438,11 +443,11 @@ func (s *ClusterService) PrepareLoginCaptcha() (LoginCaptchaPrepareResult, error
 	jar := cookiejar.New(nil)
 	client, err := biliutils.NewBiliClientWithCookiejar(jar)
 	if err != nil {
-		return LoginCaptchaPrepareResult{}, err
+		return LoginCaptchaPrepareResult{}, global.NewFault("准备登录验证码", err, "请检查网络连接后重试")
 	}
 	cpt, err := client.GetLoginCaptcha()
 	if err != nil {
-		return LoginCaptchaPrepareResult{}, fmt.Errorf("获取登录验证码失败: %w", err)
+		return LoginCaptchaPrepareResult{}, global.NewFault("准备登录验证码", err, "请检查网络连接后重试")
 	}
 	id := randomClusterID("captcha")
 	s.mu.Lock()
@@ -496,15 +501,15 @@ func (s *ClusterService) GetLoginCountries() (*api.CountryListStruct, error) {
 
 func (s *ClusterService) solveLoginCaptcha(client *biliutils.BiliClient) (token string, challenge string, validate string, err error) {
 	if s.captchaSolver == nil {
-		return "", "", "", fmt.Errorf("captcha solver is not installed")
+		return "", "", "", global.NewFault("登录验证码求解", fmt.Errorf("captcha solver is not installed"), "请安装验证码求解器，或使用手动验证码")
 	}
 	captcha, err := client.GetLoginCaptcha()
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", global.NewFault("登录验证码求解: 获取验证码", err, "请检查网络连接后重试")
 	}
 	validate, err = s.captchaSolver(captcha.Geetest.Gt, captcha.Geetest.Challenge)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", global.NewFault("登录验证码求解", err, "请确认验证码求解器已安装，或重新打开验证码")
 	}
 	return captcha.Token, captcha.Geetest.Challenge, validate, nil
 }

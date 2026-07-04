@@ -972,6 +972,7 @@
         "screen": "Screen",
         "sku": "SKU",
         "buyer": "Buyer",
+        "account": "Account",
         "orderTime": "Order time",
         "expireIn": "Payment expires in",
         "expired": "Expired"
@@ -1015,6 +1016,9 @@
         "copySuccess": "Payment link copied",
         "copyFailed": "Failed to copy payment link: {error}",
         "openPayment": "Pay",
+        "statusPayable": "Payable",
+        "statusExpired": "Expired",
+        "expireAt": "Expires",
         "colTime": "Recorded At",
         "colOrder": "Order ID",
         "colItem": "Project / Screen / SKU",
