@@ -26,14 +26,15 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 	client := employer.NewWorkerClient()
 	provisioner := NewWorkerProvisioner(client)
 	service := &ClusterService{
-		repository:    repository,
-		client:        client,
-		provisioner:   provisioner,
-		phases:        make(map[string]domain.Phase),
-		waveCancels:   make(map[string]context.CancelFunc),
-		loginSessions: make(map[string]*accountLoginSession),
-		deployJobs:    make(map[string]*RemoteWorkerDeployJob),
-		bwsMeta:       make(map[string]BWSSubmitInput),
+		repository:           repository,
+		client:               client,
+		provisioner:          provisioner,
+		phases:               make(map[string]domain.Phase),
+		waveCancels:          make(map[string]context.CancelFunc),
+		loginSessions:        make(map[string]*accountLoginSession),
+		loginCaptchaSessions: make(map[string]*loginCaptchaSession),
+		deployJobs:           make(map[string]*RemoteWorkerDeployJob),
+		bwsMeta:              make(map[string]BWSSubmitInput),
 	}
 	service.loadBWSMetadata()
 	// Wire the worker selection strategy: the provisioner uses the
@@ -106,6 +107,7 @@ func (s *ClusterService) SetLocalWorkerSolver(
 	solver func(gt, challenge string) (string, error),
 	tester func() (elapsed, validate, captchaType string, err error),
 ) {
+	s.captchaSolver = solver
 	s.local.SetSolver(solver)
 	s.local.SetCaptchaTester(tester)
 }
@@ -128,6 +130,28 @@ func (s *ClusterService) Start(parent context.Context) error {
 	log.Printf("[cluster] starting cluster service (employer commit=%s)", global.GitCommit)
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
+
+	// Clean up expired manual captcha sessions every minute.
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.mu.Lock()
+				now := time.Now()
+				for id, sess := range s.loginCaptchaSessions {
+					if now.Sub(sess.CreatedAt) > 5*time.Minute {
+						delete(s.loginCaptchaSessions, id)
+					}
+				}
+				s.mu.Unlock()
+			}
+		}
+	}()
+
 	accountsList, err := s.repository.ListAccounts(ctx)
 	if err != nil {
 		return global.NewFault("列出账号", err, "检查集群数据库 data/employer.db 是否可读")

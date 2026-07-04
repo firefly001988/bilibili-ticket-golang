@@ -65,7 +65,12 @@ func (c *BiliClient) GetLoginCaptcha() (*api.LoginCaptchaStruct, error) {
 // GetCountryList fetches the list of countries from Bilibili's API.
 // Returns a CountryListStruct containing country codes and names.
 func (c *BiliClient) GetCountryList() (*api.CountryListStruct, error) {
-	res, err := c.client.R().Get("https://passport.bilibili.com/web/generic/country/list")
+	res, err := c.client.R().SetQueryParams(
+		map[string]string{
+			"x-bili-redirect":    "1",
+			"x-bili-locale-json": `{"c_locale":{"language":"zh","region":"CN"},"always_translate":true}`,
+		},
+	).Get("https://passport.bilibili.com/web/generic/country/list")
 	if err != nil {
 		return nil, err
 	}
@@ -91,8 +96,14 @@ func (c *BiliClient) SendSMSCode(phone, cid int64, captchaToken string, captchaV
 		"challenge": captchaChallenge,
 		"validate":  captchaValidate,
 		"seccode":   captchaValidate + "|jordan",
+		"go_url":    "https://www.bilibili.com",
 	}
-	res, err := c.client.R().SetFormDataAnyType(form).Post("https://passport.bilibili.com/x/passport-login/sms/send")
+	res, err := c.client.R().SetQueryParams(
+		map[string]string{
+			"x-bili-redirect":    "1",
+			"x-bili-locale-json": `{"c_locale":{"language":"zh","region":"CN"},"always_translate":true}`,
+		},
+	).SetFormDataAnyType(form).Post("https://passport.bilibili.com/x/passport-login/web/sms/send")
 	if err != nil {
 		return "", err
 	}
@@ -111,15 +122,19 @@ func (c *BiliClient) SendSMSCode(phone, cid int64, captchaToken string, captchaV
 // phone is the phone number, captchaKey is the captcha key returned by SendSMSCode.
 func (c *BiliClient) VerifySMSCode(phone, cid int64, captchaKey string, smsCode string) (*api.VerifySMSCodeResponseStruct, error) {
 	form := map[string]any{
-		"tel":    phone,
-		"cid":    cid,
-		"code":   smsCode,
-		"source": "main_web",
-		"key":    captchaKey,
-		"go_url": "https://www.bilibili.com",
-		"keep":   true,
+		"tel":         phone,
+		"cid":         cid,
+		"code":        smsCode,
+		"source":      "main_web",
+		"captcha_key": captchaKey,
+		"go_url":      "https://www.bilibili.com",
 	}
-	res, err := c.client.R().SetFormDataAnyType(form).Post("https://passport.bilibili.com/x/passport-login/web/login/sms")
+	res, err := c.client.R().SetQueryParams(
+		map[string]string{
+			"x-bili-redirect":    "1",
+			"x-bili-locale-json": `{"c_locale":{"language":"zh","region":"CN"},"always_translate":true}`,
+		},
+	).SetFormDataAnyType(form).Post("https://passport.bilibili.com/x/passport-login/web/login/sms")
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +160,13 @@ func (c *BiliClient) VerifySMSCode(phone, cid int64, captchaKey string, smsCode 
 // salt is a 16-char hex string, valid for 20 seconds.
 // pubKey is the RSA public key in PEM format.
 func (c *BiliClient) GetPasswordKey() (salt string, pubKeyPEM string, err error) {
-	res, err := c.client.R().Get("https://passport.bilibili.com/x/passport-login/web/key")
+	res, err := c.client.R().SetQueryParams(
+		map[string]string{
+			"x-bili-redirect":    "1",
+			"x-bili-locale-json": `{"c_locale":{"language":"zh","region":"CN"},"always_translate":true}`,
+			"_":                  fmt.Sprintf("%d", c.Now().UnixMilli()),
+		},
+	).Get("https://passport.bilibili.com/x/passport-login/web/key")
 	if err != nil {
 		return "", "", err
 	}
@@ -187,18 +208,24 @@ func encryptPassword(password, salt, pubKeyPEM string) (string, error) {
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
+// EncryptPassword encrypts a plaintext password using the salt and public key
+// returned by GetPasswordKey.
+func EncryptPassword(password, salt, pubKeyPEM string) (string, error) {
+	return encryptPassword(password, salt, pubKeyPEM)
+}
+
 // PasswordLogin performs Bilibili web password login.
 //
 // The caller must obtain and solve the captcha separately, then pass
 // token, challenge, validate and seccode (validate + "|jordan").
 //
-// On success, RefreshToken and cookies are saved automatically,
-// and an SSO redirect is performed.
+// On success, RefreshToken and cookies are saved automatically.
+// If status is not 0, the login failed.
+// If status is 2, need sms code verification.
 func (c *BiliClient) PasswordLogin(username, encryptedPassword, token, challenge, validate, seccode string) (*api.PasswordLoginResponseStruct, error) {
 	form := map[string]any{
 		"username":  username,
 		"password":  encryptedPassword,
-		"keep":      true,
 		"token":     token,
 		"challenge": challenge,
 		"validate":  validate,
@@ -206,7 +233,12 @@ func (c *BiliClient) PasswordLogin(username, encryptedPassword, token, challenge
 		"source":    "main_web",
 		"go_url":    "https://www.bilibili.com",
 	}
-	res, err := c.client.R().SetFormDataAnyType(form).Post("https://passport.bilibili.com/x/passport-login/web/login")
+	res, err := c.client.R().SetQueryParams(
+		map[string]string{
+			"x-bili-redirect":    "1",
+			"x-bili-locale-json": `{"c_locale":{"language":"zh","region":"CN"},"always_translate":true}`,
+		},
+	).SetFormDataAnyType(form).Post("https://passport.bilibili.com/x/passport-login/web/login")
 	if err != nil {
 		return nil, fmt.Errorf("password login: %w", err)
 	}

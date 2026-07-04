@@ -169,27 +169,29 @@ type IntentSummary struct {
 // dispatcher, account manager, worker client, and local worker manager,
 // and exposes high-level operations to the Wails frontend.
 type ClusterService struct {
-	repository      *clusterstorage.Repository
-	client          *employer.WorkerClient
-	dispatcher      *dispatcher.Dispatcher
-	accounts        *accounts.Manager
-	provisioner     *WorkerProvisioner
-	local           employer.LocalWorkerManager
-	mu              sync.RWMutex
-	waveMu          sync.Mutex
-	waveCancels     map[string]context.CancelFunc
-	mainAccountMu   sync.Mutex
-	phases          map[string]domain.Phase
-	loginSessions   map[string]*accountLoginSession
-	catalog         *biliutils.BiliClient
-	cancel          context.CancelFunc
-	notify          func(string)
-	wailsApp        *application.App
-	globalCfg       globalConfig        // pushed to all workers via Configure RPC
-	workers         []domain.WorkerNode // cached worker list for provisioner
-	eventLog        []ClusterEvent      // aggregated event feed (ring buffer)
-	accountBindings map[string]string   // accountID → workerID (mutual exclusion)
-	deployMu        sync.RWMutex
-	deployJobs      map[string]*RemoteWorkerDeployJob
-	bwsMeta         map[string]BWSSubmitInput // attemptID → BWS submit metadata
+	repository           *clusterstorage.Repository
+	client               *employer.WorkerClient
+	dispatcher           *dispatcher.Dispatcher
+	accounts             *accounts.Manager
+	provisioner          *WorkerProvisioner
+	local                employer.LocalWorkerManager
+	mu                   sync.RWMutex
+	waveMu               sync.Mutex
+	waveCancels          map[string]context.CancelFunc
+	mainAccountMu        sync.Mutex
+	phases               map[string]domain.Phase
+	loginSessions        map[string]*accountLoginSession
+	loginCaptchaSessions map[string]*loginCaptchaSession
+	captchaSolver        biliutils.CaptchaSolverFn
+	catalog              *biliutils.BiliClient
+	cancel               context.CancelFunc
+	notify               func(string)
+	wailsApp             *application.App
+	globalCfg            globalConfig        // pushed to all workers via Configure RPC
+	workers              []domain.WorkerNode // cached worker list for provisioner
+	eventLog             []ClusterEvent      // aggregated event feed (ring buffer)
+	accountBindings      map[string]string   // accountID → workerID (mutual exclusion)
+	deployMu             sync.RWMutex
+	deployJobs           map[string]*RemoteWorkerDeployJob
+	bwsMeta              map[string]BWSSubmitInput // attemptID → BWS submit metadata
 }

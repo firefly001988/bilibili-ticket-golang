@@ -174,64 +174,7 @@ func main() {
 	})
 
 	var solverFunc = func(gt string, challenge string) (string, error) {
-		// 分步求解流水线 — 不使用一键 Solve（存在 bug）
-		_ = challenge // pre-declare
-
-		captType, err := gc.GetType(gt, challenge, "")
-		if err != nil {
-			return "", fmt.Errorf("GetType error: %w", err)
-		}
-
-		var args *gc.NewCSArgs
-		switch captType {
-		case gc.TypeClick:
-			args, err = gc.GetNewCSArgsClick(gt, challenge)
-		case gc.TypeSlide:
-			args, err = gc.GetNewCSArgsSlide(gt, challenge)
-		default:
-			return "", fmt.Errorf("unknown captcha type: %s", captType)
-		}
-		if err != nil {
-			return "", fmt.Errorf("GetNewCSArgs error: %w", err)
-		}
-
-		before := time.Now()
-
-		var key string
-		switch captType {
-		case gc.TypeClick:
-			key, err = gc.CalculateKeyClick(args.PicURL)
-		case gc.TypeSlide:
-			key, err = gc.CalculateKeySlide(args.FullBgURL, args.MissBgURL, args.SliderURL)
-		}
-		if err != nil {
-			return "", fmt.Errorf("CalculateKey error: %w", err)
-		}
-
-		var w string
-		switch captType {
-		case gc.TypeClick:
-			w, err = gc.GenerateWClick(key, gt, challenge, args.C, args.S)
-		case gc.TypeSlide:
-			w, err = gc.GenerateWSlide(key, gt, challenge, args.C, args.S)
-		}
-		if err != nil {
-			return "", fmt.Errorf("GenerateW error: %w", err)
-		}
-
-		// 点选验证码生成 w 后需要等待 2 秒提交
-		if captType == gc.TypeClick {
-			use := time.Since(before)
-			if use < 2*time.Second {
-				time.Sleep(2*time.Second - use)
-			}
-		}
-
-		result, err := gc.Verify(gt, challenge, w)
-		if err != nil {
-			return "", fmt.Errorf("Verify error: %w", err)
-		}
-		return result.Validate, nil
+		return gc.Solve(gt, challenge)
 	}
 
 	// 初始化 captcha DLL
@@ -241,6 +184,11 @@ func main() {
 	} else {
 		v, _ := gc.Version()
 		log.Printf("[main] captcha DLL loaded (version=%s, commit=%s)", v.Version, v.GitCommit)
+
+		// 预热验证码模块，加载 ONNX 模型，避免首次请求耗时过长
+		if err := gc.Warmup(); err != nil {
+			log.Printf("[main] captcha warmup failed (non-fatal): %v", err)
+		}
 
 		// Wire the solver into BiliClient so voucher errors are auto-resolved.
 		c.SetCaptchaSolver(solverFunc)

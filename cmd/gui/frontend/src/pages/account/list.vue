@@ -3,13 +3,23 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
 import VueQr from 'vue-qr'
+import GeetestCaptcha from '@/components/GeetestCaptcha.vue'
 import {
     Snapshot,
     BeginAccountLogin,
     PollAccountLogin,
+    BeginAccountSMSLogin,
+    FinishAccountSMSLogin,
+    AccountPasswordLogin,
+    PrepareSafecenterCaptcha,
+    SendAccountSafecenterSMSCode,
+    FinishAccountSafecenterSMSLogin,
     DeleteAccount,
     ImportAccount,
     SetAccountTags,
+    HasLoginCaptchaSolver,
+    PrepareLoginCaptcha,
+    GetLoginCountries,
 } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t } = useI18n()
@@ -40,6 +50,23 @@ const loginQRExpiry = ref(0)
 const loginPolling = ref(false)
 const loginStarting = ref(false)
 const loginErrorMsg = ref('')
+const loginMode = ref<'qr' | 'sms' | 'password'>('qr')
+const loginPhone = ref('')
+const loginCid = ref('')
+const loginCountryList = ref<{ id: number; cname: string; country_id: string }[]>([])
+const loginCountryLoading = ref(false)
+const loginSMSCode = ref('')
+const loginUsername = ref('')
+const loginPassword = ref('')
+const smsSending = ref(false)
+const smsSent = ref(false)
+const smsSubmitting = ref(false)
+const passwordSubmitting = ref(false)
+const safecenterSessionID = ref('')
+const safecenterSMSCode = ref('')
+const safecenterSMSSent = ref(false)
+const safecenterSMSSending = ref(false)
+const safecenterSubmitting = ref(false)
 let loginTimer: ReturnType<typeof setInterval> | null = null
 
 // Import dialog
@@ -56,6 +83,12 @@ const showTagsDialog = ref(false)
 const tagTarget = ref<AccountSummary | null>(null)
 const tagDraft = ref('')
 const savingTags = ref(false)
+
+// ── Manual captcha state ───────────────────────────────────────
+const needsManualCaptcha = ref(false)
+const showCaptchaDialog = ref(false)
+const manualCaptchaPrepare = ref<{ sessionId: string; gt: string; challenge: string } | null>(null)
+const pendingManualLogin = ref<'sms' | 'password' | 'safecenter' | null>(null)
 
 // ── Cooldown countdown timers ──────────────────────────────────
 const cooldownTimers = ref<Record<string, number>>({})
@@ -89,10 +122,27 @@ async function load() {
     loading.value = false
 }
 
-onMounted(() => {
+onMounted(async () => {
     load()
     cooldownInterval = setInterval(updateCooldownTimers, 1000)
+    try { needsManualCaptcha.value = !(await HasLoginCaptchaSolver()) } catch { needsManualCaptcha.value = true }
+    fetchCountryList()
 })
+
+async function fetchCountryList() {
+    loginCountryLoading.value = true
+    try {
+        const list = await GetLoginCountries()
+        const all: { id: number; cname: string; country_id: string }[] = []
+        if (list?.common) for (const c of list.common) all.push(c)
+        if (list?.others) for (const c of list.others) all.push(c)
+        loginCountryList.value = all
+        // Auto-select China (country_id="86") if present
+        const cn = all.find(c => c.country_id === '86')
+        if (cn) loginCid.value = cn.country_id
+    } catch { /* ignore */ }
+    loginCountryLoading.value = false
+}
 
 onUnmounted(() => {
     if (loginTimer) clearInterval(loginTimer)
@@ -170,6 +220,11 @@ function cancelLogin() {
     loginSessionID.value = ''
     loginStatusMsg.value = ''
     loginErrorMsg.value = ''
+    smsSent.value = false
+    loginSMSCode.value = ''
+    safecenterSessionID.value = ''
+    safecenterSMSCode.value = ''
+    safecenterSMSSent.value = false
 }
 
 function closeLoginDialog() {
@@ -179,6 +234,228 @@ function closeLoginDialog() {
     loginSessionID.value = ''
     loginStatusMsg.value = ''
     loginErrorMsg.value = ''
+    smsSent.value = false
+    loginSMSCode.value = ''
+    loginPassword.value = ''
+    safecenterSessionID.value = ''
+    safecenterSMSCode.value = ''
+    safecenterSMSSent.value = false
+}
+
+async function sendSMSCode() {
+    if (!loginPhone.value.trim()) {
+        messages.add({ text: t('account.phoneRequired'), color: 'warning' })
+        return
+    }
+    smsSending.value = true
+    loginErrorMsg.value = ''
+    try {
+        // Without captcha DLL: prepare captcha first, then send SMS after user solves it
+        if (needsManualCaptcha.value) {
+            pendingManualLogin.value = 'sms'
+            const prep = await PrepareLoginCaptcha()
+            manualCaptchaPrepare.value = { sessionId: prep.sessionId, gt: prep.gt, challenge: prep.challenge }
+            showCaptchaDialog.value = true
+            smsSending.value = false
+            return
+        }
+        const result = await BeginAccountSMSLogin(loginPhone.value.trim(), Number(loginCid.value), '', '', '', '')
+        if (!result?.sessionId) {
+            throw new Error(t('account.loginSessionMissing'))
+        }
+        loginSessionID.value = result.sessionId
+        smsSent.value = true
+        loginStatusMsg.value = t('account.smsSent')
+        messages.add({ text: t('account.smsSent'), color: 'success' })
+    } catch (e: any) {
+        loginErrorMsg.value = t('account.smsSendFailed', { error: String(e) })
+        messages.add({ text: loginErrorMsg.value, color: 'error' })
+    } finally {
+        smsSending.value = false
+    }
+}
+
+async function finishSMSLogin() {
+    if (!loginSessionID.value || !loginSMSCode.value.trim()) {
+        messages.add({ text: t('account.smsCodeRequired'), color: 'warning' })
+        return
+    }
+    smsSubmitting.value = true
+    loginErrorMsg.value = ''
+    try {
+        await FinishAccountSMSLogin(loginSessionID.value, loginPhone.value.trim(), Number(loginCid.value), loginSMSCode.value.trim())
+        closeLoginDialog()
+        await load()
+        messages.add({ text: t('account.loginSuccess'), color: 'success' })
+    } catch (e: any) {
+        loginErrorMsg.value = t('account.smsLoginFailed', { error: String(e) })
+        messages.add({ text: loginErrorMsg.value, color: 'error' })
+    } finally {
+        smsSubmitting.value = false
+    }
+}
+
+async function loginWithPassword() {
+    if (!loginUsername.value.trim() || !loginPassword.value) {
+        messages.add({ text: t('account.passwordFormRequired'), color: 'warning' })
+        return
+    }
+    passwordSubmitting.value = true
+    loginErrorMsg.value = ''
+    try {
+        // Without captcha DLL: prepare captcha first, then login after user solves it
+        if (needsManualCaptcha.value) {
+            pendingManualLogin.value = 'password'
+            const prep = await PrepareLoginCaptcha()
+            manualCaptchaPrepare.value = { sessionId: prep.sessionId, gt: prep.gt, challenge: prep.challenge }
+            showCaptchaDialog.value = true
+            passwordSubmitting.value = false
+            return
+        }
+        const result = await AccountPasswordLogin(loginUsername.value.trim(), loginPassword.value, '', '', '', '', '')
+        if (result?.needSafecenterVerify && result.sessionId) {
+            await beginSafecenterSMS(result.sessionId)
+            return
+        }
+        closeLoginDialog()
+        await load()
+        messages.add({ text: t('account.loginSuccess'), color: 'success' })
+    } catch (e: any) {
+        loginErrorMsg.value = t('account.passwordLoginFailed', { error: String(e) })
+        messages.add({ text: loginErrorMsg.value, color: 'error' })
+    } finally {
+        passwordSubmitting.value = false
+    }
+}
+
+// ── Manual captcha callback ────────────────────────────────────
+async function onCaptchaSolved(result: { validate: string; seccode: string }) {
+    if (!manualCaptchaPrepare.value) return
+    const { sessionId, challenge } = manualCaptchaPrepare.value
+    const { validate, seccode } = result
+    loginErrorMsg.value = ''
+
+    if (pendingManualLogin.value === 'sms') {
+        smsSending.value = true
+        try {
+            const res = await BeginAccountSMSLogin(
+                loginPhone.value.trim(),
+                Number(loginCid.value),
+                '',
+                sessionId,
+                challenge,
+                validate,
+            )
+            if (!res?.sessionId) {
+                throw new Error(t('account.loginSessionMissing'))
+            }
+            loginSessionID.value = res.sessionId
+            smsSent.value = true
+            loginStatusMsg.value = t('account.smsSent')
+            messages.add({ text: t('account.smsSent'), color: 'success' })
+        } catch (e: any) {
+            loginErrorMsg.value = t('account.smsSendFailed', { error: String(e) })
+            messages.add({ text: loginErrorMsg.value, color: 'error' })
+        } finally {
+            smsSending.value = false
+        }
+    } else if (pendingManualLogin.value === 'password') {
+        passwordSubmitting.value = true
+        try {
+            const result = await AccountPasswordLogin(
+                loginUsername.value.trim(),
+                loginPassword.value,
+                '',
+                sessionId,
+                challenge,
+                validate,
+                seccode,
+            )
+            if (result?.needSafecenterVerify && result.sessionId) {
+                pendingManualLogin.value = null
+                manualCaptchaPrepare.value = null
+                showCaptchaDialog.value = false
+                await beginSafecenterSMS(result.sessionId)
+                return
+            }
+            closeLoginDialog()
+            await load()
+            messages.add({ text: t('account.loginSuccess'), color: 'success' })
+        } catch (e: any) {
+            loginErrorMsg.value = t('account.passwordLoginFailed', { error: String(e) })
+            messages.add({ text: loginErrorMsg.value, color: 'error' })
+        } finally {
+            passwordSubmitting.value = false
+        }
+    } else if (pendingManualLogin.value === 'safecenter') {
+        safecenterSMSSending.value = true
+        try {
+            await SendAccountSafecenterSMSCode(sessionId, challenge, validate)
+            safecenterSessionID.value = sessionId
+            safecenterSMSSent.value = true
+            loginStatusMsg.value = t('account.safecenterSMSSent')
+            messages.add({ text: t('account.safecenterSMSSent'), color: 'success' })
+        } catch (e: any) {
+            loginErrorMsg.value = t('account.safecenterSMSSendFailed', { error: String(e) })
+            messages.add({ text: loginErrorMsg.value, color: 'error' })
+        } finally {
+            safecenterSMSSending.value = false
+        }
+    }
+
+    pendingManualLogin.value = null
+    manualCaptchaPrepare.value = null
+}
+
+async function beginSafecenterSMS(sessionId: string) {
+    safecenterSessionID.value = sessionId
+    safecenterSMSCode.value = ''
+    safecenterSMSSent.value = false
+    loginStatusMsg.value = t('account.safecenterVerifyRequired')
+    if (needsManualCaptcha.value) {
+        pendingManualLogin.value = 'safecenter'
+        const prep = await PrepareSafecenterCaptcha(sessionId)
+        manualCaptchaPrepare.value = { sessionId: prep.sessionId, gt: prep.gt, challenge: prep.challenge }
+        showCaptchaDialog.value = true
+        return
+    }
+    safecenterSMSSending.value = true
+    try {
+        await SendAccountSafecenterSMSCode(sessionId, '', '')
+        safecenterSMSSent.value = true
+        loginStatusMsg.value = t('account.safecenterSMSSent')
+        messages.add({ text: t('account.safecenterSMSSent'), color: 'success' })
+    } catch (e: any) {
+        loginErrorMsg.value = t('account.safecenterSMSSendFailed', { error: String(e) })
+        messages.add({ text: loginErrorMsg.value, color: 'error' })
+    } finally {
+        safecenterSMSSending.value = false
+    }
+}
+
+async function resendSafecenterSMS() {
+    if (!safecenterSessionID.value) return
+    await beginSafecenterSMS(safecenterSessionID.value)
+}
+
+async function finishSafecenterLogin() {
+    if (!safecenterSessionID.value || !safecenterSMSCode.value.trim()) {
+        messages.add({ text: t('account.smsCodeRequired'), color: 'warning' })
+        return
+    }
+    safecenterSubmitting.value = true
+    loginErrorMsg.value = ''
+    try {
+        await FinishAccountSafecenterSMSLogin(safecenterSessionID.value, safecenterSMSCode.value.trim())
+        closeLoginDialog()
+        await load()
+        messages.add({ text: t('account.loginSuccess'), color: 'success' })
+    } catch (e: any) {
+        loginErrorMsg.value = t('account.safecenterVerifyFailed', { error: String(e) })
+        messages.add({ text: loginErrorMsg.value, color: 'error' })
+    } finally {
+        safecenterSubmitting.value = false
+    }
 }
 
 // ── Import ────────────────────────────────────────────────────
@@ -256,6 +533,13 @@ async function saveTags() {
 // ── Computed ──────────────────────────────────────────────────
 const qrExpirySeconds = ref(0)
 
+// ── Manual captcha dialog close ────────────────────────────────
+function closeCaptchaDialog() {
+    showCaptchaDialog.value = false
+    pendingManualLogin.value = null
+    manualCaptchaPrepare.value = null
+}
+
 </script>
 
 <template>
@@ -310,7 +594,8 @@ const qrExpirySeconds = ref(0)
                             <v-chip v-for="tag in acc.tags || []" :key="tag" size="x-small" variant="tonal">
                                 {{ tag }}
                             </v-chip>
-                            <span v-if="!acc.tags || acc.tags.length === 0" class="text-caption text-medium-emphasis">—</span>
+                            <span v-if="!acc.tags || acc.tags.length === 0"
+                                class="text-caption text-medium-emphasis">—</span>
                         </div>
                     </td>
                     <td>
@@ -352,42 +637,120 @@ const qrExpirySeconds = ref(0)
         </v-table>
 
         <!-- ═══ Add Account (QR Login) Dialog ═══ -->
-        <v-dialog v-model="showLoginDialog" max-width="480" persistent>
+        <v-dialog v-model="showLoginDialog" max-width="620" persistent>
             <v-card class="pa-4">
                 <v-card-title>{{ t('account.addAccountTitle') }}</v-card-title>
                 <v-card-text>
-                    <!-- QR code display -->
-                    <div v-if="loginQR" class="text-center mt-4">
-                        <vue-qr :text="loginQR" :size="220" :margin="8" class="elevation-2"
-                            style="border-radius:8px;background:white" />
-                        <p class="text-caption text-medium-emphasis mt-2">
-                            {{ t('account.qrExpiresIn') }}
-                            <strong>{{ qrExpirySeconds }}s</strong>
-                        </p>
-                        <v-chip v-if="loginStatusMsg" color="warning" size="small" class="mt-1">
-                            {{ loginStatusMsg }}
-                        </v-chip>
-                    </div>
+                    <v-tabs v-model="loginMode" density="compact" class="mb-4">
+                        <v-tab value="qr">{{ t('account.loginModeQR') }}</v-tab>
+                        <v-tab value="sms">{{ t('account.loginModeSMS') }}</v-tab>
+                        <v-tab value="password">{{ t('account.loginModePassword') }}</v-tab>
+                    </v-tabs>
 
-                    <div v-else class="text-center py-6">
-                        <v-icon size="48" class="mb-2">mdi-qrcode-scan</v-icon>
-                        <p class="text-body-2 text-medium-emphasis">{{ t('account.qrHint') }}</p>
-                        <v-alert v-if="loginErrorMsg" type="error" variant="tonal" density="compact" class="mt-4"
-                            style="text-align:left">
-                            {{ loginErrorMsg }}
-                        </v-alert>
-                    </div>
+                    <v-window v-model="loginMode">
+                        <v-window-item value="qr">
+                            <div v-if="loginQR" class="text-center mt-4">
+                                <vue-qr :text="loginQR" :size="220" :margin="8" class="elevation-2"
+                                    style="border-radius:8px;background:white" />
+                                <p class="text-caption text-medium-emphasis mt-2">
+                                    {{ t('account.qrExpiresIn') }}
+                                    <strong>{{ qrExpirySeconds }}s</strong>
+                                </p>
+                                <v-chip v-if="loginStatusMsg" color="warning" size="small" class="mt-1">
+                                    {{ loginStatusMsg }}
+                                </v-chip>
+                            </div>
+
+                            <div v-else class="text-center py-6">
+                                <v-icon size="48" class="mb-2">mdi-qrcode-scan</v-icon>
+                                <p class="text-body-2 text-medium-emphasis">{{ t('account.qrHint') }}</p>
+                            </div>
+                        </v-window-item>
+
+                        <v-window-item value="sms" class="mt-2">
+                            <v-row dense>
+                                <v-col cols="4">
+                                    <v-autocomplete v-model="loginCid" :items="loginCountryList" item-title="cname"
+                                        item-value="country_id" :label="t('account.countryCode')" variant="outlined"
+                                        density="compact" :loading="loginCountryLoading" hide-details :custom-filter="(_: string, queryText: string, item: any) => {
+                                            const q = queryText.toLowerCase()
+                                            let str = `${item.raw.cname} (+${item.raw.country_id})`
+                                            return String(str).includes(q)
+                                        }" :menu-props="{ width: '280px' }">
+                                        <template #item="{ props: itemProps, item: rawItem }">
+                                            <v-list-item v-bind="itemProps"
+                                                :title="`${rawItem.cname} (+${rawItem.country_id})`" />
+                                        </template>
+                                    </v-autocomplete>
+                                </v-col>
+                                <v-col cols="8">
+                                    <v-text-field v-model="loginPhone" :label="t('account.phone')" variant="outlined"
+                                        density="compact" />
+                                </v-col>
+                                <v-col cols="12">
+                                    <v-text-field v-model="loginSMSCode" :label="t('account.smsCode')"
+                                        variant="outlined" density="compact" :disabled="!smsSent" />
+                                </v-col>
+                            </v-row>
+                            <v-chip v-if="loginStatusMsg" color="success" size="small" variant="tonal">
+                                {{ loginStatusMsg }}
+                            </v-chip>
+                        </v-window-item>
+
+                        <v-window-item value="password" class="mt-2">
+                            <v-text-field v-model="loginUsername" :label="t('account.username')" variant="outlined"
+                                density="compact" autocomplete="username" :disabled="!!safecenterSessionID" />
+                            <v-text-field v-model="loginPassword" :label="t('account.password')" variant="outlined"
+                                density="compact" type="password" autocomplete="current-password"
+                                :disabled="!!safecenterSessionID" />
+                            <v-alert v-if="safecenterSessionID" type="warning" variant="tonal" density="compact"
+                                class="mb-3">
+                                {{ t('account.safecenterVerifyRequired') }}
+                            </v-alert>
+                            <v-text-field v-if="safecenterSessionID" v-model="safecenterSMSCode"
+                                :label="t('account.smsCode')" variant="outlined" density="compact"
+                                :disabled="!safecenterSMSSent" />
+                        </v-window-item>
+                    </v-window>
+
+                    <v-alert v-if="loginErrorMsg" type="error" variant="tonal" density="compact" class="mt-4"
+                        style="text-align:left">
+                        {{ loginErrorMsg }}
+                    </v-alert>
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
                     <v-btn v-if="!loginPolling" variant="text" @click="closeLoginDialog">
                         {{ t('common.cancel') }}
                     </v-btn>
-                    <v-btn v-if="!loginPolling" color="primary" :loading="loginStarting" @click="startLogin">
+                    <v-btn v-if="loginMode === 'qr' && !loginPolling" color="primary" :loading="loginStarting"
+                        @click="startLogin">
                         {{ t('account.generateQR') }}
                     </v-btn>
-                    <v-btn v-else variant="tonal" color="warning" @click="cancelLogin">
+                    <v-btn v-else-if="loginMode === 'qr'" variant="tonal" color="warning" @click="cancelLogin">
                         {{ t('account.cancelLogin') }}
+                    </v-btn>
+                    <v-btn v-if="loginMode === 'sms'" variant="tonal" :loading="smsSending"
+                        :disabled="!loginCid || !loginPhone.trim()" @click="sendSMSCode">
+                        {{ smsSent ? t('account.resendSMS') : t('account.sendSMS') }}
+                    </v-btn>
+                    <v-btn v-if="loginMode === 'sms'" color="primary" :disabled="!smsSent || !loginSMSCode.trim()"
+                        :loading="smsSubmitting" @click="finishSMSLogin">
+                        {{ t('account.login') }}
+                    </v-btn>
+                    <v-btn v-if="loginMode === 'password' && !safecenterSessionID" color="primary"
+                        :disabled="!loginUsername.trim() || !loginPassword" :loading="passwordSubmitting"
+                        @click="loginWithPassword">
+                        {{ t('account.login') }}
+                    </v-btn>
+                    <v-btn v-if="loginMode === 'password' && safecenterSessionID" variant="tonal"
+                        :loading="safecenterSMSSending" @click="resendSafecenterSMS">
+                        {{ safecenterSMSSent ? t('account.resendSMS') : t('account.sendSMS') }}
+                    </v-btn>
+                    <v-btn v-if="loginMode === 'password' && safecenterSessionID" color="primary"
+                        :disabled="!safecenterSMSSent || !safecenterSMSCode.trim()" :loading="safecenterSubmitting"
+                        @click="finishSafecenterLogin">
+                        {{ t('account.login') }}
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -453,5 +816,9 @@ const qrExpirySeconds = ref(0)
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <!-- ═══ Manual Geetest Captcha Dialog ═══ -->
+        <GeetestCaptcha v-if="manualCaptchaPrepare" v-model="showCaptchaDialog" :gt="manualCaptchaPrepare.gt"
+            :challenge="manualCaptchaPrepare.challenge" @solved="onCaptchaSolved" />
     </v-container>
 </template>

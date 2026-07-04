@@ -29,6 +29,7 @@ var (
 	cGenerateWClick    func(key, gt, challenge string, c unsafe.Pointer, cLen int32, s string) *byte
 	cGenerateWSlide    func(key, gt, challenge string, c unsafe.Pointer, cLen int32, s string) *byte
 	cVerify            func(gt, challenge, w string) *byte
+	cWarmup            func() *byte
 )
 
 // =============================================================================
@@ -79,6 +80,7 @@ func registerAll() error {
 	purego.RegisterLibFunc(&cGenerateWClick, handle, "captcha_generate_w_click")
 	purego.RegisterLibFunc(&cGenerateWSlide, handle, "captcha_generate_w_slide")
 	purego.RegisterLibFunc(&cVerify, handle, "captcha_verify")
+	registerOptionalLibFunc(&cWarmup, handle, "captcha_warmup")
 
 	if cFreeString == nil {
 		return fmt.Errorf("captcha: captcha_free_string 未绑定——库可能不兼容")
@@ -87,6 +89,13 @@ func registerAll() error {
 		return fmt.Errorf("captcha: captcha_version 未绑定——库可能不兼容")
 	}
 	return nil
+}
+
+func registerOptionalLibFunc(fptr any, handle uintptr, name string) {
+	defer func() {
+		_ = recover()
+	}()
+	purego.RegisterLibFunc(fptr, handle, name)
 }
 
 // =============================================================================
@@ -231,4 +240,14 @@ func GenerateWSlide(key, gt, challenge string, c []byte, s string) (string, erro
 // w 可为空字符串。
 func Verify(gt, challenge, w string) (*VerifyResult, error) {
 	return parseData[*VerifyResult](copyAndFree(cVerify(gt, challenge, w)))
+}
+
+// Warmup 预热验证码模块（加载 ONNX 模型、初始化推理引擎）。
+// 建议在服务启动时调用一次，避免首次请求耗时过长。
+func Warmup() error {
+	if cWarmup == nil {
+		return fmt.Errorf("captcha: captcha_warmup 未绑定——库版本不支持预热")
+	}
+	_, err := parseData[string](copyAndFree(cWarmup()))
+	return err
 }

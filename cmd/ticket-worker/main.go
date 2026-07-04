@@ -104,63 +104,16 @@ func workerFactory(config *worker.Config) (worker.BackendFactory, func(), func(g
 		return nil, func() {}, nil, fmt.Errorf("captcha Init: %w", err)
 	}
 
+	// 预热验证码模块，加载 ONNX 模型，避免首次请求耗时过长
+	if err := gc.Warmup(); err != nil {
+		fmt.Printf("[worker] captcha warmup failed (non-fatal): %v\n", err)
+	}
+
 	v, _ := gc.Version()
 	config.PluginVersion = v.Version + "+" + v.GitCommit
 
 	solverFunc := func(gt, challenge string) (string, error) {
-		captType, err := gc.GetType(gt, challenge, "")
-		if err != nil {
-			return "", err
-		}
-
-		var args *gc.NewCSArgs
-		switch captType {
-		case gc.TypeClick:
-			args, err = gc.GetNewCSArgsClick(gt, challenge)
-		case gc.TypeSlide:
-			args, err = gc.GetNewCSArgsSlide(gt, challenge)
-		default:
-			return "", fmt.Errorf("unknown captcha type: %s", captType)
-		}
-		if err != nil {
-			return "", err
-		}
-
-		started := time.Now()
-
-		var key string
-		switch captType {
-		case gc.TypeClick:
-			key, err = gc.CalculateKeyClick(args.PicURL)
-		case gc.TypeSlide:
-			key, err = gc.CalculateKeySlide(args.FullBgURL, args.MissBgURL, args.SliderURL)
-		}
-		if err != nil {
-			return "", err
-		}
-
-		var w string
-		switch captType {
-		case gc.TypeClick:
-			w, err = gc.GenerateWClick(key, gt, challenge, args.C, args.S)
-		case gc.TypeSlide:
-			w, err = gc.GenerateWSlide(key, gt, challenge, args.C, args.S)
-		}
-		if err != nil {
-			return "", err
-		}
-
-		if captType == gc.TypeClick {
-			if elapsed := time.Since(started); elapsed < 2*time.Second {
-				time.Sleep(2*time.Second - elapsed)
-			}
-		}
-
-		result, err := gc.Verify(gt, challenge, w)
-		if err != nil {
-			return "", err
-		}
-		return result.Validate, nil
+		return gc.Solve(gt, challenge)
 	}
 
 	return func(spec domain.ExecutionSpec) (executor.Backend, error) {

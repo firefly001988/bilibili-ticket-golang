@@ -163,7 +163,7 @@ type CountryListStruct struct {
 type CountryCidStruct struct {
 	Id        int    `json:"id"`
 	CName     string `json:"cname"`
-	CountryId int    `json:"country_id"`
+	CountryId string `json:"country_id"`
 }
 
 type LoginCaptchaStruct struct {
@@ -193,7 +193,7 @@ type PasswordLoginResponseStruct struct {
 	RefreshToken string `json:"refresh_token"`
 	Status       int    `json:"status"`
 	Timestamp    int64  `json:"timestamp"`
-	URL          string `json:"url"`          // 游戏分站跨域登录URL
+	URL          string `json:"url"`          // URL 可能是bili游戏URL, 可能是验证URL
 	IsNew        bool   `json:"is_new"`       // 风险验证时存在
 	Hint         string `json:"hint"`         // 风险验证时存在
 	InRegAudit   int    `json:"in_reg_audit"` // 风险验证时存在
@@ -205,4 +205,20 @@ type VerifySMSCodeResponseStruct struct {
 	Hint         string `json:"hint"`
 	Status       int    `json:"status"`
 	Message      string `json:"message"`
+	URL          string `json:"url"`
+}
+
+type SafecenterCaptchaStruct struct {
+	Challenge string `json:"gee_challenge,omitempty"`
+	Gt        string `json:"gee_gt,omitempty"`
+	Token     string `json:"recaptcha_token"`
+	Type      string `json:"recaptcha_type"`
+}
+
+type SafecenterLoginTelVerifyStruct struct {
+	OauthCode string `json:"code"`
+}
+
+type ExchangeCookieResponse struct {
+	RefreshToken string `json:"refresh_token"`
 }

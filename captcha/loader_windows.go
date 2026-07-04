@@ -5,7 +5,9 @@ import (
 )
 
 func openLibrary(name string) (uintptr, error) {
-	dll := windows.NewLazyDLL(name)
-	err := dll.Load()
-	return dll.Handle(), err
+	dll, err := windows.LoadDLL(name)
+	if err != nil {
+		return 0, err
+	}
+	return uintptr(dll.Handle), nil
 }
