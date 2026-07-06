@@ -71,6 +71,18 @@ interface DeployTarget {
     workerId: string
 }
 
+type DeployImportMode = 'csv' | 'json'
+
+interface DeployTargetEntry {
+    target: DeployTarget
+    index: number
+}
+
+interface DeployParseResult {
+    entries: DeployTargetEntry[]
+    errors: string[]
+}
+
 interface DeployItemStatus {
     index: number
     host: string
@@ -166,9 +178,16 @@ const deployOverwriteBinary = ref(true)
 const deployRestartExisting = ref(true)
 const deploySaveTraffic = ref(false)
 const deployConcurrency = ref(3)
+const deployImportMode = ref<DeployImportMode>('csv')
+const showDeployImportDialog = ref(false)
+const deployCsvText = ref('')
+const deployCsvDefaultUsername = ref('root')
+const deployCsvDefaultPassword = ref('')
+const deployJsonText = ref('')
 const deployJob = ref<DeployJob | null>(null)
 const deploying = ref(false)
 const deployActiveTargetRows = ref<number[]>([])
+const deployActiveTargets = ref<DeployTarget[]>([])
 const deployPrunedJobIds = new Set<string>()
 let deployPollInterval: ReturnType<typeof setInterval> | null = null
 
@@ -641,6 +660,97 @@ function defaultDeployTarget(): DeployTarget {
     }
 }
 
+function cloneDeployTarget(target: DeployTarget): DeployTarget {
+    return { ...target }
+}
+
+function normalizeDeployTarget(input: any): DeployTarget {
+    const target = defaultDeployTarget()
+    if (!input || typeof input !== 'object') return target
+    target.host = String(input.host ?? '').trim()
+    target.sshPort = Number(input.sshPort) || 22
+    target.username = String(input.username ?? '').trim()
+    target.authType = input.authType === 'key' ? 'key' : 'password'
+    target.password = String(input.password ?? '')
+    target.privateKeyPath = String(input.privateKeyPath ?? '')
+    target.privateKeyPassphrase = String(input.privateKeyPassphrase ?? '')
+    target.workerPort = Number(input.workerPort) || 37900
+    target.name = String(input.name ?? '')
+    target.workerId = String(input.workerId ?? input.workerID ?? '')
+    return target
+}
+
+function deployTargetToPayload(t: DeployTarget) {
+    return {
+        host: t.host.trim(),
+        sshPort: Number(t.sshPort) || 22,
+        username: t.username.trim(),
+        authType: t.authType || 'password',
+        password: t.password,
+        privateKeyPath: t.privateKeyPath.trim(),
+        privateKeyPassphrase: t.privateKeyPassphrase,
+        workerPort: Number(t.workerPort) || 37900,
+        name: t.name.trim(),
+        workerId: t.workerId.trim(),
+    }
+}
+
+function currentDeployOptions() {
+    const packageType = deployPackageType.value
+    const binarySource = deployBinarySource.value
+    return {
+        packageType,
+        binarySource,
+        localBinaryPath: deployLocalBinaryPath.value.trim(),
+        downloadUrl: deployDownloadUrl.value.trim(),
+        installDir: deployInstallDir.value.trim() || '~/bilibili-ticket-golang',
+        startMode: deployStartMode.value || 'nohup',
+        overwriteBinary: deployOverwriteBinary.value,
+        restartExisting: deployRestartExisting.value,
+        saveTraffic: packageType === 'binary'
+            && binarySource === 'local'
+            && deploySaveTraffic.value,
+        concurrency: Number(deployConcurrency.value) || 3,
+    }
+}
+
+function currentDeployPayload(targets: DeployTarget[]) {
+    return {
+        targets: targets.map(deployTargetToPayload),
+        ...currentDeployOptions(),
+    }
+}
+
+function serializeDeployTargetsToCsv(targets: DeployTarget[]) {
+    return targets
+        .filter(target => target.host.trim())
+        .map(target => [target.username.trim(), target.host.trim(), target.password]
+            .map(csvEscapeField)
+            .join(','))
+        .join('\n')
+}
+
+function csvEscapeField(value: string) {
+    if (!/[",\n\r]/.test(value)) return value
+    return `"${value.replace(/"/g, '""')}"`
+}
+
+function serializeDeployTargetsToJson(targets: DeployTarget[]) {
+    return JSON.stringify(targets.filter(target => target.host.trim()).map(deployTargetToPayload), null, 2)
+}
+
+function openDeployImport(mode: DeployImportMode) {
+    const targets = deployableTargets.value.map(entry => entry.target)
+    if (mode === 'csv' && !deployCsvText.value.trim()) {
+        deployCsvText.value = serializeDeployTargetsToCsv(targets)
+    }
+    if (mode === 'json' && !deployJsonText.value.trim()) {
+        deployJsonText.value = serializeDeployTargetsToJson(targets)
+    }
+    deployImportMode.value = mode
+    showDeployImportDialog.value = true
+}
+
 function openBatchDeploy() {
     if (deployTargets.value.length === 0) {
         deployTargets.value = [defaultDeployTarget()]
@@ -658,6 +768,127 @@ function removeDeployTarget(index: number) {
     if (deployTargets.value.length === 0) {
         deployTargets.value.push(defaultDeployTarget())
     }
+}
+
+function parseCsvLine(line: string): string[] {
+    const fields: string[] = []
+    let current = ''
+    let inQuotes = false
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i]
+        if (inQuotes) {
+            if (ch === '"') {
+                if (line[i + 1] === '"') {
+                    current += '"'
+                    i++
+                } else {
+                    inQuotes = false
+                }
+            } else {
+                current += ch
+            }
+        } else if (ch === '"') {
+            inQuotes = true
+        } else if (ch === ',') {
+            fields.push(current.trim())
+            current = ''
+        } else {
+            current += ch
+        }
+    }
+    if (inQuotes) throw new Error(t('worker.deployCsvUnclosedQuote'))
+    fields.push(current.trim())
+    return fields
+}
+
+function parseDeployCsv(): DeployParseResult {
+    const entries: DeployTargetEntry[] = []
+    const errors: string[] = []
+    let lastUsername = deployCsvDefaultUsername.value.trim()
+    let lastPassword = deployCsvDefaultPassword.value
+
+    deployCsvText.value.split(/\r?\n/).forEach((rawLine, lineIndex) => {
+        const line = rawLine.trim()
+        if (!line || line.startsWith('#')) return
+        try {
+            const fields = parseCsvLine(rawLine)
+            if (fields.length > 3) {
+                errors.push(t('worker.deployCsvTooManyFields', { line: lineIndex + 1 }))
+                return
+            }
+            const target = defaultDeployTarget()
+            if (fields.length === 1) {
+                target.username = lastUsername
+                target.host = fields[0].trim()
+                target.password = lastPassword
+            } else if (fields.length === 2) {
+                target.username = lastUsername
+                target.host = fields[0].trim()
+                target.password = fields[1] || lastPassword
+            } else {
+                target.username = fields[0] || lastUsername
+                target.host = fields[1].trim()
+                target.password = fields[2] || lastPassword
+            }
+            if (!target.host) {
+                errors.push(t('worker.deployCsvMissingHost', { line: lineIndex + 1 }))
+                return
+            }
+            if (!target.username) {
+                errors.push(t('worker.deployCsvMissingUsername', { line: lineIndex + 1 }))
+                return
+            }
+            lastUsername = target.username
+            lastPassword = target.password
+            entries.push({ target, index: lineIndex })
+        } catch (e: any) {
+            errors.push(t('worker.deployCsvParseFailed', { line: lineIndex + 1, error: String(e?.message || e) }))
+        }
+    })
+    return { entries, errors }
+}
+
+function parseDeployJson(): DeployParseResult {
+    const text = deployJsonText.value.trim()
+    if (!text) return { entries: [], errors: [] }
+    try {
+        const doc = JSON.parse(text)
+        const targetDocs = Array.isArray(doc) ? doc : doc?.targets
+        if (!Array.isArray(targetDocs)) {
+            return { entries: [], errors: [t('worker.deployJsonRootInvalid')] }
+        }
+        const entries = targetDocs.map((target: any, index: number) => ({
+            target: normalizeDeployTarget(target),
+            index,
+        })).filter((entry: DeployTargetEntry) => entry.target.host.trim())
+        return { entries, errors: [] }
+    } catch (e: any) {
+        return { entries: [], errors: [t('worker.deployJsonParseFailed', { error: String(e?.message || e) })] }
+    }
+}
+
+function applyCsvToTable() {
+    const parsed = parseDeployCsv()
+    if (parsed.errors.length) {
+        messages.add({ text: parsed.errors[0], color: 'warning' })
+        return
+    }
+    deployTargets.value = parsed.entries.length
+        ? parsed.entries.map(entry => cloneDeployTarget(entry.target))
+        : [defaultDeployTarget()]
+    showDeployImportDialog.value = false
+}
+
+function applyJsonToTable() {
+    const parsed = parseDeployJson()
+    if (parsed.errors.length) {
+        messages.add({ text: parsed.errors[0], color: 'warning' })
+        return
+    }
+    deployTargets.value = parsed.entries.length
+        ? parsed.entries.map(entry => cloneDeployTarget(entry.target))
+        : [defaultDeployTarget()]
+    showDeployImportDialog.value = false
 }
 
 async function chooseWorkerBinary() {
@@ -701,6 +932,13 @@ const deployableTargets = computed(() => deployTargets.value
     .map((target, index) => ({ target, index }))
     .filter(entry => entry.target.host.trim()))
 
+const deployImportParseResult = computed<DeployParseResult>(() => {
+    if (deployImportMode.value === 'json') return parseDeployJson()
+    return parseDeployCsv()
+})
+
+const deployImportPreviewTargets = computed(() => deployImportParseResult.value.entries.slice(0, 5))
+const deployImportPreviewMoreCount = computed(() => Math.max(0, deployImportParseResult.value.entries.length - deployImportPreviewTargets.value.length))
 const hasDeployableTargets = computed(() => deployableTargets.value.length > 0)
 const deployLocalPathLabel = computed(() => deployPackageType.value === 'targz'
     ? t('worker.deployLocalTarGzPath')
@@ -761,11 +999,12 @@ function validateDeployForm(): boolean {
             return false
         }
     }
-    if (deployBinarySource.value === 'local' && !deployLocalBinaryPath.value.trim()) {
+    const options = currentDeployOptions()
+    if (options.binarySource === 'local' && !options.localBinaryPath) {
         messages.add({ text: t('worker.deployNeedLocalPackage'), color: 'warning' })
         return false
     }
-    if (deployBinarySource.value === 'url' && !deployDownloadUrl.value.trim()) {
+    if (options.binarySource === 'url' && !options.downloadUrl) {
         messages.add({ text: t('worker.deployNeedDownloadUrl'), color: 'warning' })
         return false
     }
@@ -779,30 +1018,8 @@ async function startBatchDeploy() {
     try {
         const targets = deployableTargets.value
         deployActiveTargetRows.value = targets.map(entry => entry.index)
-        const payload = {
-            targets: targets.map(({ target: t }) => ({
-                host: t.host.trim(),
-                sshPort: Number(t.sshPort) || 22,
-                username: t.username.trim(),
-                authType: t.authType || 'password',
-                password: t.password,
-                privateKeyPath: t.privateKeyPath.trim(),
-                privateKeyPassphrase: t.privateKeyPassphrase,
-                workerPort: Number(t.workerPort) || 37900,
-                name: t.name.trim(),
-                workerId: t.workerId.trim(),
-            })),
-            packageType: deployPackageType.value,
-            binarySource: deployBinarySource.value,
-            localBinaryPath: deployLocalBinaryPath.value.trim(),
-            downloadUrl: deployDownloadUrl.value.trim(),
-            installDir: deployInstallDir.value.trim() || '~/bilibili-ticket-golang',
-            startMode: deployStartMode.value || 'nohup',
-            overwriteBinary: deployOverwriteBinary.value,
-            restartExisting: deployRestartExisting.value,
-            saveTraffic: deployPackageType.value === 'binary' && deployBinarySource.value === 'local' && deploySaveTraffic.value,
-            concurrency: Number(deployConcurrency.value) || 3,
-        }
+        deployActiveTargets.value = targets.map(entry => cloneDeployTarget(entry.target))
+        const payload = currentDeployPayload(targets.map(entry => entry.target))
         const jobID = await StartBatchDeployRemoteWorkers(JSON.stringify(payload))
         await pollDeployJob(jobID)
         if (deployPollInterval) clearInterval(deployPollInterval)
@@ -836,9 +1053,12 @@ async function pollDeployJob(jobID?: string) {
 function pruneSucceededDeployTargets(job: DeployJob) {
     if (!job.id || deployPrunedJobIds.has(job.id)) return
     deployPrunedJobIds.add(job.id)
-    const originalIndexes = job.items
+    const succeededPayloadIndexes = new Set(job.items
         .filter(item => item.status === 'succeeded')
-        .map(item => deployActiveTargetRows.value[item.index])
+        .map(item => item.index))
+
+    const originalIndexes = [...succeededPayloadIndexes]
+        .map(index => deployActiveTargetRows.value[index])
         .filter((index): index is number => index !== undefined)
         .sort((a, b) => b - a)
     for (const index of originalIndexes) {
@@ -848,6 +1068,7 @@ function pruneSucceededDeployTargets(job: DeployJob) {
         deployTargets.value.push(defaultDeployTarget())
     }
     deployActiveTargetRows.value = []
+    deployActiveTargets.value = []
 }
 
 async function cancelBatchDeploy() {
@@ -1218,10 +1439,18 @@ async function cancelBatchDeploy() {
                         {{ t('worker.batchDeployHint') }}
                     </v-alert>
 
-                    <div class="text-subtitle-2 justify-start align-center" style="display: flex; gap: .5rem;">
+                    <div class="text-subtitle-2 justify-start align-center" style="display: flex; gap: .5rem; flex-wrap: wrap;">
                         <div>
                             {{ t('worker.deployTargets') }}
                         </div>
+                        <v-btn prepend-icon="mdi-file-delimited-outline" variant="tonal" size="small"
+                            @click="openDeployImport('csv')">
+                            {{ t('worker.deployImportCsv') }}
+                        </v-btn>
+                        <v-btn prepend-icon="mdi-code-json" variant="tonal" size="small"
+                            @click="openDeployImport('json')">
+                            {{ t('worker.deployImportJson') }}
+                        </v-btn>
                         <v-btn prepend-icon="mdi-plus" variant="tonal" size="small" @click="addDeployTarget">
                             {{ t('worker.deployAddTarget') }}
                         </v-btn>
@@ -1429,6 +1658,86 @@ async function cancelBatchDeploy() {
                     <v-btn v-if="hasDeployableTargets || deploying" color="success" :loading="deploying"
                         :disabled="!hasDeployableTargets" @click="startBatchDeploy">
                         {{ t('worker.deployStart') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <!-- ═══ Import Deploy Targets Dialog ═══ -->
+        <v-dialog v-model="showDeployImportDialog" max-width="960" scrollable>
+            <v-card class="pa-4">
+                <v-card-title class="d-flex align-center">
+                    <v-icon start>{{ deployImportMode === 'csv' ? 'mdi-file-delimited-outline' : 'mdi-code-json' }}</v-icon>
+                    {{ deployImportMode === 'csv' ? t('worker.deployImportCsvTitle') : t('worker.deployImportJsonTitle') }}
+                </v-card-title>
+                <v-card-text>
+                    <template v-if="deployImportMode === 'csv'">
+                        <v-alert type="info" variant="tonal" density="compact" class="mb-3">
+                            {{ t('worker.deployCsvHint') }}
+                        </v-alert>
+                        <v-row dense>
+                            <v-col cols="12" md="6">
+                                <v-text-field v-model="deployCsvDefaultUsername"
+                                    :label="t('worker.deployCsvDefaultUsername')" variant="outlined"
+                                    density="compact" />
+                            </v-col>
+                            <v-col cols="12" md="6">
+                                <v-text-field v-model="deployCsvDefaultPassword"
+                                    :label="t('worker.deployCsvDefaultPassword')" type="password" variant="outlined"
+                                    density="compact" />
+                            </v-col>
+                        </v-row>
+                        <v-textarea v-model="deployCsvText" :label="t('worker.deployCsvText')" variant="outlined"
+                            rows="12" class="font-monospace deploy-bulk-textarea" spellcheck="false" />
+                    </template>
+                    <template v-else>
+                        <v-alert type="info" variant="tonal" density="compact" class="mb-3">
+                            {{ t('worker.deployJsonHint') }}
+                        </v-alert>
+                        <v-textarea v-model="deployJsonText" :label="t('worker.deployJsonText')" variant="outlined"
+                            rows="14" class="font-monospace deploy-bulk-textarea" spellcheck="false" />
+                    </template>
+
+                    <v-alert v-if="deployImportParseResult.errors.length" type="error" variant="tonal"
+                        density="compact" class="mt-3">
+                        <div v-for="error in deployImportParseResult.errors.slice(0, 5)" :key="error">{{ error }}</div>
+                    </v-alert>
+                    <v-card v-else-if="deployImportParseResult.entries.length" variant="tonal" class="mt-3 pa-3">
+                        <div class="d-flex align-center mb-2">
+                            <div class="text-subtitle-2">
+                                {{ t('worker.deployPreview', { count: deployImportParseResult.entries.length }) }}
+                            </div>
+                            <v-spacer />
+                            <span v-if="deployImportPreviewMoreCount" class="text-caption text-medium-emphasis">
+                                {{ t('worker.deployPreviewMore', { count: deployImportPreviewMoreCount }) }}
+                            </span>
+                        </div>
+                        <v-table density="compact">
+                            <thead>
+                                <tr>
+                                    <th>{{ t('worker.deployUsername') }}</th>
+                                    <th>{{ t('worker.deployHost') }}</th>
+                                    <th>{{ t('worker.deploySSHPort') }}</th>
+                                    <th>{{ t('worker.deployWorkerPort') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="entry in deployImportPreviewTargets" :key="entry.index">
+                                    <td>{{ entry.target.username }}</td>
+                                    <td>{{ entry.target.host }}</td>
+                                    <td>{{ entry.target.sshPort }}</td>
+                                    <td>{{ entry.target.workerPort }}</td>
+                                </tr>
+                            </tbody>
+                        </v-table>
+                    </v-card>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showDeployImportDialog = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="primary" :disabled="deployImportParseResult.errors.length > 0"
+                        @click="deployImportMode === 'csv' ? applyCsvToTable() : applyJsonToTable()">
+                        {{ t('worker.deployImportToTable') }}
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -1650,5 +1959,10 @@ async function cancelBatchDeploy() {
 .no-spin :deep(input[type='number']::-webkit-inner-spin-button) {
     -webkit-appearance: none;
     margin: 0;
+}
+
+.deploy-bulk-textarea :deep(textarea) {
+    max-height: 360px;
+    overflow: auto;
 }
 </style>
