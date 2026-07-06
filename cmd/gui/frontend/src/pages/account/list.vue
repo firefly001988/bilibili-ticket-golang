@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
 import VueQr from 'vue-qr'
@@ -16,6 +16,8 @@ import {
     FinishAccountSafecenterSMSLogin,
     DeleteAccount,
     ImportAccount,
+    ExportAccounts,
+    RefreshAccountsStatus,
     SetAccountTags,
     HasLoginCaptchaSolver,
     PrepareLoginCaptcha,
@@ -40,6 +42,9 @@ interface AccountSummary {
 // ── State ─────────────────────────────────────────────────────
 const accounts = ref<AccountSummary[]>([])
 const loading = ref(true)
+const selected = ref<Set<string>>(new Set())
+const refreshingStatus = ref(false)
+const exporting = ref(false)
 
 // QR login dialog
 const showLoginDialog = ref(false)
@@ -72,6 +77,11 @@ let loginTimer: ReturnType<typeof setInterval> | null = null
 // Import dialog
 const showImportDialog = ref(false)
 const importDocument = ref('')
+
+// Export dialog
+const showExportDialog = ref(false)
+const exportDocument = ref('')
+const exportTitle = ref('')
 
 // Delete dialog
 const showDeleteDialog = ref(false)
@@ -115,11 +125,31 @@ async function load() {
     try {
         const snap = await Snapshot()
         accounts.value = (snap.accounts || []) as AccountSummary[]
+        pruneSelectedAccounts()
         updateCooldownTimers()
     } catch (e: any) {
         messages.add({ text: t('account.loadFailed', { error: String(e) }), color: 'error' })
     }
     loading.value = false
+}
+
+const allSelected = computed({
+    get: () => accounts.value.length > 0 && selected.value.size === accounts.value.length,
+    set: (val: boolean) => {
+        selected.value = val ? new Set(accounts.value.map(a => a.id)) : new Set()
+    }
+})
+
+function toggleSelect(id: string) {
+    const next = new Set(selected.value)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    selected.value = next
+}
+
+function pruneSelectedAccounts() {
+    const valid = new Set(accounts.value.map(a => a.id))
+    selected.value = new Set([...selected.value].filter(id => valid.has(id)))
 }
 
 onMounted(async () => {
@@ -481,6 +511,69 @@ async function doImport() {
     }
 }
 
+// ── Export / Refresh status ──────────────────────────────────
+async function exportSelectedAccounts() {
+    await exportAccountIDs([...selected.value], t('account.exportSelectedTitle', { count: selected.value.size }))
+}
+
+async function exportSingleAccount(account: AccountSummary) {
+    await exportAccountIDs([account.id], t('account.exportSingleTitle', { name: account.name || account.id }))
+}
+
+async function exportAccountIDs(ids: string[], title: string) {
+    if (ids.length === 0) {
+        messages.add({ text: t('account.selectAtLeastOne'), color: 'warning' })
+        return
+    }
+    exporting.value = true
+    try {
+        exportDocument.value = await ExportAccounts(JSON.stringify(ids))
+        exportTitle.value = title
+        showExportDialog.value = true
+        messages.add({ text: t('account.exportSuccess', { count: ids.length }), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('account.exportFailed', { error: String(e) }), color: 'error' })
+    } finally {
+        exporting.value = false
+    }
+}
+
+async function copyExportDocument() {
+    if (!exportDocument.value) return
+    try {
+        await navigator.clipboard.writeText(exportDocument.value)
+        messages.add({ text: t('account.exportCopied'), color: 'success' })
+    } catch (e: any) {
+        messages.add({ text: t('account.exportCopyFailed', { error: String(e) }), color: 'error' })
+    }
+}
+
+async function refreshSelectedAccountsStatus() {
+    await refreshAccountIDs([...selected.value])
+}
+
+async function refreshSingleAccountStatus(account: AccountSummary) {
+    await refreshAccountIDs([account.id])
+}
+
+async function refreshAccountIDs(ids: string[]) {
+    if (ids.length === 0) {
+        messages.add({ text: t('account.selectAtLeastOne'), color: 'warning' })
+        return
+    }
+    refreshingStatus.value = true
+    try {
+        await RefreshAccountsStatus(JSON.stringify(ids))
+        await load()
+        messages.add({ text: t('account.refreshStatusSuccess', { count: ids.length }), color: 'success' })
+    } catch (e: any) {
+        await load()
+        messages.add({ text: t('account.refreshStatusFailed', { error: String(e) }), color: 'warning' })
+    } finally {
+        refreshingStatus.value = false
+    }
+}
+
 // ── Delete ────────────────────────────────────────────────────
 async function confirmDelete() {
     if (!deleteTarget.value) return
@@ -577,10 +670,37 @@ function closeCaptchaDialog() {
             </v-card-text>
         </v-card>
 
+        <!-- Batch action bar -->
+        <v-slide-y-transition>
+            <v-card v-if="!loading && accounts.length > 0 && selected.size > 0" color="primary" variant="tonal"
+                class="mb-3 pa-3">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <v-icon>mdi-checkbox-multiple-marked</v-icon>
+                    <span>{{ t('account.batchSelected', { count: selected.size }) }}</span>
+                    <v-spacer />
+                    <v-btn size="small" variant="flat" color="primary" :loading="exporting"
+                        @click="exportSelectedAccounts">
+                        {{ t('account.batchExportJson') }}
+                    </v-btn>
+                    <v-btn size="small" variant="flat" :loading="refreshingStatus"
+                        @click="refreshSelectedAccountsStatus">
+                        {{ t('account.batchRefreshStatus') }}
+                    </v-btn>
+                    <v-btn size="small" variant="text" @click="selected = new Set()">
+                        {{ t('account.clearSelection') }}
+                    </v-btn>
+                </div>
+            </v-card>
+        </v-slide-y-transition>
+
         <!-- Account list -->
-        <v-table v-else>
+        <v-table v-if="!loading && accounts.length > 0">
             <thead>
                 <tr>
+                    <th style="width:40px">
+                        <v-checkbox-btn :model-value="allSelected" @update:model-value="allSelected = $event"
+                            density="compact" hide-details />
+                    </th>
                     <th>{{ t('account.colName') }}</th>
                     <th>{{ t('account.colId') }}</th>
                     <th>{{ t('account.colTags') }}</th>
@@ -589,7 +709,11 @@ function closeCaptchaDialog() {
                 </tr>
             </thead>
             <tbody>
-                <tr v-for="acc in accounts" :key="acc.id">
+                <tr v-for="acc in accounts" :key="acc.id" :class="{ 'bg-primary-lighten-5': selected.has(acc.id) }">
+                    <td>
+                        <v-checkbox-btn :model-value="selected.has(acc.id)" @click="toggleSelect(acc.id)"
+                            density="compact" hide-details />
+                    </td>
                     <td>
                         <v-icon start size="small" class="mr-1">mdi-account</v-icon>
                         {{ acc.name || t('account.unnamed') }}
@@ -632,10 +756,15 @@ function closeCaptchaDialog() {
                     </td>
                     <td>
                         <div style="display:flex;gap:4px">
+                            <v-btn icon="mdi-export" size="small" variant="text" :title="t('account.exportAccount')"
+                                :loading="exporting" @click="exportSingleAccount(acc)" />
+                            <v-btn icon="mdi-refresh" size="small" variant="text"
+                                :title="t('account.refreshStatus')" :loading="refreshingStatus"
+                                @click="refreshSingleAccountStatus(acc)" />
                             <v-btn icon="mdi-tag-edit" size="small" variant="text" color="primary"
-                                @click="promptEditTags(acc)" />
+                                :title="t('account.editTagsTitle')" @click="promptEditTags(acc)" />
                             <v-btn icon="mdi-delete" size="small" variant="text" color="error"
-                                @click="promptDelete(acc)" />
+                                :title="t('account.deleteTitle')" @click="promptDelete(acc)" />
                         </div>
                     </td>
                 </tr>
@@ -784,6 +913,28 @@ function closeCaptchaDialog() {
             </v-card>
         </v-dialog>
 
+        <!-- ═══ Export Account Dialog ═══ -->
+        <v-dialog v-model="showExportDialog" max-width="720">
+            <v-card class="pa-4">
+                <v-card-title>{{ exportTitle || t('account.exportTitle') }}</v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 text-medium-emphasis mb-3">
+                        {{ t('account.exportHint') }}
+                    </p>
+                    <v-textarea v-model="exportDocument" :label="t('account.exportLabel')" variant="outlined" rows="10"
+                        readonly class="font-monospace export-json-textarea" />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showExportDialog = false">{{ t('common.close') }}</v-btn>
+                    <v-btn color="primary" prepend-icon="mdi-content-copy" :disabled="!exportDocument"
+                        @click="copyExportDocument">
+                        {{ t('account.copyJson') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <!-- ═══ Delete Confirmation Dialog ═══ -->
         <v-dialog v-model="showDeleteDialog" max-width="420">
             <v-card class="pa-4">
@@ -828,3 +979,10 @@ function closeCaptchaDialog() {
             :challenge="manualCaptchaPrepare.challenge" @solved="onCaptchaSolved" />
     </v-container>
 </template>
+
+<style scoped>
+.export-json-textarea :deep(textarea) {
+    max-height: 360px;
+    overflow: auto;
+}
+</style>

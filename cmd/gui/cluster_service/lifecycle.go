@@ -175,68 +175,20 @@ func (s *ClusterService) Start(parent context.Context) error {
 	// authenticate are marked disabled and require re-login.
 	refreshedCount := 0
 	disabledCount := 0
-	for i, account := range accountsList {
+	for _, account := range accountsList {
 		if !account.Enabled {
 			continue
 		}
-		client, jar, clientErr := accountClient(account)
-		if clientErr != nil {
-			log.Printf("[cluster] create client for account %s: %v", account.ID, clientErr)
-			continue
-		}
-		client.SetRefreshToken(account.Credentials.RefreshToken)
-
-		// Check login status first.
-		loginInfo, statusErr := client.GetAccountStatus()
-		if statusErr != nil || loginInfo == nil || !loginInfo.Login || loginInfo.UID == 0 {
-			reason := "api error"
-			if statusErr != nil {
-				reason = statusErr.Error()
-			} else if loginInfo == nil {
-				reason = "nil response"
-			} else if !loginInfo.Login {
-				reason = "not logged in"
-			}
-			log.Printf("[cluster] account %s (%s) login check failed: %s — disabling", account.ID, account.Name, reason)
-			accountsList[i].Enabled = false
-			accountsList[i].Credentials.Version++
-			if putErr := s.repository.PutAccount(ctx, accountsList[i], nil); putErr != nil {
-				log.Printf("[cluster] persist disabled account %s: %v", account.ID, putErr)
-			}
-			disabledCount++
-			continue
-		}
-
-		// Update VIP status from the API response.
-		if loginInfo.IsVip != account.VipStatus {
-			accountsList[i].VipStatus = loginInfo.IsVip
-			changed := false
-			if loginInfo.IsVip == 1 {
-				log.Printf("[cluster] account %s (%s) is VIP", account.ID, account.Name)
-				changed = true
-			}
-			if changed {
-				if putErr := s.repository.PutAccount(ctx, accountsList[i], nil); putErr != nil {
-					log.Printf("[cluster] persist VIP status for account %s: %v", account.ID, putErr)
-				}
-			}
-		}
-
-		// Logged in — attempt cookie refresh.
-		refreshed, refreshErr := client.CheckAndUpdateCookie()
+		result, refreshErr := s.refreshAccountStatus(ctx, account.ID)
 		if refreshErr != nil {
-			log.Printf("[cluster] cookie refresh for account %s: %v", account.ID, refreshErr)
+			log.Printf("[cluster] refresh status for account %s: %v", account.ID, refreshErr)
 			continue
 		}
-		if refreshed {
-			updated := credentialsFrom(client, jar, account.Credentials)
-			if updated.Version != account.Credentials.Version {
-				accountsList[i].Credentials = updated
-				if putErr := s.repository.PutAccount(ctx, accountsList[i], nil); putErr != nil {
-					log.Printf("[cluster] persist refreshed credentials for account %s: %v", account.ID, putErr)
-				}
-				refreshedCount++
-			}
+		if result.Refreshed {
+			refreshedCount++
+		}
+		if result.Disabled {
+			disabledCount++
 		}
 	}
 	if refreshedCount > 0 {
