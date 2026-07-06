@@ -4,15 +4,23 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/storage"
 )
 
 type provisioner struct {
-	created int
-	buyers  map[string][]domain.Buyer
+	created     int
+	buyers      map[string][]domain.Buyer
+	createErr   error
+	createHook  func(account domain.Account, buyer domain.Buyer)
+	active      atomic.Int32
+	maxActive   atomic.Int32
+	createDelay time.Duration
 }
 
 func (p *provisioner) ListBuyers(_ context.Context, account domain.Account) ([]domain.Buyer, domain.Credentials, error) {
@@ -78,6 +86,23 @@ func TestSyncBuyersCreatesOpaqueCrossAccountIdentity(t *testing.T) {
 }
 func (p *provisioner) CreateBuyer(_ context.Context, _ domain.Account, buyer domain.Buyer) (domain.Buyer, domain.Credentials, error) {
 	p.created++
+	if p.createHook != nil {
+		p.createHook(domain.Account{}, buyer)
+	}
+	active := p.active.Add(1)
+	for {
+		max := p.maxActive.Load()
+		if active <= max || p.maxActive.CompareAndSwap(max, active) {
+			break
+		}
+	}
+	if p.createDelay > 0 {
+		time.Sleep(p.createDelay)
+	}
+	p.active.Add(-1)
+	if p.createErr != nil {
+		return domain.Buyer{}, domain.Credentials{Version: 2}, p.createErr
+	}
 	buyer.BuyerID = 42
 	return buyer, domain.Credentials{Version: 2}, nil
 }
@@ -108,6 +133,69 @@ func TestImportAndExplicitProvisioning(t *testing.T) {
 	}
 	if _, err := manager.EnsureBuyer(ctx, account.ID, buyer, false); err != nil || p.created != 1 {
 		t.Fatalf("mapping was not reused: %v", err)
+	}
+}
+
+func TestEnsureBuyerResolvesMappingWhenCreateReturnsAfterRemoteSuccess(t *testing.T) {
+	r, err := storage.Open(filepath.Join(t.TempDir(), "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	buyer := domain.Buyer{LogicalID: "person", Name: "A", IDCard: "110101199001011234", Type: 0}
+	p := &provisioner{
+		buyers:    map[string][]domain.Buyer{"a": {}},
+		createErr: errors.New("created buyer was not returned by API"),
+	}
+	p.createHook = func(_ domain.Account, buyer domain.Buyer) {
+		buyer.BuyerID = 77
+		p.buyers["a"] = []domain.Buyer{buyer}
+	}
+	manager := NewManager(r, p)
+	ctx := context.Background()
+	account := domain.Account{ID: "a", Enabled: true, Credentials: domain.Credentials{Version: 1}}
+	if err := r.PutAccount(ctx, account, nil); err != nil {
+		t.Fatal(err)
+	}
+	mapping, err := manager.EnsureBuyer(ctx, account.ID, buyer, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mapping.BuyerID != 77 {
+		t.Fatalf("fallback list did not resolve created buyer: %#v", mapping)
+	}
+}
+
+func TestEnsureBuyerSerializesSameAccountProvisioning(t *testing.T) {
+	r, err := storage.Open(filepath.Join(t.TempDir(), "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	p := &provisioner{buyers: map[string][]domain.Buyer{"a": {}}, createDelay: 30 * time.Millisecond}
+	manager := NewManager(r, p)
+	ctx := context.Background()
+	account := domain.Account{ID: "a", Enabled: true, Credentials: domain.Credentials{Version: 1}}
+	if err := r.PutAccount(ctx, account, nil); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for _, buyer := range []domain.Buyer{
+		{LogicalID: "person-1", Name: "A", IDCard: "1", Type: 0},
+		{LogicalID: "person-2", Name: "B", IDCard: "2", Type: 0},
+	} {
+		buyer := buyer
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := manager.EnsureBuyer(ctx, account.ID, buyer, true); err != nil {
+				t.Errorf("EnsureBuyer failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if got := p.maxActive.Load(); got != 1 {
+		t.Fatalf("same account provisioning ran concurrently, max active=%d", got)
 	}
 }
 

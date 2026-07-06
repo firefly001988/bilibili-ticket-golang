@@ -34,6 +34,7 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 		loginSessions:        make(map[string]*accountLoginSession),
 		loginCaptchaSessions: make(map[string]*loginCaptchaSession),
 		deployJobs:           make(map[string]*RemoteWorkerDeployJob),
+		buyerSyncBatches:     make(map[string]*BuyerSyncBatch),
 		bwsMeta:              make(map[string]BWSSubmitInput),
 	}
 	service.loadBWSMetadata()

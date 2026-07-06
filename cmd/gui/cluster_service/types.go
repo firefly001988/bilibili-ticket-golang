@@ -193,5 +193,59 @@ type ClusterService struct {
 	accountBindings      map[string]string   // accountID → workerID (mutual exclusion)
 	deployMu             sync.RWMutex
 	deployJobs           map[string]*RemoteWorkerDeployJob
+	buyerSyncMu          sync.RWMutex
+	buyerSyncBatches     map[string]*BuyerSyncBatch
 	bwsMeta              map[string]BWSSubmitInput // attemptID → BWS submit metadata
+}
+
+type BuyerSyncState string
+
+const (
+	BuyerSyncPending BuyerSyncState = "pending"
+	BuyerSyncRunning BuyerSyncState = "running"
+	BuyerSyncSuccess BuyerSyncState = "success"
+	BuyerSyncSkipped BuyerSyncState = "skipped"
+	BuyerSyncFailed  BuyerSyncState = "failed"
+)
+
+type BuyerSyncStartRequest struct {
+	BuyerIDs   []string `json:"buyerIds"`
+	AccountIDs []string `json:"accountIds,omitempty"`
+}
+
+type BuyerSyncBatch struct {
+	ID        string             `json:"id"`
+	State     BuyerSyncState     `json:"state"`
+	Total     int                `json:"total"`
+	Running   int                `json:"running"`
+	Succeeded int                `json:"succeeded"`
+	Skipped   int                `json:"skipped"`
+	Failed    int                `json:"failed"`
+	Message   string             `json:"message,omitempty"`
+	CreatedAt time.Time          `json:"createdAt"`
+	UpdatedAt time.Time          `json:"updatedAt"`
+	Jobs      []BuyerSyncJob     `json:"jobs"`
+	Logs      []BuyerSyncLogItem `json:"logs"`
+}
+
+type BuyerSyncJob struct {
+	ID          string         `json:"id"`
+	BuyerID     string         `json:"buyerId"`
+	BuyerName   string         `json:"buyerName"`
+	AccountID   string         `json:"accountId"`
+	AccountName string         `json:"accountName"`
+	State       BuyerSyncState `json:"state"`
+	Message     string         `json:"message,omitempty"`
+	StartedAt   time.Time      `json:"startedAt,omitempty"`
+	FinishedAt  time.Time      `json:"finishedAt,omitempty"`
+}
+
+type BuyerSyncLogItem struct {
+	Time      time.Time      `json:"time"`
+	Level     string         `json:"level"`
+	JobID     string         `json:"jobId,omitempty"`
+	BuyerID   string         `json:"buyerId,omitempty"`
+	AccountID string         `json:"accountId,omitempty"`
+	State     BuyerSyncState `json:"state,omitempty"`
+	Message   string         `json:"message"`
 }

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
 import {
@@ -10,8 +10,8 @@ import {
     RemoveBuyerFromAllAccounts,
     SyncAllAccountBuyers,
     SyncAllAccountBuyersFast,
-    SyncBuyerToAccount,
-    SyncBuyerToAllAccounts,
+    StartBuyerSync,
+    GetBuyerSyncBatch,
 } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 
 const { t } = useI18n()
@@ -40,6 +40,39 @@ interface AccountSummary {
     name: string
 }
 
+interface BuyerSyncJob {
+    id: string
+    buyerId: string
+    buyerName: string
+    accountId: string
+    accountName: string
+    state: string
+    message?: string
+}
+
+interface BuyerSyncLogItem {
+    time: string
+    level: string
+    jobId?: string
+    buyerId?: string
+    accountId?: string
+    state?: string
+    message: string
+}
+
+interface BuyerSyncBatch {
+    id: string
+    state: string
+    total: number
+    running: number
+    succeeded: number
+    skipped: number
+    failed: number
+    message?: string
+    jobs: BuyerSyncJob[]
+    logs: BuyerSyncLogItem[]
+}
+
 // ── State ───────────────────────────────────────────────────
 const buyers = ref<BuyerWithAccounts[]>([])
 const accounts = ref<AccountSummary[]>([])
@@ -57,6 +90,9 @@ const showSyncDialog = ref(false)
 const syncBuyer = ref<BuyerWithAccounts | null>(null)
 const syncTargetAccounts = ref<string[]>([])
 const syncing = ref<Record<string, boolean>>({})
+const showSyncProgressDialog = ref(false)
+const activeSyncBatch = ref<BuyerSyncBatch | null>(null)
+let syncPollTimer: ReturnType<typeof setTimeout> | null = null
 
 // Sync all accounts
 const syncingAll = ref(false)
@@ -117,6 +153,9 @@ async function load() {
 }
 
 onMounted(load)
+onUnmounted(() => {
+    if (syncPollTimer) clearTimeout(syncPollTimer)
+})
 
 // ── Add buyer ──────────────────────────────────────────────
 async function addBuyer() {
@@ -157,56 +196,29 @@ async function doSyncToAccount() {
     if (!syncBuyer.value || syncTargetAccounts.value.length === 0) return
     const key = syncBuyer.value.logicalId
     syncing.value[key] = true
-    const results = await Promise.allSettled(syncTargetAccounts.value.map(accountId =>
-        SyncBuyerToAccount(key, accountId)
-    ))
-    let ok = 0; let fail = 0
-    for (const result of results) {
-        if (result.status === 'fulfilled') ok++
-        else fail++
-    }
     showSyncDialog.value = false
     syncBuyer.value = null
-    await load()
-    syncing.value[key] = false
-    if (fail === 0) {
-        messages.add({ text: t('buyer.syncToAccountMultiSuccess', { count: ok }), color: 'success' })
-    } else {
-        messages.add({ text: t('buyer.syncToAccountPartial', { ok, fail }), color: 'warning' })
-    }
+    await startBuyerSyncBatch([key], syncTargetAccounts.value, () => {
+        syncing.value[key] = false
+    })
 }
 
 async function syncToAllAccounts(ba: BuyerWithAccounts) {
     const key = ba.logicalId
     syncing.value[key] = true
-    try {
-        await SyncBuyerToAllAccounts(key)
-        await load()
-        messages.add({ text: t('buyer.syncAllSuccess'), color: 'success' })
-    } catch (e: any) {
-        messages.add({ text: t('buyer.syncAllFailed', { error: String(e) }), color: 'error' })
-    }
-    syncing.value[key] = false
+    await startBuyerSyncBatch([key], [], () => {
+        syncing.value[key] = false
+    })
 }
 
 // ── Batch operations ───────────────────────────────────────
 async function batchSyncToAllAccounts() {
     batchSyncing.value = true
-    let ok = 0; let fail = 0
-    for (const b of batchSelectedBuyers.value) {
-        try {
-            await SyncBuyerToAllAccounts(b.logicalId)
-            ok++
-        } catch { fail++ }
-    }
-    selected.value = new Set()
-    await load()
-    batchSyncing.value = false
-    if (fail === 0) {
-        messages.add({ text: t('buyer.batchSyncAllSuccess', { count: ok }), color: 'success' })
-    } else {
-        messages.add({ text: t('buyer.batchSyncPartial', { ok, fail }), color: 'warning' })
-    }
+    const buyerIds = batchSelectedBuyers.value.map(b => b.logicalId)
+    await startBuyerSyncBatch(buyerIds, [], () => {
+        selected.value = new Set()
+        batchSyncing.value = false
+    })
 }
 
 async function batchSyncToAccount() {
@@ -300,26 +312,91 @@ const batchTargetAccounts = ref<string[]>([])
 async function doBatchSyncToAccount() {
     if (batchTargetAccounts.value.length === 0) return
     batchSyncing.value = true
-    const jobs: Promise<void>[] = []
-    for (const b of batchSelectedBuyers.value) {
-        for (const accountId of batchTargetAccounts.value) jobs.push(SyncBuyerToAccount(b.logicalId, accountId))
-    }
-    const results = await Promise.allSettled(jobs)
-    let ok = 0; let fail = 0
-    for (const result of results) {
-        if (result.status === 'fulfilled') ok++
-        else fail++
-    }
     showBatchSyncDialog.value = false
-    batchTargetAccounts.value = []
-    selected.value = new Set()
-    await load()
-    batchSyncing.value = false
-    if (fail === 0) {
-        messages.add({ text: t('buyer.batchSyncAccountSuccess', { count: ok }), color: 'success' })
-    } else {
-        messages.add({ text: t('buyer.batchSyncPartial', { ok, fail }), color: 'warning' })
+    const buyerIds = batchSelectedBuyers.value.map(b => b.logicalId)
+    const accountIds = [...batchTargetAccounts.value]
+    await startBuyerSyncBatch(buyerIds, accountIds, () => {
+        batchTargetAccounts.value = []
+        selected.value = new Set()
+        batchSyncing.value = false
+    })
+}
+
+async function startBuyerSyncBatch(buyerIds: string[], accountIds: string[], onDone?: () => void) {
+    try {
+        const batch = await StartBuyerSync(JSON.stringify({ buyerIds, accountIds })) as BuyerSyncBatch
+        activeSyncBatch.value = batch
+        showSyncProgressDialog.value = true
+        pollBuyerSyncBatch(batch.id, onDone)
+    } catch (e: any) {
+        onDone?.()
+        messages.add({ text: `启动同步失败: ${String(e)}`, color: 'error' })
     }
+}
+
+function pollBuyerSyncBatch(batchId: string, onDone?: () => void) {
+    if (syncPollTimer) clearTimeout(syncPollTimer)
+    syncPollTimer = setTimeout(async () => {
+        try {
+            const batch = await GetBuyerSyncBatch(batchId) as BuyerSyncBatch
+            activeSyncBatch.value = batch
+            if (isSyncBatchTerminal(batch)) {
+                syncPollTimer = null
+                await load()
+                onDone?.()
+                if (batch.failed > 0) {
+                    messages.add({ text: `同步完成：成功 ${batch.succeeded}，跳过 ${batch.skipped}，失败 ${batch.failed}`, color: 'warning' })
+                } else {
+                    messages.add({ text: `同步完成：成功 ${batch.succeeded}，跳过 ${batch.skipped}`, color: 'success' })
+                }
+                return
+            }
+            pollBuyerSyncBatch(batchId, onDone)
+        } catch (e: any) {
+            syncPollTimer = null
+            onDone?.()
+            messages.add({ text: `查询同步进度失败: ${String(e)}`, color: 'error' })
+        }
+    }, 800)
+}
+
+function isSyncBatchTerminal(batch: BuyerSyncBatch) {
+    return batch.state === 'success' || batch.state === 'failed'
+}
+
+const syncProgressPercent = computed(() => {
+    const batch = activeSyncBatch.value
+    if (!batch || batch.total <= 0) return 0
+    return Math.round(((batch.succeeded + batch.skipped + batch.failed) / batch.total) * 100)
+})
+const activeSyncTerminal = computed(() => !!activeSyncBatch.value && isSyncBatchTerminal(activeSyncBatch.value))
+
+function syncStateColor(state: string) {
+    switch (state) {
+        case 'success': return 'success'
+        case 'skipped': return 'info'
+        case 'failed': return 'error'
+        case 'running': return 'warning'
+        default: return 'default'
+    }
+}
+
+function syncStateLabel(state: string) {
+    switch (state) {
+        case 'success': return '成功'
+        case 'skipped': return '跳过'
+        case 'failed': return '失败'
+        case 'running': return '同步中'
+        case 'pending': return '等待'
+        default: return state || '未知'
+    }
+}
+
+function formatSyncLogTime(value: string) {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
+    return date.toLocaleTimeString()
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -649,6 +726,80 @@ function accountSummarySuffix(accounts: BuyerAccountBadge[]) {
             </v-card>
         </v-dialog>
 
+        <!-- ═══ Buyer Sync Progress Dialog ═══ -->
+        <v-dialog v-model="showSyncProgressDialog" max-width="860">
+            <v-card class="pa-4">
+                <v-card-title class="d-flex align-center" style="gap:8px">
+                    <span>购票人同步进度</span>
+                    <v-spacer />
+                    <v-chip v-if="activeSyncBatch" size="small" :color="syncStateColor(activeSyncBatch.state)"
+                        variant="tonal">
+                        {{ syncStateLabel(activeSyncBatch.state) }}
+                    </v-chip>
+                </v-card-title>
+                <v-card-text v-if="activeSyncBatch">
+                    <div class="mb-3">
+                        <div class="d-flex align-center mb-2" style="gap:8px;flex-wrap:wrap">
+                            <span class="text-body-2">
+                                共 {{ activeSyncBatch.total }} 项，
+                                成功 {{ activeSyncBatch.succeeded }}，
+                                跳过 {{ activeSyncBatch.skipped }}，
+                                失败 {{ activeSyncBatch.failed }}，
+                                运行中 {{ activeSyncBatch.running }}
+                            </span>
+                            <span v-if="activeSyncBatch.message" class="text-caption text-medium-emphasis">
+                                {{ activeSyncBatch.message }}
+                            </span>
+                        </div>
+                        <v-progress-linear :model-value="syncProgressPercent" height="8" rounded
+                            :color="activeSyncBatch.failed > 0 ? 'warning' : 'primary'" />
+                    </div>
+
+                    <v-row dense>
+                        <v-col cols="12" md="7">
+                            <div class="text-subtitle-2 mb-2">任务</div>
+                            <div class="sync-progress-panel">
+                                <div v-for="job in activeSyncBatch.jobs" :key="job.id" class="sync-progress-row">
+                                    <div style="min-width:0;flex:1">
+                                        <div class="text-body-2 text-truncate">
+                                            {{ job.buyerName || job.buyerId }}
+                                            <span class="text-medium-emphasis">→</span>
+                                            {{ job.accountName || job.accountId }}
+                                        </div>
+                                        <div v-if="job.message" class="text-caption text-medium-emphasis text-truncate">
+                                            {{ job.message }}
+                                        </div>
+                                    </div>
+                                    <v-chip size="x-small" :color="syncStateColor(job.state)" variant="tonal">
+                                        {{ syncStateLabel(job.state) }}
+                                    </v-chip>
+                                </div>
+                            </div>
+                        </v-col>
+                        <v-col cols="12" md="5">
+                            <div class="text-subtitle-2 mb-2">日志</div>
+                            <div class="sync-progress-panel">
+                                <div v-for="(log, index) in [...(activeSyncBatch.logs || [])].reverse()" :key="index"
+                                    class="sync-log-row">
+                                    <div class="text-caption text-medium-emphasis">
+                                        {{ formatSyncLogTime(log.time) }}
+                                        <span v-if="log.accountId"> · {{ log.accountId }}</span>
+                                    </div>
+                                    <div class="text-body-2">{{ log.message }}</div>
+                                </div>
+                            </div>
+                        </v-col>
+                    </v-row>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showSyncProgressDialog = false">
+                        {{ activeSyncTerminal ? '关闭' : '后台运行' }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <!-- ═══ Edit Phone Dialog ═══ -->
         <v-dialog v-model="showPhoneDialog" max-width="420">
             <v-card class="pa-4">
@@ -695,3 +846,30 @@ function accountSummarySuffix(accounts: BuyerAccountBadge[]) {
         </v-dialog>
     </v-container>
 </template>
+
+<style scoped>
+.sync-progress-panel {
+    max-height: 360px;
+    overflow: auto;
+    border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+    border-radius: 10px;
+}
+
+.sync-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.sync-progress-row:last-child,
+.sync-log-row:last-child {
+    border-bottom: 0;
+}
+
+.sync-log-row {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+</style>

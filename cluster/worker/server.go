@@ -15,7 +15,9 @@ import (
 	"bilibili-ticket-golang/cluster/domain"
 	"bilibili-ticket-golang/cluster/executor"
 	pb "bilibili-ticket-golang/cluster/worker/proto"
+	"bilibili-ticket-golang/lib/biliutils"
 	biliclock "bilibili-ticket-golang/lib/biliutils/clock"
+	"bilibili-ticket-golang/lib/models/bili/api"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -549,7 +551,7 @@ func (ws *workerService) ListBuyersMasked(_ context.Context, req *pb.ListBuyersR
 // CreateBuyer – create a new real-name buyer on the target Bilibili account
 // =============================================================================
 
-func (ws *workerService) CreateBuyer(_ context.Context, req *pb.CreateBuyerRequest) (*pb.CreateBuyerResponse, error) {
+func (ws *workerService) CreateBuyer(ctx context.Context, req *pb.CreateBuyerRequest) (*pb.CreateBuyerResponse, error) {
 	if req.Credentials == nil {
 		return nil, status.Error(codes.InvalidArgument, "credentials are required")
 	}
@@ -563,42 +565,25 @@ func (ws *workerService) CreateBuyer(_ context.Context, req *pb.CreateBuyerReque
 	}
 	client, _ := backend.ClientAndJar()
 	b := req.Buyer
-	if errVal := client.CreateBuyer(b.Name, b.Tel, int(b.Type), b.IdCard, false); errVal != nil {
-		return nil, status.Errorf(codes.Internal, "create buyer: %v", errVal)
+	if created, errVal := findRemoteBuyer(client, b); errVal != nil {
+		return nil, status.Errorf(codes.Internal, "list buyers before create: %v", errVal)
+	} else if created != nil {
+		refreshed := backend.Credentials()
+		return &pb.CreateBuyerResponse{
+			Buyer:       created,
+			Credentials: credentialsToProto(refreshed),
+		}, nil
 	}
-	// Re-list to get the newly created buyer's ID.
-	errVal, list := client.GetRealnameBuyerListNew()
+
+	if errVal := client.CreateBuyer(b.Name, b.Tel, int(b.Type), b.IdCard, false); errVal != nil {
+		if !isBuyerAlreadyExistsError(errVal) {
+			return nil, status.Errorf(codes.Internal, "create buyer: %v", errVal)
+		}
+	}
+
+	created, errVal := waitForRemoteBuyer(ctx, client, b)
 	if errVal != nil {
 		return nil, status.Errorf(codes.Internal, "list buyers after create: %v", errVal)
-	}
-	var created *pb.Buyer
-	for _, item := range list {
-		if item.Name == b.Name && item.Tel == b.Tel {
-			created = &pb.Buyer{
-				BuyerId: item.Id,
-				Name:    item.Name,
-				Tel:     item.Tel,
-				IdCard:  item.IdCard,
-				Type:    int32(item.IdType),
-			}
-			// Fetch full unmasked data.
-			if item.Id > 0 {
-				sensitiveErr, sensitive := client.GetTargetBuyerSensitiveData(item.Id)
-				if sensitiveErr == nil && sensitive.PersonalId != "" {
-					created.IdCard = sensitive.PersonalId
-					if sensitive.Tel != "" {
-						created.Tel = sensitive.Tel
-					}
-					if sensitive.Name != "" {
-						created.Name = sensitive.Name
-					}
-					if sensitive.IdType != 0 {
-						created.Type = int32(sensitive.IdType)
-					}
-				}
-			}
-			break
-		}
 	}
 	if created == nil {
 		return nil, status.Error(codes.Internal, "created buyer was not returned by API")
@@ -608,6 +593,113 @@ func (ws *workerService) CreateBuyer(_ context.Context, req *pb.CreateBuyerReque
 		Buyer:       created,
 		Credentials: credentialsToProto(refreshed),
 	}, nil
+}
+
+func waitForRemoteBuyer(ctx context.Context, client *biliutils.BiliClient, want *pb.Buyer) (*pb.Buyer, error) {
+	delays := []time.Duration{0, 300 * time.Millisecond, 800 * time.Millisecond, 1500 * time.Millisecond, 3 * time.Second, 5 * time.Second}
+	var lastErr error
+	for i, delay := range delays {
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		found, err := findRemoteBuyer(client, want)
+		if err != nil {
+			lastErr = err
+			if i+1 < len(delays) {
+				continue
+			}
+			return nil, lastErr
+		}
+		if found != nil {
+			return found, nil
+		}
+	}
+	return nil, lastErr
+}
+
+func findRemoteBuyer(client *biliutils.BiliClient, want *pb.Buyer) (*pb.Buyer, error) {
+	errVal, list := client.GetRealnameBuyerListNew()
+	if errVal != nil {
+		return nil, errVal
+	}
+	for _, item := range list {
+		candidate := buyerFromListItem(client, item)
+		if sameRemoteBuyer(candidate, want) {
+			return candidate, nil
+		}
+	}
+	return nil, nil
+}
+
+func buyerFromListItem(client *biliutils.BiliClient, item api.BuyerNoSensitiveStruct) *pb.Buyer {
+	b := &pb.Buyer{
+		BuyerId: item.Id,
+		Name:    item.Name,
+		Tel:     item.Tel,
+		IdCard:  item.IdCard,
+		Type:    int32(item.IdType),
+	}
+	if item.Id <= 0 {
+		return b
+	}
+	sensitiveErr, sensitive := client.GetTargetBuyerSensitiveData(item.Id)
+	if sensitiveErr != nil {
+		return b
+	}
+	if sensitive.PersonalId != "" {
+		b.IdCard = sensitive.PersonalId
+	}
+	if sensitive.Tel != "" {
+		b.Tel = sensitive.Tel
+	}
+	if sensitive.Name != "" {
+		b.Name = sensitive.Name
+	}
+	if sensitive.IdType != 0 {
+		b.Type = int32(sensitive.IdType)
+	}
+	return b
+}
+
+func sameRemoteBuyer(candidate, want *pb.Buyer) bool {
+	if candidate == nil || want == nil {
+		return false
+	}
+	if strings.TrimSpace(candidate.Name) != strings.TrimSpace(want.Name) {
+		return false
+	}
+	if candidate.Type != want.Type {
+		return false
+	}
+	if want.IdCard != "" && candidate.IdCard != "" && !isMaskedText(candidate.IdCard) {
+		return normalizeIdentity(candidate.IdCard) == normalizeIdentity(want.IdCard)
+	}
+	if want.Tel != "" && candidate.Tel != "" && !isMaskedText(candidate.Tel) {
+		return strings.TrimSpace(candidate.Tel) == strings.TrimSpace(want.Tel)
+	}
+	return false
+}
+
+func isBuyerAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "code=215") || strings.Contains(text, "购买人信息已存在") || strings.Contains(text, "请勿重复添加")
+}
+
+func isMaskedText(s string) bool {
+	return strings.Contains(s, "*")
+}
+
+func normalizeIdentity(s string) string {
+	return strings.ToUpper(strings.Join(strings.Fields(strings.TrimSpace(s)), ""))
 }
 
 // =============================================================================

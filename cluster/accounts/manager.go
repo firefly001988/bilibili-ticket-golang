@@ -46,6 +46,7 @@ type Manager struct {
 	repository      Repository
 	provisioner     Provisioner
 	syncConcurrency int
+	accountLocks    sync.Map // accountID -> *sync.Mutex
 }
 
 func NewManager(repository Repository, provisioner Provisioner) *Manager {
@@ -690,6 +691,9 @@ func logicalBuyerID(buyer domain.Buyer) string {
 
 // EnsureBuyer never mutates a Bilibili account without explicit confirmation.
 func (m *Manager) EnsureBuyer(ctx context.Context, accountID string, buyer domain.Buyer, confirmed bool) (domain.AccountBuyerMapping, error) {
+	unlock := m.lockAccount(accountID)
+	defer unlock()
+
 	if buyer.LogicalID == "" {
 		buyer.LogicalID = logicalBuyerID(buyer)
 	}
@@ -716,9 +720,27 @@ func (m *Manager) EnsureBuyer(ctx context.Context, accountID string, buyer domai
 	}
 	created, credentials, err := m.provisioner.CreateBuyer(ctx, account, buyer)
 	if err != nil {
+		// Some Bilibili buyer-create responses are eventually consistent:
+		// the remote create may have succeeded even when the worker could
+		// not immediately resolve the new buyer ID. Re-list before giving up
+		// so a second user click is not required to persist the mapping.
+		if remote, listCredentials, listErr := m.provisioner.ListBuyers(ctx, account); listErr == nil {
+			for _, candidate := range remote {
+				if sameBuyer(candidate, buyer) {
+					return m.saveMapping(ctx, account, buyer, candidate.BuyerID, listCredentials)
+				}
+			}
+		}
 		return domain.AccountBuyerMapping{}, err
 	}
 	return m.saveMapping(ctx, account, buyer, created.BuyerID, credentials)
+}
+
+func (m *Manager) lockAccount(accountID string) func() {
+	value, _ := m.accountLocks.LoadOrStore(accountID, &sync.Mutex{})
+	mu := value.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 var ErrConfirmationRequired = errors.New("explicit confirmation is required to create buyer")
