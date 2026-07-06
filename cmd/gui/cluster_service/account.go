@@ -29,7 +29,7 @@ func (s *ClusterService) SetAccountTags(accountID string, tagsJSON string) error
 
 // ImportAccount imports an account from an encoded credential document.
 func (s *ClusterService) ImportAccount(document string) error {
-	_, err := s.accounts.Import(context.Background(), []byte(document))
+	_, err := s.accounts.ImportMany(context.Background(), []byte(document))
 	if err == nil {
 		err = s.refreshResources(context.Background())
 	}

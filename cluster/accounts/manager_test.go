@@ -110,3 +110,28 @@ func TestImportAndExplicitProvisioning(t *testing.T) {
 		t.Fatalf("mapping was not reused: %v", err)
 	}
 }
+
+func TestImportManyAcceptsCredentialArray(t *testing.T) {
+	r, err := storage.Open(filepath.Join(t.TempDir(), "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	manager := NewManager(r, &provisioner{})
+	ctx := context.Background()
+	accounts, err := manager.ImportMany(ctx, []byte(`[
+		{"id":"bili-1","name":"A","cookies":{"SESSDATA":"a"}},
+		{"id":"bili-2","name":"B","cookies":{"SESSDATA":"b"}}
+	]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts) != 2 || accounts[0].ID != "bili-1" || accounts[1].ID != "bili-2" {
+		t.Fatalf("unexpected imported accounts: %#v", accounts)
+	}
+	for _, id := range []string{"bili-1", "bili-2"} {
+		if _, err := r.Account(ctx, id); err != nil {
+			t.Fatalf("account %s was not persisted: %v", id, err)
+		}
+	}
+}

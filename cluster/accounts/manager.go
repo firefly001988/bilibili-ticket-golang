@@ -1,6 +1,7 @@
 package accounts
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -136,6 +137,40 @@ func (m *Manager) Import(ctx context.Context, data []byte) (domain.Account, erro
 	if err := json.Unmarshal(data, &document); err != nil {
 		return domain.Account{}, err
 	}
+	return m.importCredentialDocument(ctx, document)
+}
+
+func (m *Manager) ImportMany(ctx context.Context, data []byte) ([]domain.Account, error) {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return nil, errors.New("credential document is required")
+	}
+	if trimmed[0] != '[' {
+		account, err := m.Import(ctx, trimmed)
+		if err != nil {
+			return nil, err
+		}
+		return []domain.Account{account}, nil
+	}
+	var documents []CredentialDocument
+	if err := json.Unmarshal(trimmed, &documents); err != nil {
+		return nil, err
+	}
+	if len(documents) == 0 {
+		return nil, errors.New("credential document array is empty")
+	}
+	accounts := make([]domain.Account, 0, len(documents))
+	for index, document := range documents {
+		account, err := m.importCredentialDocument(ctx, document)
+		if err != nil {
+			return nil, fmt.Errorf("import account %d: %w", index+1, err)
+		}
+		accounts = append(accounts, account)
+	}
+	return accounts, nil
+}
+
+func (m *Manager) importCredentialDocument(ctx context.Context, document CredentialDocument) (domain.Account, error) {
 	if len(document.Cookies) == 0 && len(document.CookieJar) == 0 {
 		return domain.Account{}, errors.New("cookies are required")
 	}
