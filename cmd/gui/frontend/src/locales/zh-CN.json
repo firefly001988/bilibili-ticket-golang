@@ -503,6 +503,7 @@
         "summary": "{name} 等 {count} 人",
         "search": "搜索姓名、证件号、手机号、拼音或首字母",
         "recent": "最近选择",
+        "removeRecent": "从最近选择中移除",
         "clearAll": "清空",
         "maxHint": "最多 {max} 人",
         "maxReached": "已达到本订单最多 {max} 个购票人的限制。",

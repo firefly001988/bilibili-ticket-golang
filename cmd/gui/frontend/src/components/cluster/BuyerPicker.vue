@@ -103,6 +103,10 @@ function rememberSelectedBuyers() {
     persistRecentBuyerIds([...selected.value, ...recentIds.value])
 }
 
+function removeRecentBuyer(buyerID: string) {
+    persistRecentBuyerIds(recentIds.value.filter(id => id !== buyerID))
+}
+
 function done() {
     rememberSelectedBuyers()
     dialog.value = false
@@ -202,8 +206,10 @@ watch(
                         <div class="d-flex flex-wrap" style="gap:6px">
                             <v-chip v-for="buyer in recentBuyers" :key="buyer.logicalId" size="small"
                                 :color="selectedSet.has(buyer.logicalId) ? 'primary' : undefined"
-                                :variant="selectedSet.has(buyer.logicalId) ? 'flat' : 'tonal'" style="cursor:pointer"
-                                @click="toggleBuyer(buyer.logicalId)">
+                                :variant="selectedSet.has(buyer.logicalId) ? 'flat' : 'tonal'" closable
+                                :close-label="t('buyerPicker.removeRecent')" style="cursor:pointer"
+                                @click="toggleBuyer(buyer.logicalId)"
+                                @click:close.stop="removeRecentBuyer(buyer.logicalId)">
                                 <v-icon start size="x-small">
                                     {{ selectedSet.has(buyer.logicalId) ? 'mdi-check' : 'mdi-account-outline' }}
                                 </v-icon>
