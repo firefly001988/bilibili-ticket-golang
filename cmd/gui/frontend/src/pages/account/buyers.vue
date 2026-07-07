@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
 import AccountPicker from '@/components/cluster/AccountPicker.vue'
+import { filterBuyersBySearch } from '@/composables/buyerSearch'
 import {
     Snapshot,
     ProvisionBuyer,
@@ -437,16 +438,7 @@ const filterAccountModeItems = computed(() => [
 
 const filteredBuyers = computed(() => {
     let list = buyers.value
-    const kw = filterName.value.trim().toLowerCase()
-    if (kw) {
-        list = list.filter(b => {
-            if ((b.name || '').toLowerCase().includes(kw)) return true
-            if ((b.tel || '').includes(kw)) return true
-            if ((b.idCard || '').includes(kw)) return true
-            if ((b.tels || []).some(t => t.includes(kw))) return true
-            return false
-        })
-    }
+    list = filterBuyersBySearch(list, filterName.value)
     if (filterAccount.value) {
         const targetId = filterAccount.value
         const hasAccount = (b: BuyerWithAccounts) => (b.accounts || []).some(a => a.accountId === targetId)
