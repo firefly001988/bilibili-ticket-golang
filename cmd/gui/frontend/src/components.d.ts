@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AccountPicker: typeof import('./components/cluster/AccountPicker.vue')['default']
     AnnouncementFloatingCard: typeof import('./components/AnnouncementFloatingCard.vue')['default']
+    BuyerPicker: typeof import('./components/cluster/BuyerPicker.vue')['default']
     GeetestCaptcha: typeof import('./components/GeetestCaptcha.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

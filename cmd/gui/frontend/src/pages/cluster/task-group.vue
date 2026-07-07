@@ -5,6 +5,8 @@ import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
 import WorkerPicker from '@/components/cluster/WorkerPicker.vue'
 import AccountPicker from '@/components/cluster/AccountPicker.vue'
+import BuyerPicker from '@/components/cluster/BuyerPicker.vue'
+import type { SearchableBuyer } from '@/composables/buyerSearch'
 import { Snapshot, SaveMacro, DeleteMacro, SavePurchaseGroup, DeletePurchaseGroup, StopTaskGroup, ForceStopTaskGroup, ForceRestartTaskGroup, StartTaskGroup, StopIntent, SaveTaskGroup } from '../../../bindings/bilibili-ticket-golang/cmd/gui/cluster_service/clusterservice'
 import { GetProjectInformationNew, GetTicketSkuIDsByProjectIDNew } from '../../../bindings/bilibili-ticket-golang/lib/biliutils/biliclient'
 
@@ -14,6 +16,7 @@ const START_REFLOW_NOW_TOKEN = '__cluster_reflow_now__'
 interface TaskGroupSummary { id: string; name: string; accountIds?: string[]; primaryWorkerIds?: string[]; standbyWorkerIds?: string[]; paymentTimeoutMinutes?: number; waveDurationMinutes?: number; maxWaves?: number; reflowStockCheck?: boolean; createdAt?: string }
 interface AccountBrief { id: string; name: string; enabled: boolean; vipStatus?: number; tags?: string[] }
 interface WorkerBrief { id: string; name: string; address: string; type: string; healthy: boolean; tags?: string[] }
+interface BuyerBrief extends SearchableBuyer { logicalId: string; name: string; idCard: string; tel: string }
 interface MacroSummary { id: string; taskGroupId: string; projectId: number; projectName?: string; screenId: number; screenName?: string; skuId: number; skuName?: string; eventDay: string; needsReview: boolean; orderCapacity: number; startAt: string; deadline: string; phase?: string; purchaseGroups?: any[] }
 interface AttemptBrief { id: string; intentId: string; accountId: string; workerId: string; state: string; orderId?: string }
 interface IntentBrief { id: string; macroTaskId: string; purchaseGroupId?: string; phase: string; weight: number; priority: number; buyerCount: number; succeeded: boolean; terminal: boolean; armed: boolean; activeCount: number; deficit: number; failureReason?: string }
@@ -78,7 +81,7 @@ const filteredScreens = computed(() => {
     }
     return Array.from(map.values()).sort((a, b) => a.screenId - b.screenId)
 })
-const expandedMacro = ref(0); const allBuyers = ref<Array<{ logicalId: string; name: string; idCard: string; tel: string }>>([])
+const expandedMacro = ref(0); const allBuyers = ref<BuyerBrief[]>([])
 const selectedPgBuyerIds = ref<string[]>([]); const savedPgBuyerIds = ref(new Map<string, string[]>()); const savingPg = ref(false); const deletingPg = ref<Record<string, boolean>>({})
 const editingPgId = ref(''); const editingPgMacroId = ref('')
 const allowSplit = ref(false)
@@ -1005,21 +1008,11 @@ const allPurchaseGroups = computed(() => {
                                         {{ editingPgId && editingPgMacroId === m.id ? t('taskGroup.pgEditTitle') :
                                             t('taskGroup.pgAdd') }}
                                     </div>
-                                    <v-select v-if="allBuyers.length > 0" :model-value="selectedPgBuyerIds"
-                                        @update:model-value="onBuyerSelectionChange" :items="allBuyers"
-                                        :item-title="buyerDisplayName" item-value="logicalId"
-                                        :label="`${t('taskGroup.pgSelectBuyerShort')} (${t('taskGroup.pgMaxLabel', { max: currentMacroOrderCapacity })})`"
-                                        variant="outlined" density="compact" multiple chips closable-chips hide-details
-                                        class="mb-2" :disabled="editingDisabled">
-                                        <template #chip="{ props, item }">
-                                            <v-chip v-bind="props" size="small">
-                                                {{ buyerDisplayName(item.raw || item) }}
-                                            </v-chip>
-                                        </template>
-                                        <template #item="{ props, item }"><v-list-item v-bind="props"
-                                                :title="buyerDisplayName(item.raw || item)"
-                                                :subtitle="buyerSubtitle(item.raw || item)" /></template>
-                                    </v-select>
+                                    <BuyerPicker v-if="allBuyers.length > 0" :model-value="selectedPgBuyerIds"
+                                        @update:model-value="onBuyerSelectionChange" :buyers="allBuyers"
+                                        :max="currentMacroOrderCapacity" :label="t('taskGroup.pgSelectBuyerShort')"
+                                        :hint="t('taskGroup.pgMaxLabel', { max: currentMacroOrderCapacity })"
+                                        class="mb-2" :disabled="editingDisabled" />
                                     <v-checkbox-btn v-model="allowSplit" color="primary" density="compact"
                                         :label="t('taskGroup.pgAllowSplitHint')" hide-details class="mb-2"
                                         :disabled="editingDisabled" />

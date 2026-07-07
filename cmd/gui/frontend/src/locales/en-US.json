@@ -497,6 +497,18 @@
         "clearAll": "Clear",
         "tags": "Select by tag"
     },
+    "buyerPicker": {
+        "title": "Select Buyers",
+        "none": "No buyers selected",
+        "summary": "{name} and {count} buyers",
+        "search": "Search name, ID number, phone, or pinyin initials",
+        "recent": "Recent Buyers",
+        "clearAll": "Clear",
+        "maxHint": "At most {max} buyers",
+        "maxReached": "This order already reached the {max}-buyer limit.",
+        "accountCount": "Synced to {count} accounts",
+        "noAccountMapping": "Not synced"
+    },
     "account": {
         "title": "Account Management",
         "addAccount": "Add Account",

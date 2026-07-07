@@ -497,6 +497,18 @@
         "clearAll": "清空",
         "tags": "按标签选择"
     },
+    "buyerPicker": {
+        "title": "选择购票人",
+        "none": "未选择购票人",
+        "summary": "{name} 等 {count} 人",
+        "search": "搜索姓名、证件号、手机号、拼音首字母",
+        "recent": "最近选择",
+        "clearAll": "清空",
+        "maxHint": "最多 {max} 人",
+        "maxReached": "已达到本订单最多 {max} 个购票人的限制。",
+        "accountCount": "已同步 {count} 个账号",
+        "noAccountMapping": "未同步账号"
+    },
     "account": {
         "title": "账号管理",
         "addAccount": "添加账号",
