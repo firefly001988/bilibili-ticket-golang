@@ -643,6 +643,7 @@
         "loadFailed": "加载购票人列表失败: {error}",
         "emptyHint": "暂无购票人",
         "targetAccount": "目标账号",
+        "targetAccountPickerHint": "可以按账号标签快速选择，也可以搜索账号名称、ID 或标签。",
         "nameLabel": "姓名",
         "namePlaceholder": "如实名信息中的真实姓名",
         "telLabel": "手机号",

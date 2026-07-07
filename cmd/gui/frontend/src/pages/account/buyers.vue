@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMessagesStore } from '@/stores/snackbar'
+import AccountPicker from '@/components/cluster/AccountPicker.vue'
 import {
     Snapshot,
     ProvisionBuyer,
@@ -38,6 +39,9 @@ interface BuyerWithAccounts {
 interface AccountSummary {
     id: string
     name: string
+    tags?: string[]
+    enabled?: boolean
+    vipStatus?: number
 }
 
 interface BuyerSyncJob {
@@ -682,15 +686,15 @@ function accountSummarySuffix(accounts: BuyerAccountBadge[]) {
         </v-dialog>
 
         <!-- ═══ Batch Sync to Account Dialog ═══ -->
-        <v-dialog v-model="showBatchSyncDialog" max-width="420">
+        <v-dialog v-model="showBatchSyncDialog" max-width="820">
             <v-card class="pa-4">
                 <v-card-title>{{ t('buyer.batchSyncTitle', { count: selected.size }) }}</v-card-title>
                 <v-card-text>
                     <p class="text-body-2 text-medium-emphasis mb-3">
                         {{ t('buyer.batchSyncHint') }}
                     </p>
-                    <v-select v-model="batchTargetAccounts" :items="accountItems" :label="t('buyer.targetAccount')"
-                        variant="outlined" density="compact" multiple chips />
+                    <AccountPicker v-model="batchTargetAccounts" :accounts="accounts"
+                        :label="t('buyer.targetAccount')" :hint="t('buyer.targetAccountPickerHint')" />
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
@@ -704,7 +708,7 @@ function accountSummarySuffix(accounts: BuyerAccountBadge[]) {
         </v-dialog>
 
         <!-- ═══ Sync to Account Dialog ═══ -->
-        <v-dialog v-model="showSyncDialog" max-width="420">
+        <v-dialog v-model="showSyncDialog" max-width="820">
             <v-card class="pa-4">
                 <v-card-title>{{ t('buyer.syncToTitle', { name: syncBuyer?.name || syncBuyer?.logicalId })
                     }}</v-card-title>
@@ -712,8 +716,8 @@ function accountSummarySuffix(accounts: BuyerAccountBadge[]) {
                     <p class="text-body-2 text-medium-emphasis mb-3">
                         {{ t('buyer.syncToHint') }}
                     </p>
-                    <v-select v-model="syncTargetAccounts" :items="accountItems" :label="t('buyer.targetAccount')"
-                        variant="outlined" density="compact" multiple chips />
+                    <AccountPicker v-model="syncTargetAccounts" :accounts="accounts"
+                        :label="t('buyer.targetAccount')" :hint="t('buyer.targetAccountPickerHint')" />
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />

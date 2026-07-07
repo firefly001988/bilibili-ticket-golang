@@ -643,6 +643,7 @@
         "loadFailed": "Failed to load buyers: {error}",
         "emptyHint": "No buyers",
         "targetAccount": "Target Account",
+        "targetAccountPickerHint": "Select quickly by account tag, or search by account name, ID, or tag.",
         "nameLabel": "Name",
         "namePlaceholder": "Real name from ID",
         "telLabel": "Phone",
