@@ -83,21 +83,46 @@ func (s *ClusterService) runTaskGroupWaves(ctx context.Context, taskGroup domain
 		maxWaves = 3
 	}
 
-	base := saleStart
-	now := time.Now()
-	if saleStart.Before(now) || (initialPhase == domain.PhaseReflow && reflowNow) {
-		base = now
+	if initialPhase == domain.PhaseReflow && reflowNow {
+		log.Printf("[cluster] waves: task group %s entered unbounded reflow mode", taskGroup.ID)
+		return
 	}
 
-	for wave := 1; wave <= maxWaves; wave++ {
+	base := saleStart
+	now := time.Now()
+	firstWave := firstPendingTaskGroupWave(saleStart, now, paymentTimeout, waveDuration, maxWaves)
+	if firstWave > maxWaves {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := s.pauseTaskGroupForNextWave(stopCtx, taskGroup.ID); err != nil {
+			log.Printf("[cluster] waves: task group %s pause before unbounded reflow: %v", taskGroup.ID, err)
+		}
+		cancel()
+		if err := s.planTaskGroupWavePhase(ctx, taskGroup.ID, domain.PhaseReflow); err != nil {
+			log.Printf("[cluster] waves: task group %s start unbounded reflow after missed waves: %v", taskGroup.ID, err)
+			stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if stopErr := s.stopTaskGroupInternal(stopCtx, taskGroup.ID); stopErr != nil {
+				log.Printf("[cluster] waves: task group %s stop after unbounded reflow planning failure: %v", taskGroup.ID, stopErr)
+			}
+			cancel()
+		} else {
+			log.Printf("[cluster] waves: task group %s entered unbounded reflow mode after missed waves", taskGroup.ID)
+		}
+		return
+	}
+	if firstWave > 1 {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := s.pauseTaskGroupForNextWave(stopCtx, taskGroup.ID); err != nil {
+			log.Printf("[cluster] waves: task group %s pause before catch-up wave %d: %v", taskGroup.ID, firstWave, err)
+		}
+		cancel()
+	}
+
+	for wave := firstWave; wave <= maxWaves; wave++ {
 		phase := initialPhase
 		if wave > 1 {
 			phase = domain.PhaseReflow
 		}
-		waveStart := base
-		if wave > 1 {
-			waveStart = base.Add(time.Duration(wave-1) * paymentTimeout)
-		}
+		waveStart := taskGroupWaveStart(base, wave, paymentTimeout)
 
 		if wave > 1 {
 			if !waitUntil(ctx, waveStart) {
@@ -127,6 +152,23 @@ func (s *ClusterService) runTaskGroupWaves(ctx context.Context, taskGroup domain
 		}
 		cancel()
 	}
+}
+
+func taskGroupWaveStart(base time.Time, wave int, paymentTimeout time.Duration) time.Time {
+	if wave <= 1 {
+		return base
+	}
+	return base.Add(time.Duration(wave-1) * paymentTimeout)
+}
+
+func firstPendingTaskGroupWave(saleStart time.Time, now time.Time, paymentTimeout time.Duration, waveDuration time.Duration, maxWaves int) int {
+	for wave := 1; wave <= maxWaves; wave++ {
+		waveEnd := taskGroupWaveStart(saleStart, wave, paymentTimeout).Add(waveDuration)
+		if now.Before(waveEnd) {
+			return wave
+		}
+	}
+	return maxWaves + 1
 }
 
 func waitUntil(ctx context.Context, at time.Time) bool {
