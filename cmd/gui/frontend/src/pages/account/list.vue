@@ -86,13 +86,20 @@ const exportTitle = ref('')
 // Delete dialog
 const showDeleteDialog = ref(false)
 const deleteTarget = ref<AccountSummary | null>(null)
+const deleteTargets = ref<AccountSummary[]>([])
 const deleting = ref(false)
 
 // Tags dialog
 const showTagsDialog = ref(false)
 const tagTarget = ref<AccountSummary | null>(null)
-const tagDraft = ref('')
+const tagDraft = ref<string[]>([])
 const savingTags = ref(false)
+
+// Batch tags dialog
+const showBatchTagsDialog = ref(false)
+const batchTagMode = ref<'add' | 'remove'>('add')
+const batchTagDraft = ref<string[]>([])
+const savingBatchTags = ref(false)
 
 // ── Manual captcha state ───────────────────────────────────────
 const needsManualCaptcha = ref(false)
@@ -576,36 +583,65 @@ async function refreshAccountIDs(ids: string[]) {
 
 // ── Delete ────────────────────────────────────────────────────
 async function confirmDelete() {
-    if (!deleteTarget.value) return
+    const targets = deleteTargets.value.length > 0
+        ? [...deleteTargets.value]
+        : deleteTarget.value ? [deleteTarget.value] : []
+    if (targets.length === 0) return
     deleting.value = true
+    const failures: string[] = []
     try {
-        await DeleteAccount(deleteTarget.value.id)
-        showDeleteDialog.value = false
-        deleteTarget.value = null
+        for (const account of targets) {
+            try {
+                await DeleteAccount(account.id)
+            } catch (e: any) {
+                failures.push(`${account.name || account.id}: ${String(e)}`)
+            }
+        }
         await load()
-        messages.add({ text: t('account.deleteSuccess'), color: 'success' })
+        if (failures.length > 0) {
+            messages.add({ text: t('account.deletePartialFailed', { error: failures.join('; ') }), color: 'warning' })
+        } else {
+            selected.value = new Set()
+            messages.add({
+                text: targets.length > 1
+                    ? t('account.batchDeleteSuccess', { count: targets.length })
+                    : t('account.deleteSuccess'),
+                color: 'success',
+            })
+        }
     } catch (e: any) {
         messages.add({ text: t('account.deleteFailed', { error: String(e) }), color: 'error' })
+    } finally {
+        showDeleteDialog.value = false
+        deleteTarget.value = null
+        deleteTargets.value = []
+        deleting.value = false
     }
-    deleting.value = false
 }
 
 function promptDelete(account: AccountSummary) {
     deleteTarget.value = account
+    deleteTargets.value = []
+    showDeleteDialog.value = true
+}
+
+function promptBatchDelete() {
+    deleteTarget.value = null
+    deleteTargets.value = selectedAccounts.value
     showDeleteDialog.value = true
 }
 
 function promptEditTags(account: AccountSummary) {
     tagTarget.value = account
-    tagDraft.value = (account.tags || []).join(', ')
+    tagDraft.value = normalizeTags(account.tags || [])
     showTagsDialog.value = true
 }
 
-function parseTags(value: string) {
+function normalizeTags(values: string[]) {
     const seen = new Set<string>()
     const result: string[] = []
-    for (const raw of value.split(/[,，\n]/)) {
-        const tag = raw.trim()
+    for (const raw of values) {
+        const tag = String(raw || '').trim()
         if (!tag || seen.has(tag)) continue
         seen.add(tag)
         result.push(tag)
@@ -617,10 +653,10 @@ async function saveTags() {
     if (!tagTarget.value) return
     savingTags.value = true
     try {
-        await SetAccountTags(tagTarget.value.id, JSON.stringify(parseTags(tagDraft.value)))
+        await SetAccountTags(tagTarget.value.id, JSON.stringify(normalizeTags(tagDraft.value)))
         showTagsDialog.value = false
         tagTarget.value = null
-        tagDraft.value = ''
+        tagDraft.value = []
         await load()
         messages.add({ text: t('account.tagsSaved'), color: 'success' })
     } catch (e: any) {
@@ -629,8 +665,69 @@ async function saveTags() {
     savingTags.value = false
 }
 
+function promptBatchTags(mode: 'add' | 'remove') {
+    if (selected.value.size === 0) {
+        messages.add({ text: t('account.selectAtLeastOne'), color: 'warning' })
+        return
+    }
+    batchTagMode.value = mode
+    batchTagDraft.value = []
+    showBatchTagsDialog.value = true
+}
+
+async function saveBatchTags() {
+    const tags = normalizeTags(batchTagDraft.value)
+    const targets = selectedAccounts.value
+    if (targets.length === 0) {
+        messages.add({ text: t('account.selectAtLeastOne'), color: 'warning' })
+        return
+    }
+    if (tags.length === 0) {
+        messages.add({ text: t('account.tagsRequired'), color: 'warning' })
+        return
+    }
+    savingBatchTags.value = true
+    const failures: string[] = []
+    try {
+        for (const account of targets) {
+            const oldTags = normalizeTags(account.tags || [])
+            const nextTags = batchTagMode.value === 'add'
+                ? normalizeTags([...oldTags, ...tags])
+                : oldTags.filter(tag => !tags.includes(tag))
+            try {
+                await SetAccountTags(account.id, JSON.stringify(nextTags))
+            } catch (e: any) {
+                failures.push(`${account.name || account.id}: ${String(e)}`)
+            }
+        }
+        await load()
+        if (failures.length > 0) {
+            messages.add({ text: t('account.batchTagsPartialFailed', { error: failures.join('; ') }), color: 'warning' })
+        } else {
+            showBatchTagsDialog.value = false
+            batchTagDraft.value = []
+            messages.add({
+                text: t(batchTagMode.value === 'add' ? 'account.batchTagsAdded' : 'account.batchTagsRemoved', { count: targets.length }),
+                color: 'success',
+            })
+        }
+    } catch (e: any) {
+        messages.add({ text: t('account.tagsSaveFailed', { error: String(e) }), color: 'error' })
+    } finally {
+        savingBatchTags.value = false
+    }
+}
+
 // ── Computed ──────────────────────────────────────────────────
 const qrExpirySeconds = ref(0)
+const selectedAccounts = computed(() => accounts.value.filter(account => selected.value.has(account.id)))
+const allAccountTags = computed(() => {
+    const tags = new Set<string>()
+    for (const account of accounts.value) {
+        for (const tag of normalizeTags(account.tags || [])) tags.add(tag)
+    }
+    return Array.from(tags).sort((a, b) => a.localeCompare(b))
+})
 
 // ── Manual captcha dialog close ────────────────────────────────
 function closeCaptchaDialog() {
@@ -685,6 +782,18 @@ function closeCaptchaDialog() {
                     <v-btn size="small" variant="flat" :loading="refreshingStatus"
                         @click="refreshSelectedAccountsStatus">
                         {{ t('account.batchRefreshStatus') }}
+                    </v-btn>
+                    <v-btn size="small" variant="flat" prepend-icon="mdi-tag-plus"
+                        @click="promptBatchTags('add')">
+                        {{ t('account.batchAddTags') }}
+                    </v-btn>
+                    <v-btn size="small" variant="flat" prepend-icon="mdi-tag-minus"
+                        @click="promptBatchTags('remove')">
+                        {{ t('account.batchRemoveTags') }}
+                    </v-btn>
+                    <v-btn size="small" variant="flat" color="error" prepend-icon="mdi-delete"
+                        @click="promptBatchDelete">
+                        {{ t('account.batchDelete') }}
                     </v-btn>
                     <v-btn size="small" variant="text" @click="selected = new Set()">
                         {{ t('account.clearSelection') }}
@@ -940,7 +1049,10 @@ function closeCaptchaDialog() {
             <v-card class="pa-4">
                 <v-card-title class="text-error">{{ t('account.deleteTitle') }}</v-card-title>
                 <v-card-text>
-                    <p>{{ t('account.deleteConfirm', { name: deleteTarget?.name || deleteTarget?.id }) }}</p>
+                    <p v-if="deleteTargets.length > 0">
+                        {{ t('account.batchDeleteConfirm', { count: deleteTargets.length }) }}
+                    </p>
+                    <p v-else>{{ t('account.deleteConfirm', { name: deleteTarget?.name || deleteTarget?.id }) }}</p>
                     <p class="text-caption text-medium-emphasis">{{ t('account.deleteWarning') }}</p>
                 </v-card-text>
                 <v-card-actions>
@@ -961,14 +1073,42 @@ function closeCaptchaDialog() {
                     <p class="text-body-2 text-medium-emphasis mb-3">
                         {{ t('account.editTagsHint') }}
                     </p>
-                    <v-textarea v-model="tagDraft" :label="t('account.tagsLabel')"
-                        :placeholder="t('account.tagsPlaceholder')" variant="outlined" rows="3" auto-grow />
+                    <v-combobox v-model="tagDraft" :items="allAccountTags" :label="t('account.tagsLabel')"
+                        :placeholder="t('account.tagsPlaceholder')" variant="outlined" multiple chips closable-chips
+                        clearable />
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
                     <v-btn variant="text" @click="showTagsDialog = false">{{ t('common.cancel') }}</v-btn>
                     <v-btn color="primary" :loading="savingTags" @click="saveTags">
                         {{ t('common.save') }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <!-- ═══ Batch Tags Dialog ═══ -->
+        <v-dialog v-model="showBatchTagsDialog" max-width="520">
+            <v-card class="pa-4">
+                <v-card-title>
+                    {{ batchTagMode === 'add' ? t('account.batchAddTagsTitle') : t('account.batchRemoveTagsTitle') }}
+                </v-card-title>
+                <v-card-text>
+                    <p class="text-body-2 text-medium-emphasis mb-3">
+                        {{ batchTagMode === 'add'
+                            ? t('account.batchAddTagsHint', { count: selected.size })
+                            : t('account.batchRemoveTagsHint', { count: selected.size }) }}
+                    </p>
+                    <v-combobox v-model="batchTagDraft" :items="allAccountTags" :label="t('account.tagsLabel')"
+                        :placeholder="t('account.tagsPlaceholder')" variant="outlined" multiple chips closable-chips
+                        clearable />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="showBatchTagsDialog = false">{{ t('common.cancel') }}</v-btn>
+                    <v-btn color="primary" :loading="savingBatchTags" :disabled="batchTagDraft.length === 0"
+                        @click="saveBatchTags">
+                        {{ batchTagMode === 'add' ? t('account.batchAddTags') : t('account.batchRemoveTags') }}
                     </v-btn>
                 </v-card-actions>
             </v-card>
