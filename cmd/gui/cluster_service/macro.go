@@ -344,6 +344,12 @@ func (s *ClusterService) startTaskGroupPhase(taskGroupID string, phase domain.Ph
 		}
 		return selected[i].Priority > selected[j].Priority
 	})
+	if phase == domain.PhasePunctual && taskGroupMissedAllWaves(taskGroup, selected, time.Now()) {
+		phase = domain.PhaseReflow
+		reflowNow = true
+		s.RecordDispatchInfo("plan", fmt.Sprintf("task group %s missed all configured waves; starting unbounded reflow", taskGroupID))
+		log.Printf("[cluster] task group %s missed all configured waves; starting unbounded reflow", taskGroupID)
+	}
 	var failures []string
 	started := 0
 	plannedIntentIDs := make(map[string]struct{})
@@ -382,6 +388,15 @@ func (s *ClusterService) startTaskGroupPhase(taskGroupID string, phase domain.Ph
 	}
 	s.startTaskGroupWaveController(taskGroup, phase, reflowNow)
 	return nil
+}
+
+func taskGroupMissedAllWaves(taskGroup domain.TaskGroup, macros []domain.MacroTask, now time.Time) bool {
+	saleStart, err := taskGroupSaleStart(macros)
+	if err != nil {
+		return false
+	}
+	paymentTimeout, waveDuration, maxWaves := taskGroupWaveSettings(taskGroup)
+	return firstPendingTaskGroupWave(saleStart, now, paymentTimeout, waveDuration, maxWaves) > maxWaves
 }
 
 func (s *ClusterService) diagnoseNoAttemptStart(ctx context.Context, taskGroup domain.TaskGroup, macros []domain.MacroTask, plannedIntentIDs map[string]struct{}) string {

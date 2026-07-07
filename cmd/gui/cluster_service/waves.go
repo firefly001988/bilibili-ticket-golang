@@ -70,18 +70,7 @@ func (s *ClusterService) runTaskGroupWaves(ctx context.Context, taskGroup domain
 		return
 	}
 
-	paymentTimeout := time.Duration(taskGroup.PaymentTimeoutMinutes) * time.Minute
-	waveDuration := time.Duration(taskGroup.WaveDurationMinutes) * time.Minute
-	maxWaves := taskGroup.MaxWaves
-	if paymentTimeout <= 0 {
-		paymentTimeout = 10 * time.Minute
-	}
-	if waveDuration <= 0 {
-		waveDuration = 3 * time.Minute
-	}
-	if maxWaves <= 0 {
-		maxWaves = 3
-	}
+	paymentTimeout, waveDuration, maxWaves := taskGroupWaveSettings(taskGroup)
 
 	if initialPhase == domain.PhaseReflow && reflowNow {
 		log.Printf("[cluster] waves: task group %s entered unbounded reflow mode", taskGroup.ID)
@@ -159,6 +148,22 @@ func taskGroupWaveStart(base time.Time, wave int, paymentTimeout time.Duration) 
 		return base
 	}
 	return base.Add(time.Duration(wave-1) * paymentTimeout)
+}
+
+func taskGroupWaveSettings(taskGroup domain.TaskGroup) (time.Duration, time.Duration, int) {
+	paymentTimeout := time.Duration(taskGroup.PaymentTimeoutMinutes) * time.Minute
+	waveDuration := time.Duration(taskGroup.WaveDurationMinutes) * time.Minute
+	maxWaves := taskGroup.MaxWaves
+	if paymentTimeout <= 0 {
+		paymentTimeout = 10 * time.Minute
+	}
+	if waveDuration <= 0 {
+		waveDuration = 3 * time.Minute
+	}
+	if maxWaves <= 0 {
+		maxWaves = 3
+	}
+	return paymentTimeout, waveDuration, maxWaves
 }
 
 func firstPendingTaskGroupWave(saleStart time.Time, now time.Time, paymentTimeout time.Duration, waveDuration time.Duration, maxWaves int) int {
