@@ -84,8 +84,9 @@ func (s *ClusterService) runTaskGroupWaves(ctx context.Context, taskGroup domain
 	}
 
 	base := saleStart
-	if initialPhase == domain.PhaseReflow && reflowNow {
-		base = time.Now()
+	now := time.Now()
+	if saleStart.Before(now) || (initialPhase == domain.PhaseReflow && reflowNow) {
+		base = now
 	}
 
 	for wave := 1; wave <= maxWaves; wave++ {
