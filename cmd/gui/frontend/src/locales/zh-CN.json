@@ -686,7 +686,7 @@
         "batchSyncAccountSuccess": "{count} 个购票人已同步到目标账号",
         "batchSyncPartial": "{ok} 个成功，{fail} 个失败",
         "clearSelection": "清除选择",
-        "filterName": "搜索姓名/手机/证件号",
+        "filterName": "搜索姓名、证件号、手机号、拼音或首字母",
         "filterAccount": "按账号筛选",
         "filterAccountAll": "全部账号",
         "filterHas": "存在",

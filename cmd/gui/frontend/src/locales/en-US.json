@@ -686,7 +686,7 @@
         "batchSyncAccountSuccess": "{count} buyers synced to account",
         "batchSyncPartial": "{ok} ok, {fail} failed",
         "clearSelection": "Clear",
-        "filterName": "Search name/phone/ID",
+        "filterName": "Search name, ID number, phone, pinyin, or initials",
         "filterAccount": "Filter by Account",
         "filterAccountAll": "All Accounts",
         "filterHas": "Has",
