@@ -102,8 +102,14 @@ func (c *BiliClient) GetTicketSkuIDsByProjectIDNew(projectID string) ([]r.Ticket
 // GetProjectInformation fetches project info from the ticket mall.
 // Returns project name, sale time range, hot/real-name flags, etc.
 func (c *BiliClient) GetProjectInformation(projectID string) (*r.ProjectInformation, error) {
-	requestURL := fmt.Sprintf("https://show.bilibili.com/api/ticket/project/getV2?version=%s&id=%s&project_id=%s&requestSource=neul-next", global.FrontVersion, projectID, projectID)
-	resp, err := c.client.R().Get(requestURL)
+	resp, err := c.client.R().
+		SetQueryString(c.SignAppParams(map[string]any{
+			"version":       global.FrontVersion,
+			"id":            projectID,
+			"project_id":    projectID,
+			"requestSource": "neul-next",
+		}).Encode()).
+		Get("https://show.bilibili.com/api/ticket/project/getV2")
 	if err != nil {
 		return nil, err
 	}
@@ -129,8 +135,14 @@ func (c *BiliClient) GetProjectInformation(projectID string) (*r.ProjectInformat
 
 // GetTicketSkuIDsByProjectID returns all ticket SKU/screen pairs for a project.
 func (c *BiliClient) GetTicketSkuIDsByProjectID(projectID string) ([]r.TicketSkuScreenID, error) {
-	requestURL := fmt.Sprintf("https://show.bilibili.com/api/ticket/project/getV2?version=%s&id=%s&project_id=%s&requestSource=neul-next", global.FrontVersion, projectID, projectID)
-	resp, err := c.client.R().Get(requestURL)
+	resp, err := c.client.R().
+		SetQueryString(c.SignAppParams(map[string]any{
+			"version":       global.FrontVersion,
+			"id":            projectID,
+			"project_id":    projectID,
+			"requestSource": "neul-next",
+		}).Encode()).
+		Get("https://show.bilibili.com/api/ticket/project/getV2")
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +197,12 @@ func (c *BiliClient) GetRequestTokenAndPToken(tokenGen token.Generator, projectI
 	if tokenGen.IsHotProject() {
 		form["token"] = tokenGen.GenerateTokenPrepareStage()
 	}
-	resp, err := c.client.R().SetBodyJsonMarshal(form).Post("https://show.bilibili.com/api/ticket/order/prepare?project_id=" + projectID)
+	resp, err := c.client.R().
+		SetQueryString(c.SignAppParams(map[string]any{
+			"project_id": projectID,
+		}).Encode()).
+		SetBodyJsonMarshal(form).
+		Post("https://show.bilibili.com/api/ticket/order/prepare")
 	if err != nil {
 		return nil, err
 	}
@@ -207,14 +224,16 @@ func (c *BiliClient) GetRequestTokenAndPToken(tokenGen token.Generator, projectI
 // GetConfirmInformation fetches order confirmation info including buyer list,
 // total price, ticket info, etc. Required before placing an order for real-name projects.
 func (c *BiliClient) GetConfirmInformation(tokens *r.RequestTokenAndPToken, projectID string) (*api.ConfirmStruct, error) {
-	resp, err := c.client.R().SetQueryParams(map[string]string{
-		"token":         tokens.RequestToken,
-		"ptoken":        tokens.PToken,
-		"project_id":    projectID,
-		"projectId":     projectID,
-		"requestSource": "neul-next",
-		"voucher":       "",
-	}).Get("https://show.bilibili.com/api/ticket/order/confirmInfo")
+	resp, err := c.client.R().
+		SetQueryString(c.SignAppParams(map[string]any{
+			"token":         tokens.RequestToken,
+			"ptoken":        tokens.PToken,
+			"project_id":    projectID,
+			"projectId":     projectID,
+			"requestSource": "neul-next",
+			"voucher":       "",
+		}).Encode()).
+		Get("https://show.bilibili.com/api/ticket/order/confirmInfo")
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +363,12 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 	resp, err := c.client.R().
 		SetContext(ctx).
 		SetHeader("X-Risk-Header", fmt.Sprintf("platform/h5 uid/%s channel/1 deviceId/%s", c.getUID(), c.GetInfocUUID())).
-		SetBodyJsonMarshal(form).Post("https://show.bilibili.com/api/ticket/order/createV2?project_id=" + projectID + "&ptoken=" + tokens.PToken)
+		SetQueryString(c.SignAppParams(map[string]any{
+			"project_id": projectID,
+			"ptoken":     tokens.PToken,
+		}).Encode()).
+		SetBodyJsonMarshal(form).
+		Post("https://show.bilibili.com/api/ticket/order/createV2")
 	if err != nil {
 		return err, -1, "", api.TicketOrderStruct{}
 	}
@@ -389,12 +413,15 @@ func (c *BiliClient) GetOrderStatus(ctx context.Context, projectID, token string
 	if orderID <= 0 {
 		return fmt.Errorf("invalid order id"), nil
 	}
-	resp, err := c.client.R().SetContext(ctx).SetQueryParams(map[string]string{
-		"token":      token,
-		"project_id": projectID,
-		"orderId":    strconv.FormatInt(orderID, 10),
-		"timestamp":  strconv.FormatInt(c.Now().UnixMilli(), 10),
-	}).Get("https://show.bilibili.com/api/ticket/order/createstatus")
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetQueryString(c.SignAppParams(map[string]any{
+			"token":      token,
+			"project_id": projectID,
+			"orderId":    orderID,
+			"timestamp":  c.Now().UnixMilli(),
+		}).Encode()).
+		Get("https://show.bilibili.com/api/ticket/order/createstatus")
 	if err != nil {
 		return err, nil
 	}

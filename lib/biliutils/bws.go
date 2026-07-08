@@ -23,9 +23,11 @@ const year = "202601"
 // mapping, and already-reserved activity IDs for convenient access.
 func (c *BiliClient) GetBWSReservationInfo(reserveDates string, reserveType int) (*r.BWSReservationData, error) {
 	resp, err := c.client.R().
-		SetQueryParam("reserve_date", reserveDates).
-		SetQueryParam("year", year).
-		SetQueryParam("reserve_type", strconv.Itoa(reserveType)).
+		SetQueryString(c.SignAppParams(map[string]any{
+			"reserve_date": reserveDates,
+			"year":         year,
+			"reserve_type": reserveType,
+		}).Encode()).
 		Get("https://api.bilibili.com/x/activity/bws/online/park/reserve/info")
 	if err != nil {
 		return nil, fmt.Errorf("BWS info request failed: %w", err)
@@ -76,7 +78,11 @@ func (c *BiliClient) GetBWSReservationInfo(reserveDates string, reserveType int)
 
 // GetBWSMyReservations fetches the user's current BWS reservations.
 func (c *BiliClient) GetBWSMyReservations() (*api.BWSMyReservationsStruct, error) {
-	resp, err := c.client.R().SetQueryParam("year", year).Get("https://api.bilibili.com/x/activity/bws/online/park/myreserve")
+	resp, err := c.client.R().
+		SetQueryString(c.SignAppParams(map[string]any{
+			"year": year,
+		}).Encode()).
+		Get("https://api.bilibili.com/x/activity/bws/online/park/myreserve")
 	if err != nil {
 		return nil, fmt.Errorf("BWS myreserve request failed: %w", err)
 	}
@@ -175,10 +181,12 @@ func (c *BiliClient) BindBWSTicket(bid int, idType int, personalID string, ticke
 //
 // Returns a boolean indicating if the account is bound, and any transport/unmarshal error.
 func (c *BiliClient) CheckBWSBindStatus() (bool, error) {
-	resp, err := c.client.R().SetQueryParams(map[string]string{
-		"csrf": c.getCSRFFromCookie(),
-		"year": year,
-	}).Get("https://api.bilibili.com/x/activity/bws/online/park/ticket/check")
+	resp, err := c.client.R().
+		SetQueryString(c.SignAppParams(map[string]any{
+			"csrf": c.getCSRFFromCookie(),
+			"year": year,
+		}).Encode()).
+		Get("https://api.bilibili.com/x/activity/bws/online/park/ticket/check")
 	if err != nil {
 		return false, fmt.Errorf("BWS bind check request failed: %w", err)
 	}

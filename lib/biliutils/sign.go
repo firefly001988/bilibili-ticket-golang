@@ -119,11 +119,21 @@ func (c *BiliClient) SignAppParams(params map[string]any) url.Values {
 	for key, val := range params {
 		values.Set(key, fmt.Sprint(val))
 	}
+	return signAppValuesAt(c.Now(), values)
+}
+
+func signAppValuesAt(now time.Time, params url.Values) url.Values {
+	values := make(url.Values, len(params)+3)
+	for key, vals := range params {
+		for _, val := range vals {
+			values.Add(key, val)
+		}
+	}
 	values.Del("sign")
 	values.Del("appkey")
 	values.Del("ts")
 	values.Set("appkey", appKey)
-	values.Set("ts", strconv.FormatInt(c.Now().Unix(), 10))
+	values.Set("ts", strconv.FormatInt(now.Unix(), 10))
 	sign := md5.Sum([]byte(values.Encode() + appSec))
 	values.Set("sign", hex.EncodeToString(sign[:]))
 	return values

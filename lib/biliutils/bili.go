@@ -370,8 +370,8 @@ func (c *BiliClient) getBuvid34AndBnut() error {
 	if c.cookieJar != nil {
 		u, _ := url.Parse("https://www.bilibili.com/")
 		c.cookieJar.SetCookies(u, []*http.Cookie{
-			{Name: "buvid3", Value: r.Data.BVUID3, Path: "/", Domain: "bilibili.com", MaxAge: 60 * 60 * 24 * 365},
-			{Name: "buvid4", Value: r.Data.BVUID4, Path: "/", Domain: "bilibili.com", MaxAge: 60 * 60 * 24 * 365},
+			{Name: "buvid3", Value: r.Data.BVUID3, Path: "/", Domain: ".bilibili.com", MaxAge: 60 * 60 * 24 * 365},
+			{Name: "buvid4", Value: r.Data.BVUID4, Path: "/", Domain: ".bilibili.com", MaxAge: 60 * 60 * 24 * 365},
 		})
 	}
 	return nil
