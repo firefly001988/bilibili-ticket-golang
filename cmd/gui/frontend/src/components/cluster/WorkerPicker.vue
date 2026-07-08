@@ -168,11 +168,12 @@ watch(
             <div class="d-flex align-center" style="gap:8px">
                 <div style="min-width:0;flex:1">
                     <div v-if="label" class="text-caption text-medium-emphasis mb-1">{{ label }}</div>
-                    <div class="text-body-2 text-truncate">{{ summary }}</div>
+                    <div class="text-body-2 worker-id-full">{{ summary }}</div>
                     <div v-if="hint" class="text-caption text-medium-emphasis mt-1">{{ hint }}</div>
                 </div>
                 <div class="d-flex align-center flex-wrap justify-end" style="gap:4px;max-width:50%">
-                    <v-chip v-for="worker in selectedPreview" :key="worker.id" size="x-small" variant="tonal">
+                    <v-chip v-for="worker in selectedPreview" :key="worker.id" size="x-small" variant="tonal"
+                        class="worker-chip-full">
                         {{ worker.name || worker.id }}
                     </v-chip>
                     <v-chip v-if="selected.length > selectedPreview.length" size="x-small" variant="tonal">
@@ -253,6 +254,18 @@ watch(
 </template>
 
 <style scoped>
+.worker-id-full {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.worker-chip-full {
+    height: auto;
+    min-height: 20px;
+    white-space: normal;
+}
+
 .worker-picker-card {
     cursor: pointer;
 }

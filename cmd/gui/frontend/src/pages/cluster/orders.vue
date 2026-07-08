@@ -172,7 +172,7 @@ onUnmounted(() => {
                         </div>
                         <div class="order-meta text-caption text-medium-emphasis mt-1">
                             <span>A {{ accountText(item) }}</span>
-                            <span>W {{ compactID(item.workerId, 14) }}</span>
+                            <span class="order-worker-id">W {{ displayValue(item.workerId) }}</span>
                         </div>
                     </div>
                 </template>
@@ -251,10 +251,15 @@ onUnmounted(() => {
 
 .order-meta {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 4px 10px;
     line-height: 1.35;
-    white-space: nowrap;
+}
+
+.order-worker-id {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .buyer-cell {

@@ -112,7 +112,7 @@ const searchText = ref('')
 
 const tableHeaders = computed(() => [
     { title: t('events.colTime'), key: 'time', width: 170, sortable: false },
-    { title: t('events.colWorker'), key: 'workerId', width: 80, sortable: false },
+    { title: t('events.colWorker'), key: 'workerId', minWidth: 140, sortable: false },
     { title: t('events.colStage'), key: 'stage', width: 70, sortable: false },
     { title: t('events.colType'), key: 'kind', width: 100, sortable: false },
     { title: t('events.colMessage'), key: 'message', sortable: false },
@@ -153,7 +153,7 @@ const tableHeaders = computed(() => [
                     <span class="font-monospace text-caption text-no-wrap">{{ fmtTime(item.time) }}</span>
                 </template>
                 <template #item.workerId="{ item }">
-                    <span class="font-monospace text-caption text-no-wrap">{{ item.workerId || '—'
+                    <span class="font-monospace text-caption worker-id-full">{{ item.workerId || '—'
                         }}</span>
                 </template>
                 <template #item.stage="{ item }">
@@ -194,6 +194,14 @@ const tableHeaders = computed(() => [
         </v-dialog>
     </v-container>
 </template>
+
+<style scoped>
+.worker-id-full {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+</style>
 
 <style scoped>
 .events-table :deep(td) {

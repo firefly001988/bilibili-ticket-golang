@@ -1172,10 +1172,10 @@ async function cancelBatchDeploy() {
                             <v-icon size="small">{{ expandedWorkers.has(w.id) ? 'mdi-chevron-down' : 'mdi-chevron-right'
                                 }}</v-icon>
                         </td>
-                        <td style="max-width:200px">
-                            <div class="d-flex align-center text-truncate" style="min-width:0">
+                        <td style="max-width:260px">
+                            <div class="d-flex align-center flex-wrap" style="min-width:0;gap:4px">
                                 <v-icon start size="small" class="mr-1 flex-shrink-0">mdi-server-network</v-icon>
-                                <span class="text-truncate font-weight-bold" style="min-width:0">{{ w.name || w.id
+                                <span class="font-weight-bold worker-id-full" style="min-width:0">{{ w.name || w.id
                                     }}</span>
                                 <v-chip v-if="isLocalWorker(w)" size="x-small" color="info" variant="tonal"
                                     class="ml-1 flex-shrink-0">
@@ -1305,7 +1305,7 @@ async function cancelBatchDeploy() {
                             <v-row dense>
                                 <v-col cols="6" md="3">
                                     <div class="text-caption text-medium-emphasis">Worker ID</div>
-                                    <div class="text-body-2 font-monospace">{{ w.id }}</div>
+                                    <div class="text-body-2 font-monospace worker-id-full">{{ w.id }}</div>
                                 </v-col>
                                 <v-col cols="6" md="3">
                                     <div class="text-caption text-medium-emphasis">{{ t('worker.colAddress') }}</div>
@@ -1628,7 +1628,7 @@ async function cancelBatchDeploy() {
                                         <div>{{ item.host }}:{{ item.sshPort }}</div>
                                         <div class="text-caption text-medium-emphasis">{{ item.address }}</div>
                                     </td>
-                                    <td class="font-monospace">{{ item.workerId || '—' }}</td>
+                                    <td class="font-monospace worker-id-full">{{ item.workerId || '—' }}</td>
                                     <td>{{ deployStageText(item.stage) }}</td>
                                     <td>
                                         <v-chip :color="deployStatusColor(item.status)" size="small" variant="tonal">
@@ -1948,6 +1948,14 @@ async function cancelBatchDeploy() {
         </v-dialog>
     </v-container>
 </template>
+
+<style scoped>
+.worker-id-full {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+</style>
 
 <style scoped>
 .no-spin :deep(input[type='number']) {

@@ -92,7 +92,7 @@ const tableHeaders = [
     { title: t('logs.colId'), key: 'id', width: '60px', sortable: false },
     { title: t('logs.colState'), key: 'state', width: '80px', sortable: false },
     { title: t('logs.colAccount'), key: 'accountId', width: '90px', sortable: false },
-    { title: t('logs.colWorker'), key: 'workerId', width: '90px', sortable: false },
+    { title: t('logs.colWorker'), key: 'workerId', minWidth: '140px', sortable: false },
     { title: t('logs.colOrder'), key: 'orderId', width: '80px', sortable: false },
 ]
 
@@ -251,7 +251,7 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
                             <span class="text-caption">{{ item.accountId?.slice(0, 18) || '—' }}</span>
                         </template>
                         <template #item.workerId="{ item }">
-                            <span class="text-caption">{{ item.workerId?.slice(0, 14) || '—' }}</span>
+                            <span class="text-caption worker-id-full">{{ item.workerId || '—' }}</span>
                         </template>
                         <template #item.orderId="{ item }">
                             <span class="text-caption text-primary" v-if="item.orderId">#{{ item.orderId }}</span>
@@ -283,7 +283,7 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
                             <span class="text-caption">
                                 {{ selectedAttempt?.accountId?.slice(0, 16) || '—' }}
                                 ·
-                                {{ selectedAttempt?.workerId?.slice(0, 14) || '—' }}
+                                <span class="worker-id-full">{{ selectedAttempt?.workerId || '—' }}</span>
                                 <template v-if="selectedAttempt?.orderId">
                                     · <span class="text-primary">#{{ selectedAttempt.orderId }}</span>
                                 </template>
@@ -368,5 +368,11 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
     bottom: 8px;
     right: 12px;
     z-index: 1;
+}
+
+.worker-id-full {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 </style>

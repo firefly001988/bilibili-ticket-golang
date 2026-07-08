@@ -143,7 +143,8 @@ onMounted(refresh)
                     <!-- Worker 选择按钮 -->
                     <div class="d-flex flex-wrap align-center ga-2 mb-4">
                         <v-btn v-for="w in workers" :key="w.id" size="small" variant="outlined" color="primary"
-                            rounded="pill" :disabled="workerTesting" @click="testWorker(w.id)">
+                            rounded="pill" :disabled="workerTesting" class="worker-id-button"
+                            @click="testWorker(w.id)">
                             {{ w.name || w.id }}
                         </v-btn>
                         <v-btn size="small" variant="tonal" color="secondary" rounded="pill" :disabled="workerTesting"
@@ -158,7 +159,7 @@ onMounted(refresh)
                             <template #prepend>
                                 <v-icon :icon="r.success ? 'mdi-check' : 'mdi-alert'" size="18" />
                             </template>
-                            <strong>{{ r.id || r.workerId }}</strong>
+                            <strong class="worker-id-full">{{ r.id || r.workerId }}</strong>
                             <template v-if="r.success">
                                 — {{ r.elapsed }} ({{ r.type }})
                             </template>
@@ -173,3 +174,17 @@ onMounted(refresh)
         </v-card>
     </div>
 </template>
+
+<style scoped>
+.worker-id-full {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.worker-id-button {
+    height: auto;
+    min-height: 28px;
+    white-space: normal;
+}
+</style>

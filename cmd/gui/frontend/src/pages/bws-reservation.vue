@@ -438,7 +438,18 @@ onUnmounted(() => {
                 <v-col cols="12" sm="5">
                     <v-select v-model="selectedWorkerID" :items="workerOptions"
                         :label="t('bwsReservation.selectWorker')" variant="outlined" density="compact" hide-details
-                        @update:model-value="bindChecked = false; bwsResult = null" />
+                        class="worker-select-full" @update:model-value="bindChecked = false; bwsResult = null">
+                        <template #selection="{ item }">
+                            <span class="worker-id-full">{{ item.title }}</span>
+                        </template>
+                        <template #item="{ props, item }">
+                            <v-list-item v-bind="props">
+                                <template #title>
+                                    <span class="worker-id-full">{{ item.title }}</span>
+                                </template>
+                            </v-list-item>
+                        </template>
+                    </v-select>
                 </v-col>
                 <v-col cols="12" sm="2">
                     <v-btn block color="info" variant="tonal" :disabled="!selectedAccount || !selectedWorkerID"
@@ -567,7 +578,7 @@ onUnmounted(() => {
                         </template>
                         <template #subtitle>
                             <span class="text-caption text-grey">
-                                {{ e.accountId || '—' }} @ {{ e.workerId || '—' }} · ID: {{ e.activityId || '—' }} · {{
+                                {{ e.accountId || '—' }} @ <span class="worker-id-full">{{ e.workerId || '—' }}</span> · ID: {{ e.activityId || '—' }} · {{
                                     e.reserveDate ||
                                     '—' }} ·
                                 {{ t('bwsReservation.ticketNoLabel') }} {{ e.ticketNo || '—' }}
@@ -682,5 +693,20 @@ code {
     background: rgba(0, 0, 0, 0.05);
     padding: 1px 4px;
     border-radius: 3px;
+}
+
+.worker-id-full {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.worker-select-full :deep(.v-field__input),
+.worker-select-full :deep(.v-select__selection),
+.worker-select-full :deep(.v-select__selection-text) {
+    min-width: 0;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
 }
 </style>
