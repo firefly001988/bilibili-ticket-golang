@@ -68,10 +68,26 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 				log.Printf("[cluster] onSuccess callback PANIC: intent=%s panic=%v", intent.ID, r)
 			}
 		}()
-		if service.notify != nil {
-			service.notify(fmt.Sprintf("购票成功：Intent %s，订单 %s", intent.ID, result.OrderID))
+		// Persist the order before starting any external notification request.
+		// A slow or broken notification endpoint must never prevent the
+		// employer from learning about an order that needs payment.
+		record, err := service.saveOrderRecord(intent, result)
+		if err != nil {
+			log.Printf("[cluster] save order record failed: intent=%s orderID=%s: %v", intent.ID, result.OrderID, err)
+		} else {
+			go service.openOrderRecordPaymentWindow(record)
 		}
-		service.openPayQRWindow(intent, result)
+		if notify := service.notify; notify != nil {
+			message := fmt.Sprintf("购票成功：Intent %s，订单 %s", intent.ID, result.OrderID)
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[cluster] success notifier PANIC: intent=%s panic=%v", intent.ID, r)
+					}
+				}()
+				notify(message)
+			}()
+		}
 		log.Printf("[cluster] onSuccess callback DONE: intent=%s", intent.ID)
 	})
 

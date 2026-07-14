@@ -4,11 +4,28 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strings"
+	"sync"
 )
 
-// rng is a package-level, concurrency-safe random number generator shared
-// across all fingerprint and random-generation utilities.
-var rng = rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
+// lockedRand makes rand.Rand safe for concurrent client construction.
+type lockedRand struct {
+	mu sync.Mutex
+	r  *rand.Rand
+}
+
+func (r *lockedRand) IntN(n int) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.r.IntN(n)
+}
+
+func (r *lockedRand) Uint32() uint32 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.r.Uint32()
+}
+
+var rng = &lockedRand{r: rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))}
 
 // randBytes fills buf with random bytes from the shared RNG.
 func randBytes(buf []byte) {

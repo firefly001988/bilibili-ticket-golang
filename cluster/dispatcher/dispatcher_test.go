@@ -58,9 +58,10 @@ func (c *client) Stop(ctx context.Context, _ domain.WorkerNode, id string) error
 }
 
 type repo struct {
-	intents  []domain.LogicalOrderIntent
-	attempts []domain.ExecutionAttempt
-	occupied bool
+	intents       []domain.LogicalOrderIntent
+	attempts      []domain.ExecutionAttempt
+	successResult []domain.ExecutionResult
+	occupied      bool
 }
 
 func (r *repo) PutAttempt(_ context.Context, attempt domain.ExecutionAttempt) error {
@@ -72,7 +73,8 @@ func (r *repo) PutIntent(_ context.Context, intent domain.LogicalOrderIntent) er
 	return nil
 }
 func (r *repo) PutAccount(context.Context, domain.Account, *int64) error { return nil }
-func (r *repo) MarkIntentSucceeded(context.Context, domain.LogicalOrderIntent, domain.ExecutionResult) error {
+func (r *repo) MarkIntentSucceeded(_ context.Context, _ domain.LogicalOrderIntent, result domain.ExecutionResult) error {
+	r.successResult = append(r.successResult, result)
 	return nil
 }
 func (r *repo) BuyerDayOccupied(context.Context, []domain.BuyerDayKey) (bool, error) {
@@ -141,6 +143,40 @@ func TestProcessCompletedTaskPreservesWinningAttemptMessage(t *testing.T) {
 	result := d.ProcessCompletedTask("w", domain.ExecutionResult{AttemptID: "a", IntentID: "i", State: domain.AttemptStopped, Reason: domain.FailureStopped, Message: "context canceled"})
 	if result.Message != "cancelled by winning attempt winner" {
 		t.Fatalf("message was not preserved: %#v", result)
+	}
+}
+
+func TestEverySuccessfulReplicaIsReportedAndPersisted(t *testing.T) {
+	r := &repo{}
+	d := New(&client{}, r, nil)
+	intent := dispatchIntent("i", "m", 2, "buyer")
+	d.Add(IntentPlan{Macro: dispatchMacro("m", 1), Intent: intent})
+	d.attempts["first"] = &attempt{planID: intent.ID, value: domain.ExecutionAttempt{
+		ID: "first", IntentID: intent.ID, AccountID: "a1", WorkerID: "w1", State: domain.AttemptRunning,
+	}}
+	d.attempts["second"] = &attempt{planID: intent.ID, value: domain.ExecutionAttempt{
+		ID: "second", IntentID: intent.ID, AccountID: "a2", WorkerID: "w2", State: domain.AttemptRunning,
+	}}
+
+	var reported []domain.ExecutionResult
+	d.SetSuccessHandler(func(_ domain.LogicalOrderIntent, result domain.ExecutionResult) {
+		reported = append(reported, result)
+	})
+
+	d.ProcessCompletedTask("w1", domain.ExecutionResult{
+		AttemptID: "first", IntentID: intent.ID, State: domain.AttemptSucceeded, Success: true, OrderID: "order-1",
+	})
+	// The first winner asks the second replica to stop, but the remote order
+	// may already have been created by the time that stop reaches the worker.
+	d.ProcessCompletedTask("w2", domain.ExecutionResult{
+		AttemptID: "second", IntentID: intent.ID, State: domain.AttemptSucceeded, Success: true, OrderID: "order-2",
+	})
+
+	if len(reported) != 2 || reported[0].OrderID != "order-1" || reported[1].OrderID != "order-2" {
+		t.Fatalf("successful replica orders were not all reported: %#v", reported)
+	}
+	if len(r.successResult) != 2 || r.successResult[0].OrderID != "order-1" || r.successResult[1].OrderID != "order-2" {
+		t.Fatalf("successful replica results were not all persisted: %#v", r.successResult)
 	}
 }
 

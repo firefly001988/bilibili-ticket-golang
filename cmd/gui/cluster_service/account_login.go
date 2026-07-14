@@ -123,6 +123,7 @@ func (s *ClusterService) PollAccountLogin(sessionID string) (AccountLoginPoll, e
 		return result, nil
 	}
 	session.Client.SetRefreshToken(state.RefreshToken)
+
 	saved, err := s.persistLoggedInAccount(session.Client, session.Jar, session.Name, "QR login")
 	if err != nil {
 		return result, err
@@ -521,6 +522,22 @@ func (s *ClusterService) persistLoggedInAccount(client *biliutils.BiliClient, ja
 	}
 	if info == nil || !info.Login || info.UID == 0 {
 		return AccountLoginResult{}, fmt.Errorf("login did not produce a valid account session")
+	}
+	reportCtx, cancelReport := context.WithTimeout(context.Background(), 30*time.Second)
+	reportErr := client.ReportGaiaAfterLogin(reportCtx, api.GaiaPostLoginReportOptions{
+		ExClimbWuzhi: api.GaiaFingerprintOptions{
+			SPMPrefix: "333.1007",
+			PageURL:   "https://www.bilibili.com/index.html",
+		},
+		ExClimbCongLing: api.GaiaSecureFingerprintOptions{
+			CollectAPI: "spontaneous",
+			PageURL:    "https://www.bilibili.com/index.html",
+			SPMID:      "333.1007",
+		},
+	})
+	cancelReport()
+	if reportErr != nil {
+		return AccountLoginResult{}, fmt.Errorf("post-login Gaia report: %w", reportErr)
 	}
 	profile, _ := json.Marshal(client.ExportDeviceProfile())
 	credentials := credentialsFrom(client, jar, domain.Credentials{RefreshToken: client.GetRefreshToken(), Version: 1, DeviceProfile: profile})

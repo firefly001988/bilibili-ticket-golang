@@ -121,16 +121,17 @@ type LogEntry struct {
 }
 
 type Server struct {
-	config            Config
-	factory           BackendFactory
-	store             *SuccessStore
-	mu                sync.Mutex
-	tasks             map[string]*task
-	active            string
-	now               func() time.Time
-	completedNotifier func(t *task) // called when a task completes to push result over heartbeat
-	grpcServer        *grpc.Server  // set by ServeOn/ListenAndServe; nil until serving
-	captchaTester     CaptchaTester // optional; enables TestCaptcha RPC
+	config             Config
+	factory            BackendFactory
+	store              *SuccessStore
+	mu                 sync.Mutex
+	tasks              map[string]*task
+	active             string
+	now                func() time.Time
+	completedNotifier  func(t *task) // called when a task completes to push result over heartbeat
+	notifierGeneration uint64        // prevents an old stream from clearing a newer notifier
+	grpcServer         *grpc.Server  // set by ServeOn/ListenAndServe; nil until serving
+	captchaTester      CaptchaTester // optional; enables TestCaptcha RPC
 
 	// Global configuration pushed by the employer via Configure RPC.
 	globalConfig   GlobalConfig
@@ -882,8 +883,21 @@ func (ws *workerService) Heartbeat(stream pb.WorkerService_HeartbeatServer) erro
 	s := ws.server
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
+	// gRPC permits one concurrent sender and one concurrent receiver per
+	// stream, but not multiple concurrent senders. Serialize periodic
+	// heartbeats and completion pushes so a successful result cannot be lost
+	// when it happens at the same instant as a heartbeat tick.
+	var sendMu sync.Mutex
+	send := func(msg *pb.HeartbeatMsg) error {
+		sendMu.Lock()
+		defer sendMu.Unlock()
+		return stream.Send(msg)
+	}
 
 	// Register a notifier so complete() can push finished tasks immediately.
+	s.mu.Lock()
+	s.notifierGeneration++
+	generation := s.notifierGeneration
 	s.completedNotifier = func(t *task) {
 		msg := &pb.HeartbeatMsg{
 			WorkerId:        s.config.WorkerID,
@@ -892,9 +906,16 @@ func (ws *workerService) Heartbeat(stream pb.WorkerService_HeartbeatServer) erro
 			Time:            timestamppb.New(s.now()),
 			CompletedTask:   executionResultToProto(t.result),
 		}
-		_ = stream.Send(msg)
+		_ = send(msg)
 	}
-	defer func() { s.completedNotifier = nil }()
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		if s.notifierGeneration == generation {
+			s.completedNotifier = nil
+		}
+		s.mu.Unlock()
+	}()
 
 	// Send heartbeats to the master.
 	errCh := make(chan error, 1)
@@ -918,7 +939,7 @@ func (ws *workerService) Heartbeat(stream pb.WorkerService_HeartbeatServer) erro
 					Sequence:        seq,
 					Time:            timestamppb.New(s.now()),
 				}
-				if err := stream.Send(msg); err != nil {
+				if err := send(msg); err != nil {
 					errCh <- err
 					return
 				}
@@ -1341,8 +1362,11 @@ func (s *Server) complete(t *task, result domain.ExecutionResult) {
 
 	// Push the result immediately via the heartbeat stream so the
 	// employer can dispatch the next task without waiting for a poll.
-	if s.completedNotifier != nil {
-		s.completedNotifier(t)
+	s.mu.Lock()
+	notify := s.completedNotifier
+	s.mu.Unlock()
+	if notify != nil {
+		notify(t)
 	}
 }
 

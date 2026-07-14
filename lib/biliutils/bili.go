@@ -26,6 +26,7 @@ type Fingerprint struct {
 	Buvidfp    string
 	Webglfp    string
 	Canvasfp   string
+	Browser    utils.FingerprintData `json:"browser,omitempty"`
 }
 
 type DeviceProfile struct {
@@ -102,19 +103,27 @@ func newBiliClient(jar http.CookieJar, profile *DeviceProfile) (*BiliClient, err
 		return nil, err
 	}
 
-	// Generate device fingerprint
+	// Generate one coherent device fingerprint and retain its source components
+	// for Gaia reporting instead of discarding them after hashing.
 	buvid := utils.GenerateXUBUVID()
 	infocUUID := utils.GenerateUUIDInfoc()
+	browserFP := utils.GenerateRandomMobileFingerprint(browserUA(ver))
 	fp := &Fingerprint{
 		BuvidLocal: utils.GetFpLocal(buvid, model, ""),
-		Buvidfp:    utils.CalculateFingerprintID(utils.GenerateRandomFingerprint()),
-		Webglfp:    utils.RandomString("0123456789abcdef", 32),
-		Canvasfp:   utils.RandomString("0123456789abcdef", 32),
+		Buvidfp:    utils.CalculateFingerprintID(browserFP),
+		Webglfp:    browserFP.WebGLRenderer,
+		Canvasfp:   browserFP.CanvasFingerprint,
+		Browser:    browserFP,
 	}
 	if profile != nil {
 		buvid, infocUUID = profile.Buvid, profile.InfocUUID
 		profileFingerprint := profile.Fingerprint
 		fp = &profileFingerprint
+	}
+	// Profiles saved by older versions contain only the four legacy strings.
+	// Fill the new source data without rotating those stable identifiers.
+	if fp.Browser.UserAgent == "" {
+		fp.Browser = utils.MobileFingerprintFromLegacy(browserUA(ver), fp.Canvasfp, fp.Webglfp)
 	}
 
 	biliClient := &BiliClient{
@@ -145,14 +154,13 @@ func newBiliClient(jar http.CookieJar, profile *DeviceProfile) (*BiliClient, err
 			// Build User-Agent for show.bilibili.com (会员购)
 			var ua string
 			// Filter requests by host and path to set appropriate User-Agent and headers.
-			if req.URL.Host == "passport.bilibili.com" || (req.URL.Host == "show.bilibili.com" && (req.URL.Path == "/api/ticket/order/createstatus" || req.URL.Path == "/api/ticket/order/getPayParam")) {
+			if req.URL.Host == "api.bilibili.com" && (req.URL.Path == "/x/internal/gaia-gateway/ExClimbWuzhi" || req.URL.Path == "/x/internal/gaia-gateway/ExGetAxe" || req.URL.Path == "/x/internal/gaia-gateway/ExClimbCongLing") {
+				ua = browserUA(biliClient.appVersion)
+			} else if req.URL.Host == "passport.bilibili.com" || (req.URL.Host == "show.bilibili.com" && (req.URL.Path == "/api/ticket/order/createstatus" || req.URL.Path == "/api/ticket/order/getPayParam")) {
 				ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.56 Safari/537.36"
 			} else if req.URL.Host == "show.bilibili.com" {
 				req.SetHeader("x-requested-with", "tv.danmaku.bili")
-				ua = fmt.Sprintf(
-					`Mozilla/5.0 (Linux; Android 12; %s; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36 BiliApp/%d mobi_app/android isNotchWindow/0 NotchHeight=24 mallVersion/%d mVersion/361 disable_rcmd/0 magent/BILI_H5_ANDROID_12_%s_%d`,
-					model, biliClient.appVersion.Build, biliClient.appVersion.Build, biliClient.appVersion.Version, biliClient.appVersion.Build,
-				)
+				ua = browserUA(biliClient.appVersion)
 				// Set show.bilibili.com specific cookies
 				req.SetCookies(
 					&http.Cookie{Name: "_uuid", Value: biliClient.infocUUID},
@@ -252,9 +260,13 @@ func GetBilibiliAppVersion() (*api.BiliAppVersionStruct, error) {
 }
 
 func (c *BiliClient) GetBrowserUA() string {
+	return browserUA(c.appVersion)
+}
+
+func browserUA(appVersion *api.BiliAppVersionStruct) string {
 	return fmt.Sprintf(
-		`Mozilla/5.0 (Linux; Android 12; %s; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36 BiliApp/%d mobi_app/android isNotchWindow/0 NotchHeight=24 mallVersion/%d mVersion/312 disable_rcmd/0 magent/BILI_H5_ANDROID_12_%s_%d`,
-		model, c.appVersion.Build, c.appVersion.Build, c.appVersion.Version, c.appVersion.Build,
+		`Mozilla/5.0 (Linux; Android 12; %s; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36 BiliApp/%d mobi_app/android isNotchWindow/0 NotchHeight=24 mallVersion/%d mVersion/361 disable_rcmd/0 magent/BILI_H5_ANDROID_12_%s_%d`,
+		model, appVersion.Build, appVersion.Build, appVersion.Version, appVersion.Build,
 	)
 }
 

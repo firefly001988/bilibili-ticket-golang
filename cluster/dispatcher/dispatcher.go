@@ -677,23 +677,30 @@ func (d *Dispatcher) poll(ctx context.Context) error {
 
 func (d *Dispatcher) win(ctx context.Context, winner *attempt, result domain.ExecutionResult) error {
 	plan := d.plans[winner.planID]
-	if plan.Intent.Succeeded {
-		log.Printf("[dispatcher] win SKIP: intent %s already succeeded", plan.Intent.ID)
-		return nil
+	firstSuccess := !plan.Intent.Succeeded
+	log.Printf("[dispatcher] win: intent=%s attempt=%s orderID=%s paymentURL=%q firstSuccess=%v onSuccess=%v",
+		plan.Intent.ID, result.AttemptID, result.OrderID, result.PaymentURL, firstSuccess, d.onSuccess != nil)
+	if firstSuccess {
+		plan.Intent.Succeeded, plan.Intent.Terminal = true, true
 	}
-	log.Printf("[dispatcher] win: intent=%s orderID=%s paymentURL=%q onSuccess=%v",
-		plan.Intent.ID, result.OrderID, result.PaymentURL, d.onSuccess != nil)
-	plan.Intent.Succeeded, plan.Intent.Terminal = true, true
-	// Call onSuccess BEFORE MarkIntentSucceeded so that the payment
-	// window opens even if the database write fails.
+	// Every successful attempt can represent a distinct order. Sibling
+	// replicas may both finish creating an order before the first one can be
+	// stopped, so report and persist every success. Only the logical intent
+	// win and conflict cancellation below are one-shot operations.
+	//
+	// Invoke the handler before MarkIntentSucceeded so the employer can
+	// durably record the order even if updating the intent later fails.
 	if d.onSuccess != nil {
-		go d.onSuccess(plan.Intent, result)
+		d.onSuccess(plan.Intent, result)
 	}
 	if d.repository != nil {
 		if err := d.repository.MarkIntentSucceeded(ctx, plan.Intent, result); err != nil {
 			log.Printf("[dispatcher] win: MarkIntentSucceeded failed for intent=%s: %v", plan.Intent.ID, err)
 			return err
 		}
+	}
+	if !firstSuccess {
+		return nil
 	}
 	for _, other := range d.plans {
 		if other.Intent.ID == plan.Intent.ID || other.Intent.Succeeded || other.Intent.Terminal {

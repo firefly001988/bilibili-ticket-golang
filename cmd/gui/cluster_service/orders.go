@@ -67,14 +67,11 @@ func (s *ClusterService) saveOrderRecord(intent domain.LogicalOrderIntent, resul
 			}
 		}
 	}
-	for _, attempt := range s.dispatcher.Attempts() {
-		if attempt.ID == result.AttemptID {
-			record.AccountID = attempt.AccountID
-			record.WorkerID = attempt.WorkerID
-			break
-		}
-	}
-	if (record.AccountID == "" || record.WorkerID == "") && s.repository != nil {
+	// The dispatcher persists the completed attempt before invoking the
+	// success handler. Read it from the repository rather than calling back
+	// into the dispatcher: success handling runs while the dispatcher lock is
+	// held, so taking that lock again here would deadlock the payment path.
+	if s.repository != nil {
 		if attempts, err := s.repository.ListAttempts(ctx); err == nil {
 			for _, attempt := range attempts {
 				if attempt.ID == result.AttemptID {
