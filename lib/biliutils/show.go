@@ -288,7 +288,7 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 		"token":          tokens.RequestToken,
 		"newRisk":        true,
 		"orderCreateUrl": "https://show.bilibili.com/api/ticket/order/createV2",
-		"clickPostion": map[string]any{
+		"clickPosition": map[string]any{
 			"now":    c.Now().UnixMilli(),
 			"origin": c.Now().UnixMilli() - 10000,
 			"x":      rand.Int64N(400) + 100,
