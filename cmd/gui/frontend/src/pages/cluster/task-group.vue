@@ -246,16 +246,11 @@ function formatDateTimeRange(start: string | undefined, end: string | undefined)
     return `${formatDateTime(start)} ~ ${formatDateTime(end)}`
 }
 
-function buyerIdTail(b: any) {
-    const idCard = String(b?.idCard || '').replace(/\s+/g, '')
-    return idCard ? idCard.slice(-4) : ''
-}
-
 function buyerDisplayName(b: any) {
     const buyer = b?.logicalId ? (buyerByLogicalId(b.logicalId) || b) : b
     const name = buyer?.name || b?.name || buyer?.logicalId || b?.logicalId || '—'
-    const tail = buyerIdTail(buyer)
-    return tail ? `${name} · ${tail}` : name
+    const idCard = String(buyer?.idCard || '').replace(/\s+/g, '')
+    return idCard ? `${name} · ${idCard}` : name
 }
 
 function buyerDisplayNameFullId(b: any) {
@@ -268,9 +263,9 @@ function buyerDisplayNameFullId(b: any) {
 function buyerSubtitle(b: any) {
     const buyer = b?.logicalId ? (buyerByLogicalId(b.logicalId) || b) : b
     const tel = buyer?.tel || ''
-    const tail = buyerIdTail(buyer)
-    if (tel && tail) return `${tel} · 证件尾号 ${tail}`
-    if (tail) return `证件尾号 ${tail}`
+    const idCard = String(buyer?.idCard || '').replace(/\s+/g, '')
+    if (tel && idCard) return `${tel} · 证件号 ${idCard}`
+    if (idCard) return `证件号 ${idCard}`
     return tel || '—'
 }
 
@@ -822,7 +817,7 @@ const allPurchaseGroups = computed(() => {
                                             <v-chip size="x-small" variant="tonal" color="primary">
                                                 {{ m.screenName || m.screenId }}
                                             </v-chip>
-                                            <span class="macro-summary__sku text-truncate">{{ m.skuName || m.skuId
+                                            <span class="macro-summary__sku">{{ m.skuName || m.skuId
                                             }}</span>
                                             <span class="macro-summary__ids">SKU {{ m.skuId }}</span>
                                         </div>
@@ -925,7 +920,7 @@ const allPurchaseGroups = computed(() => {
                                     <v-list-item v-for="i in dispatchStats(m).intents" :key="i.id" class="px-2"
                                         :density="'compact'">
                                         <template #title>
-                                            <span class="text-caption">{{ i.id.slice(0, 12) }}…</span>
+                                            <span class="text-caption id-full">{{ i.id }}</span>
                                             <v-chip size="x-small" variant="outlined" class="ml-1" color="info">×{{
                                                 i.weight }}</v-chip>
                                             <v-chip v-if="i.priority !== 0" size="x-small" variant="outlined"
@@ -1175,7 +1170,7 @@ const allPurchaseGroups = computed(() => {
                                                                 @click="selectedScreenId = t.screenId; selectedSkuId = t.skuId">
                                                                 <template #title>
                                                                     <div class="sku-ticket-item__title">
-                                                                        <span class="text-body-2 text-truncate"
+                                                                        <span class="text-body-2 id-data-full"
                                                                             style="min-width:0">{{ t.desc || t.skuId
                                                                             }}</span>
                                                                         <v-chip v-if="t.flags?.display_name"
@@ -1351,6 +1346,13 @@ const allPurchaseGroups = computed(() => {
     max-width: 420px;
     font-size: 0.8rem;
     color: rgba(var(--v-theme-on-surface), 0.72);
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.id-data-full {
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .macro-summary__ids {
@@ -1759,14 +1761,20 @@ const allPurchaseGroups = computed(() => {
     font-size: 0.8rem;
     font-weight: 500;
     text-align: right;
-    max-width: 60%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    max-width: 70%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .info-value--scroll {
     text-overflow: unset;
     overflow-x: auto;
+}
+
+.id-full {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 </style>

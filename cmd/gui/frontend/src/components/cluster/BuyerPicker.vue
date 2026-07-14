@@ -3,7 +3,6 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
     buyerAccountCount,
-    buyerIdTail,
     filterBuyersBySearch,
     type SearchableBuyer,
 } from '@/composables/buyerSearch'
@@ -129,9 +128,7 @@ function toggleBuyer(buyerID: string, checked?: boolean) {
 }
 
 function buyerDisplayName(buyer: SearchableBuyer) {
-    const name = buyer.name || buyer.logicalId || '—'
-    const tail = buyerIdTail(buyer)
-    return tail ? `${name} · ${tail}` : name
+    return buyer.name || buyer.logicalId || '—'
 }
 
 function buyerSubtitle(buyer: SearchableBuyer) {
@@ -161,7 +158,7 @@ watch(
             <div class="d-flex align-center" style="gap:8px">
                 <div style="min-width:0;flex:1">
                     <div v-if="label" class="text-caption text-medium-emphasis mb-1">{{ label }}</div>
-                    <div class="text-body-2 text-truncate">{{ summary }}</div>
+                    <div class="text-body-2 id-summary-full">{{ summary }}</div>
                     <div class="text-caption text-medium-emphasis mt-1">
                         {{ hint || t('buyerPicker.maxHint', { max: normalizedMax }) }}
                     </div>
@@ -262,5 +259,11 @@ watch(
 .buyer-picker-card--disabled {
     cursor: default;
     opacity: 0.65;
+}
+
+.id-summary-full {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 </style>

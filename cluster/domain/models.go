@@ -34,11 +34,12 @@ const (
 	AttemptStopping  AttemptState = "stopping"
 	AttemptStopped   AttemptState = "stopped"
 	AttemptSucceeded AttemptState = "succeeded"
+	AttemptPartial   AttemptState = "partial"
 	AttemptFailed    AttemptState = "failed"
 )
 
 func (s AttemptState) Terminal() bool {
-	return s == AttemptStopped || s == AttemptSucceeded || s == AttemptFailed
+	return s == AttemptStopped || s == AttemptSucceeded || s == AttemptPartial || s == AttemptFailed
 }
 
 type StartMode string
@@ -364,46 +365,75 @@ func (s ExecutionSpec) Hash() string {
 	return hex.EncodeToString(sum[:])
 }
 
-type ExecutionResult struct {
-	AttemptID     string        `json:"attemptId"`
-	IntentID      string        `json:"intentId"`
-	SpecHash      string        `json:"specHash"`
-	State         AttemptState  `json:"state"`
-	Success       bool          `json:"success"`
+type SubOrderState string
+
+const (
+	SubOrderPending   SubOrderState = "pending"
+	SubOrderSucceeded SubOrderState = "succeeded"
+	SubOrderFailed    SubOrderState = "failed"
+)
+
+// SubOrderResult is the durable result of one independently prepared ticket
+// order. BuyerIndex is stable within the immutable ExecutionSpec and correlates
+// progress snapshots and employer-side records for the same child.
+type SubOrderResult struct {
+	BuyerIndex    int           `json:"buyerIndex"`
+	BuyerID       int64         `json:"buyerId,omitempty"`
+	BuyerName     string        `json:"buyerName,omitempty"`
+	State         SubOrderState `json:"state"`
 	OrderID       string        `json:"orderId,omitempty"`
 	PaymentURL    string        `json:"paymentUrl,omitempty"`
 	PaymentExpire int64         `json:"paymentExpire,omitempty"`
 	OrderTime     int64         `json:"orderTime,omitempty"`
-	Reason        FailureReason `json:"reason,omitempty"`
+	Code          int           `json:"code,omitempty"`
 	Message       string        `json:"message,omitempty"`
-	Retryable     bool          `json:"retryable"`
-	Credentials   Credentials   `json:"credentials"`
-	StartedAt     time.Time     `json:"startedAt,omitempty"`
-	FinishedAt    time.Time     `json:"finishedAt,omitempty"`
 }
 
-// OrderRecord is the employer-side durable record for a successfully created
-// Bilibili order. It intentionally stores the payment link so the user can
-// reopen the payment QR window after the original popup is closed.
+type ExecutionResult struct {
+	AttemptID     string           `json:"attemptId"`
+	IntentID      string           `json:"intentId"`
+	SpecHash      string           `json:"specHash"`
+	State         AttemptState     `json:"state"`
+	Success       bool             `json:"success"`
+	Partial       bool             `json:"partial,omitempty"`
+	SubOrders     []SubOrderResult `json:"subOrders,omitempty"`
+	OrderID       string           `json:"orderId,omitempty"`
+	PaymentURL    string           `json:"paymentUrl,omitempty"`
+	PaymentExpire int64            `json:"paymentExpire,omitempty"`
+	OrderTime     int64            `json:"orderTime,omitempty"`
+	Reason        FailureReason    `json:"reason,omitempty"`
+	Message       string           `json:"message,omitempty"`
+	Retryable     bool             `json:"retryable"`
+	Credentials   Credentials      `json:"credentials"`
+	StartedAt     time.Time        `json:"startedAt,omitempty"`
+	FinishedAt    time.Time        `json:"finishedAt,omitempty"`
+}
+
+// OrderRecord is the employer-side durable record for an order transaction.
+// Split attempts store one record per child, including pending and failed
+// children; successful records retain their payment link for reopening.
 type OrderRecord struct {
-	ID            string    `json:"id"`
-	OrderID       string    `json:"orderId"`
-	AttemptID     string    `json:"attemptId"`
-	IntentID      string    `json:"intentId"`
-	MacroTaskID   string    `json:"macroTaskId"`
-	TaskGroupID   string    `json:"taskGroupId,omitempty"`
-	AccountID     string    `json:"accountId,omitempty"`
-	AccountName   string    `json:"accountName,omitempty"`
-	WorkerID      string    `json:"workerId,omitempty"`
-	ProjectID     int64     `json:"projectId,omitempty"`
-	ProjectName   string    `json:"projectName,omitempty"`
-	ScreenID      int64     `json:"screenId,omitempty"`
-	ScreenName    string    `json:"screenName,omitempty"`
-	SKUID         int64     `json:"skuId,omitempty"`
-	SKUName       string    `json:"skuName,omitempty"`
-	BuyerNames    []string  `json:"buyerNames,omitempty"`
-	PaymentURL    string    `json:"paymentUrl"`
-	PaymentExpire int64     `json:"paymentExpire,omitempty"`
-	OrderTime     int64     `json:"orderTime,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID            string        `json:"id"`
+	OrderID       string        `json:"orderId"`
+	AttemptID     string        `json:"attemptId"`
+	IntentID      string        `json:"intentId"`
+	MacroTaskID   string        `json:"macroTaskId"`
+	TaskGroupID   string        `json:"taskGroupId,omitempty"`
+	AccountID     string        `json:"accountId,omitempty"`
+	AccountName   string        `json:"accountName,omitempty"`
+	WorkerID      string        `json:"workerId,omitempty"`
+	ProjectID     int64         `json:"projectId,omitempty"`
+	ProjectName   string        `json:"projectName,omitempty"`
+	ScreenID      int64         `json:"screenId,omitempty"`
+	ScreenName    string        `json:"screenName,omitempty"`
+	SKUID         int64         `json:"skuId,omitempty"`
+	SKUName       string        `json:"skuName,omitempty"`
+	BuyerNames    []string      `json:"buyerNames,omitempty"`
+	BuyerIndex    int           `json:"buyerIndex,omitempty"`
+	BuyerID       int64         `json:"buyerId,omitempty"`
+	Status        SubOrderState `json:"status,omitempty"`
+	PaymentURL    string        `json:"paymentUrl"`
+	PaymentExpire int64         `json:"paymentExpire,omitempty"`
+	OrderTime     int64         `json:"orderTime,omitempty"`
+	CreatedAt     time.Time     `json:"createdAt"`
 }

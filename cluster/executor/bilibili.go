@@ -23,18 +23,40 @@ import (
 // BilibiliBackend adapts the existing ticket APIs into one immutable execution
 // transaction. Prepared tokens are private to this attempt and never shared.
 type BilibiliBackend struct {
-	client      *biliutils.BiliClient
-	jar         *cookiejar.Jar
-	credentials domain.Credentials
-	mu          sync.Mutex
-	prepared    bool
-	tokenGen    token.Generator
-	generatedAt time.Time
-	tokens      *response.RequestTokenAndPToken
-	sku         response.TicketSkuScreenID
-	confirm     *api.ConfirmStruct
-	buyers      []response.TicketBuyer
-	submitCount uint16
+	client       *biliutils.BiliClient
+	jar          *cookiejar.Jar
+	credentials  domain.Credentials
+	mu           sync.Mutex
+	prepared     bool
+	tokenGen     token.Generator
+	generatedAt  time.Time
+	tokens       *response.RequestTokenAndPToken
+	sku          response.TicketSkuScreenID
+	confirm      *api.ConfirmStruct
+	buyers       []response.TicketBuyer
+	idBind       int
+	subOrders    []domain.SubOrderResult
+	progressSink func([]domain.SubOrderResult)
+	submitCount  uint16
+}
+
+func (b *BilibiliBackend) SetProgressSink(sink func([]domain.SubOrderResult)) {
+	b.progressSink = sink
+}
+
+func (b *BilibiliBackend) reportSubOrders() []domain.SubOrderResult {
+	snapshot := append([]domain.SubOrderResult(nil), b.subOrders...)
+	if b.progressSink != nil {
+		b.progressSink(snapshot)
+	}
+	return snapshot
+}
+
+func (b *BilibiliBackend) failSubOrder(index, code int, message string, err error) Outcome {
+	b.subOrders[index].State = domain.SubOrderFailed
+	b.subOrders[index].Code = code
+	b.subOrders[index].Message = message
+	return Outcome{Code: code, Message: message, Err: err, SubOrders: b.reportSubOrders()}
 }
 
 func NewBilibiliBackend(credentials domain.Credentials) (*BilibiliBackend, error) {
@@ -150,8 +172,9 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 			}
 		}
 	}
-	// idBind=1: split into separate single-ticket orders, each using the same buyer.
-	if b.confirm.IDBind == 1 && len(b.buyers) > 1 {
+	// idBind=1 orders are independent transactions. Each ticket receives its
+	// own prepare/confirm tokens before createV2.
+	if b.idBind == 1 && len(b.buyers) > 1 {
 		return b.submitSplitOrders(ctx, spec)
 	}
 	err, code, message, order := b.client.SubmitOrder(ctx, b.tokenGen, b.generatedAt, b.tokens, strconv.FormatInt(spec.ProjectID, 10), b.sku, b.buyers, b.confirm)
@@ -159,8 +182,8 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 	if err != nil {
 		return Outcome{Code: code, Message: message, Err: err}
 	}
-	if code == 100034 {
-		b.sku.Price = order.PayMoney
+	if code == 100034 && order.PayMoney > 0 {
+		b.confirm.PayMoney = order.PayMoney
 	}
 	if code == 100041 || code == 100050 || code == 900002 {
 		b.prepared = false
@@ -177,75 +200,98 @@ func (b *BilibiliBackend) Attempt(ctx context.Context, spec domain.ExecutionSpec
 	return Outcome{Code: code, Message: message}
 }
 
-// submitSplitOrders places each ticket as a separate single-ticket order.
-// Used when idBind=1: one real-name buyer can purchase multiple tickets,
-// but each ticket must be its own order.
+// submitSplitOrders places each ticket as a separate, fully prepared order.
+// Completed orders are retained across Engine retries so a transient failure
+// cannot submit the same buyer twice.
 func (b *BilibiliBackend) submitSplitOrders(ctx context.Context, spec domain.ExecutionSpec) Outcome {
 	pid := strconv.FormatInt(spec.ProjectID, 10)
-
-	// Reflow stock check: skip split submits if stock is unavailable.
-	if spec.ReflowStockCheck {
-		stockErr, stock := b.client.StockCheck(ctx, spec.ProjectID, spec.ScreenID, b.sku.SkuID)
-		if stockErr != nil {
-			return Outcome{Code: -1, Message: "stock check failed", Err: stockErr}
+	if len(b.subOrders) != len(b.buyers) {
+		b.subOrders = make([]domain.SubOrderResult, len(b.buyers))
+		for index, buyer := range b.buyers {
+			b.subOrders[index] = domain.SubOrderResult{BuyerIndex: index, BuyerID: buyer.ID, BuyerName: buyer.Name, State: domain.SubOrderPending}
 		}
-		if !stock.HasStock && stock.StockStatus != 3 {
-			switch stock.StockStatus {
-			case 1:
-				return Outcome{Code: -1, Message: "temporary sold out"}
-			case 2:
-				return Outcome{Code: -1, Message: "sold out"}
-			default:
-				return Outcome{Code: -1, Message: "no stock available"}
-			}
-		}
+		b.reportSubOrders()
 	}
 
-	var orderIDs []string
-	for _, buyer := range b.buyers {
-		single := []response.TicketBuyer{buyer}
-		err, code, message, order := b.client.SubmitOrder(ctx, b.tokenGen, b.generatedAt, b.tokens, pid, b.sku, single, b.confirm)
-		b.submitCount++
+	for index, buyer := range b.buyers {
+		if b.subOrders[index].State == domain.SubOrderSucceeded {
+			continue
+		}
+		b.subOrders[index].State = domain.SubOrderPending
+		b.subOrders[index].Code = 0
+		b.subOrders[index].Message = ""
+		b.reportSubOrders()
+		if err := ctx.Err(); err != nil {
+			return b.failSubOrder(index, -1, err.Error(), err)
+		}
+
+		// Prepare count and create count must describe the same transaction.
+		tokens, err := b.client.GetRequestTokenAndPToken(b.tokenGen, pid, b.sku, 1)
 		if err != nil {
-			// Network/transport error — return partial results if any, otherwise the error
-			if len(orderIDs) > 0 {
-				return Outcome{Code: 0, Message: fmt.Sprintf("split into %d orders: %s (stopped: %s)", len(orderIDs), strings.Join(orderIDs, ","), message), OrderID: strings.Join(orderIDs, ","), Err: err}
-			}
-			if code == 429 {
-				return Outcome{Code: code, Message: message, Err: nil}
-			}
-			return Outcome{Code: code, Message: message, Err: err}
+			wrapped := fmt.Errorf("prepare split order %d: %w", index+1, err)
+			return b.failSubOrder(index, -1, wrapped.Error(), wrapped)
 		}
-		if code == 100034 {
-			b.sku.Price = order.PayMoney
+		confirm, err := b.client.GetConfirmInformation(tokens, pid)
+		if err != nil {
+			wrapped := fmt.Errorf("confirm split order %d: %w", index+1, err)
+			return b.failSubOrder(index, -1, wrapped.Error(), wrapped)
 		}
+		generatedAt := time.Now()
+		single := []response.TicketBuyer{buyer}
+
+		var code int
+		var message string
+		var order api.TicketOrderStruct
+		for priceRetry := 0; priceRetry < 2; priceRetry++ {
+			err, code, message, order = b.client.SubmitOrder(ctx, b.tokenGen, generatedAt, tokens, pid, b.sku, single, confirm)
+			b.submitCount++
+			if err != nil {
+				if code == 429 {
+					return b.failSubOrder(index, code, message, nil)
+				}
+				return b.failSubOrder(index, code, message, err)
+			}
+			if code != 100034 || order.PayMoney <= 0 {
+				break
+			}
+			// PayMoney is already the complete order total.
+			confirm.PayMoney = order.PayMoney
+		}
+
 		if code == 100041 || code == 100050 || code == 900002 {
-			b.prepared = false
-			// Token expired — return partial results if any, let Engine re-prepare and retry
-			if len(orderIDs) > 0 {
-				return Outcome{Code: 0, Message: fmt.Sprintf("split into %d orders: %s (token expired, retry needed)", len(orderIDs), strings.Join(orderIDs, ",")), OrderID: strings.Join(orderIDs, ",")}
-			}
-			return Outcome{Code: code, Message: message}
+			return b.failSubOrder(index, code, message, nil)
 		}
-		// 100003: buyer already purchased, skip to next buyer
-		if code == 100003 {
+		if code != 0 && code != 100048 && code != 100079 {
+			return b.failSubOrder(index, code, message, nil)
+		}
+		if order.OrderId <= 0 {
+			return b.failSubOrder(index, code, "split order returned no order id", nil)
+		}
+		statusErr, status := b.client.GetOrderStatus(ctx, pid, order.Token, order.OrderId)
+		childOutcome := Outcome{}
+		applyPaymentStatus(&childOutcome, order.Token, order.OrderId, order.OrderCreateTime, status)
+		b.subOrders[index] = domain.SubOrderResult{
+			BuyerIndex: index, BuyerID: buyer.ID, BuyerName: buyer.Name,
+			State: domain.SubOrderSucceeded, OrderID: strconv.FormatInt(order.OrderId, 10),
+			PaymentURL: childOutcome.PaymentURL, PaymentExpire: childOutcome.PaymentExpire,
+			OrderTime: childOutcome.OrderTime, Code: code, Message: message,
+		}
+		b.reportSubOrders()
+		if statusErr != nil {
+			// The create response already contains a valid order ID. Preserve the
+			// successful child and allow the remaining children to continue.
 			continue
 		}
-		if code == 0 || code == 100048 || code == 100079 {
-			// Record order ID immediately, then verify status but don't block continuation
-			if order.OrderId > 0 {
-				orderIDs = append(orderIDs, strconv.FormatInt(order.OrderId, 10))
-			}
-			_, _ = b.client.GetOrderStatus(ctx, pid, order.Token, order.OrderId)
-			continue
+	}
+	ids := make([]string, 0, len(b.subOrders))
+	for _, child := range b.subOrders {
+		if child.State != domain.SubOrderSucceeded {
+			return Outcome{Code: -1, Message: "split orders incomplete", SubOrders: b.reportSubOrders()}
 		}
-		// Other non-success codes: skip to next buyer
-		continue
+		ids = append(ids, child.OrderID)
 	}
-	if len(orderIDs) > 0 {
-		return Outcome{Code: 0, Message: fmt.Sprintf("split into %d orders: %s", len(orderIDs), strings.Join(orderIDs, ",")), OrderID: strings.Join(orderIDs, ",")}
-	}
-	return Outcome{Code: -1, Message: "all buyers failed in split mode"}
+	joined := strings.Join(ids, ",")
+	return Outcome{Code: 0, Message: fmt.Sprintf("split into %d orders: %s", len(ids), joined), OrderID: joined, SubOrders: b.reportSubOrders()}
 }
 
 func responseOrderID(status *api.OrderStatusStruct) int64 {
@@ -338,6 +384,21 @@ func (b *BilibiliBackend) prepare(spec domain.ExecutionSpec) Outcome {
 	if !found {
 		return Outcome{Code: 100016, Message: "sku not found"}
 	}
+	b.idBind = project.IDBind
+	b.buyers = make([]response.TicketBuyer, len(spec.Buyers))
+	for i, buyer := range spec.Buyers {
+		bt := response.Ordinary
+		if project.IsForceRealName {
+			bt = response.ForceRealName
+		}
+		b.buyers[i] = response.TicketBuyer{BuyerType: bt, ID: buyer.BuyerID, Name: buyer.Name, Tel: buyer.Tel}
+	}
+	// Split mode prepares each one-ticket transaction immediately before its
+	// corresponding create request.
+	if b.idBind == 1 && len(b.buyers) > 1 {
+		b.prepared = true
+		return Outcome{}
+	}
 	b.tokens, err = b.client.GetRequestTokenAndPToken(b.tokenGen, pid, b.sku, len(spec.Buyers))
 	if err != nil {
 		return Outcome{Err: fmt.Errorf("prepare token: %w", err)}
@@ -346,13 +407,16 @@ func (b *BilibiliBackend) prepare(spec domain.ExecutionSpec) Outcome {
 	if err != nil {
 		return Outcome{Err: fmt.Errorf("confirm info: %w", err)}
 	}
-	b.buyers = make([]response.TicketBuyer, len(spec.Buyers))
-	for i, buyer := range spec.Buyers {
-		bt := response.Ordinary
-		if project.IsForceRealName {
-			bt = response.ForceRealName
-		}
-		b.buyers[i] = response.TicketBuyer{BuyerType: bt, ID: buyer.BuyerID, Name: buyer.Name, Tel: buyer.Tel}
+	// Prefer the transaction's own id_bind when it differs from project
+	// metadata. A multi-ticket prepare is discarded before entering split mode.
+	if b.confirm.IDBind != 0 {
+		b.idBind = b.confirm.IDBind
+	}
+	if b.idBind == 1 && len(b.buyers) > 1 {
+		b.tokens = nil
+		b.confirm = nil
+		b.prepared = true
+		return Outcome{}
 	}
 	b.generatedAt, b.prepared = time.Now(), true
 	return Outcome{}

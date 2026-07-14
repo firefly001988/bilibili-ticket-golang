@@ -352,3 +352,27 @@ func TestSuccessStoreNeverPersistsCredentials(t *testing.T) {
 		t.Fatalf("mode=%o", info.Mode().Perm())
 	}
 }
+
+func TestSuccessStoreKeepsLatestPartialSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "success-orders.jsonl")
+	store, err := OpenSuccessStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := domain.ExecutionResult{AttemptID: "a", State: domain.AttemptRunning, SubOrders: []domain.SubOrderResult{{BuyerIndex: 0, State: domain.SubOrderPending}}}
+	second := domain.ExecutionResult{AttemptID: "a", State: domain.AttemptRunning, Partial: true, SubOrders: []domain.SubOrderResult{{BuyerIndex: 0, State: domain.SubOrderSucceeded, OrderID: "order-1"}, {BuyerIndex: 1, State: domain.SubOrderFailed}}}
+	if err := store.Append(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(second); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenSuccessStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := reopened.All()["a"]
+	if !got.Partial || len(got.SubOrders) != 2 || got.SubOrders[0].OrderID != "order-1" {
+		t.Fatalf("unexpected snapshot: %#v", got)
+	}
+}

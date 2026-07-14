@@ -36,6 +36,7 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 		deployJobs:           make(map[string]*RemoteWorkerDeployJob),
 		buyerSyncBatches:     make(map[string]*BuyerSyncBatch),
 		bwsMeta:              make(map[string]BWSSubmitInput),
+		openedPaymentWindows: make(map[string]bool),
 	}
 	service.loadBWSMetadata()
 	// Wire the worker selection strategy: the provisioner uses the
@@ -60,25 +61,32 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 			return err
 		},
 	})
-	service.dispatcher.SetSuccessHandler(func(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
-		log.Printf("[cluster] onSuccess callback ENTER: intent=%s success=%v orderID=%s paymentURL=%q",
-			intent.ID, result.Success, result.OrderID, result.PaymentURL)
+	handleOrderResult := func(intent domain.LogicalOrderIntent, result domain.ExecutionResult) {
+		log.Printf("[cluster] order result callback ENTER: intent=%s success=%v partial=%v orderID=%s",
+			intent.ID, result.Success, result.Partial, result.OrderID)
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[cluster] onSuccess callback PANIC: intent=%s panic=%v", intent.ID, r)
+				log.Printf("[cluster] order result callback PANIC: intent=%s panic=%v", intent.ID, r)
 			}
 		}()
 		// Persist the order before starting any external notification request.
 		// A slow or broken notification endpoint must never prevent the
 		// employer from learning about an order that needs payment.
-		record, err := service.saveOrderRecord(intent, result)
+		records, err := service.saveOrderRecords(intent, result)
 		if err != nil {
 			log.Printf("[cluster] save order record failed: intent=%s orderID=%s: %v", intent.ID, result.OrderID, err)
 		} else {
-			go service.openOrderRecordPaymentWindow(record)
+			for _, record := range records {
+				if record.Status == "" || record.Status == domain.SubOrderSucceeded {
+					go service.openOrderRecordPaymentWindowOnce(record)
+				}
+			}
 		}
 		if notify := service.notify; notify != nil {
 			message := fmt.Sprintf("购票成功：Intent %s，订单 %s", intent.ID, result.OrderID)
+			if result.Partial {
+				message = fmt.Sprintf("购票部分完成：Intent %s，已创建 %d 个子订单", intent.ID, successfulSubOrderCount(result.SubOrders))
+			}
 			go func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -88,8 +96,11 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 				notify(message)
 			}()
 		}
-		log.Printf("[cluster] onSuccess callback DONE: intent=%s", intent.ID)
-	})
+		log.Printf("[cluster] order result callback DONE: intent=%s", intent.ID)
+	}
+	service.dispatcher.SetSuccessHandler(handleOrderResult)
+	service.dispatcher.SetPartialHandler(handleOrderResult)
+	service.dispatcher.SetProgressHandler(handleOrderResult)
 
 	// Wire the bidirectional heartbeat callback: when a worker pushes a
 	// completed task, the dispatcher processes it immediately instead of
@@ -99,7 +110,9 @@ func NewClusterService(repository *clusterstorage.Repository) *ClusterService {
 		log.Printf("[cluster] heartbeat push received: worker=%s attempt=%s success=%v orderID=%s paymentURL=%q",
 			workerID, result.AttemptID, result.Success, result.OrderID, result.PaymentURL)
 		result = service.dispatcher.ProcessCompletedTask(workerID, result)
-		service.RecordTaskCompleted(workerID, result)
+		if result.State.Terminal() {
+			service.RecordTaskCompleted(workerID, result)
+		}
 	})
 
 	// Restore persisted global configuration.

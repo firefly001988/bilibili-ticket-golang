@@ -6,7 +6,8 @@ import { Snapshot, AttemptLogs, DeleteTerminalAttempts } from '../../../bindings
 
 const { t } = useI18n(); const messages = useMessagesStore()
 
-interface AttemptBrief { id: string; intentId: string; accountId: string; workerId: string; state: string; orderId?: string; paymentUrl?: string; reason?: string }
+interface SubOrderBrief { buyerIndex: number; buyerId?: number; buyerName?: string; state: string; orderId?: string; message?: string }
+interface AttemptBrief { id: string; intentId: string; accountId: string; workerId: string; state: string; orderId?: string; paymentUrl?: string; partial?: boolean; subOrders?: SubOrderBrief[]; reason?: string }
 interface LogEntry { sequence: number; time: string; stage: string; message: string; code?: number; retryable?: boolean }
 
 const attempts = ref<AttemptBrief[]>([])
@@ -44,7 +45,7 @@ function toggleAutoRefresh() {
 async function deleteSelected() {
     const ids = selectedIds.value.filter(id => {
         const a = attempts.value.find(x => x.id === id)
-        return a && ['succeeded', 'failed', 'stopped'].includes(a.state)
+        return a && ['succeeded', 'partial', 'failed', 'stopped'].includes(a.state)
     })
     if (ids.length === 0) {
         messages.add({ text: t('logs.selectTerminalFirst'), color: 'warning' })
@@ -70,10 +71,10 @@ const filteredAttempts = computed(() => stateFilter.value === 'all' ? attempts.v
 
 const selectedAttempt = computed(() => attempts.value.find(a => a.id === selectedAttemptId.value))
 
-const stateColor = (s: string): string => ({ running: 'info', waiting: 'warning', queued: 'grey', pending: 'warning', cooldown: 'orange', success: 'success', succeeded: 'success', completed: 'success', failed: 'error', stopped: 'grey', stopping: 'orange', cancelled: 'grey' } as any)[s] || 'grey'
-const stateIcon = (s: string): string => ({ running: 'mdi-play-circle-outline', waiting: 'mdi-clock-outline', queued: 'mdi-timer-sand', pending: 'mdi-clock-outline', cooldown: 'mdi-snowflake', success: 'mdi-check-circle-outline', succeeded: 'mdi-check-circle-outline', completed: 'mdi-check-circle-outline', failed: 'mdi-close-circle-outline', stopped: 'mdi-stop-circle-outline', stopping: 'mdi-stop-circle-outline', cancelled: 'mdi-cancel' } as any)[s] || 'mdi-help-circle-outline'
+const stateColor = (s: string): string => ({ running: 'info', waiting: 'warning', queued: 'grey', pending: 'warning', cooldown: 'orange', success: 'success', succeeded: 'success', completed: 'success', partial: 'warning', failed: 'error', stopped: 'grey', stopping: 'orange', cancelled: 'grey' } as any)[s] || 'grey'
+const stateIcon = (s: string): string => ({ running: 'mdi-play-circle-outline', waiting: 'mdi-clock-outline', queued: 'mdi-timer-sand', pending: 'mdi-clock-outline', cooldown: 'mdi-snowflake', success: 'mdi-check-circle-outline', succeeded: 'mdi-check-circle-outline', completed: 'mdi-check-circle-outline', partial: 'mdi-alert-circle-outline', failed: 'mdi-close-circle-outline', stopped: 'mdi-stop-circle-outline', stopping: 'mdi-stop-circle-outline', cancelled: 'mdi-cancel' } as any)[s] || 'mdi-help-circle-outline'
 const stateLabel = (s: string): string => {
-    const m: Record<string, string> = { running: t('logs.stateRunning'), waiting: t('logs.stateWaiting'), queued: t('logs.stateQueued'), pending: t('logs.statePending'), cooldown: t('logs.stateCooldown'), success: t('logs.stateSuccess'), succeeded: t('logs.stateCompleted'), completed: t('logs.stateCompleted'), failed: t('logs.stateFailed'), stopped: t('logs.stateCancelled'), stopping: t('logs.stateCancelled'), cancelled: t('logs.stateCancelled') }
+    const m: Record<string, string> = { running: t('logs.stateRunning'), waiting: t('logs.stateWaiting'), queued: t('logs.stateQueued'), pending: t('logs.statePending'), cooldown: t('logs.stateCooldown'), success: t('logs.stateSuccess'), succeeded: t('logs.stateCompleted'), completed: t('logs.stateCompleted'), partial: t('logs.statePartial'), failed: t('logs.stateFailed'), stopped: t('logs.stateCancelled'), stopping: t('logs.stateCancelled'), cancelled: t('logs.stateCancelled') }
     return m[s] || s || '—'
 }
 
@@ -239,7 +240,11 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
                         :row-props="(row: any) => ({ class: selectedAttemptId === row.item.id ? 'bg-primary-lighten-4' : '', style: 'cursor:pointer' })"
                         @click:row="(_: any, row: any) => selectAttempt(row.item.id)">
                         <template #item.id="{ item }">
-                            <span class="text-caption font-weight-bold">#{{ item.id?.slice(-8) }}</span>
+                            <v-tooltip :text="item.id" location="top">
+                                <template #activator="{ props }">
+                                    <span v-bind="props" class="text-caption font-weight-bold compact-id">#{{ item.id }}</span>
+                                </template>
+                            </v-tooltip>
                         </template>
                         <template #item.state="{ item }">
                             <v-chip :color="stateColor(item.state)" size="x-small" variant="flat"
@@ -248,16 +253,23 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
                             </v-chip>
                         </template>
                         <template #item.accountId="{ item }">
-                            <span class="text-caption">{{ item.accountId?.slice(0, 18) || '—' }}</span>
+                            <v-tooltip :text="item.accountId || '—'" location="top">
+                                <template #activator="{ props }">
+                                    <span v-bind="props" class="text-caption compact-id">{{ item.accountId || '—' }}</span>
+                                </template>
+                            </v-tooltip>
                         </template>
                         <template #item.workerId="{ item }">
-                            <span class="text-caption worker-id-full">{{ item.workerId || '—' }}</span>
+                            <v-tooltip :text="item.workerId || '—'" location="top">
+                                <template #activator="{ props }">
+                                    <span v-bind="props" class="text-caption compact-id">{{ item.workerId || '—' }}</span>
+                                </template>
+                            </v-tooltip>
                         </template>
                         <template #item.orderId="{ item }">
                             <span class="text-caption text-primary" v-if="item.orderId">#{{ item.orderId }}</span>
                             <span class="text-caption text-medium-emphasis" v-else>—</span>
                         </template>
-                        <template #bottom />
                     </v-data-table>
                     <v-card-text v-else class="text-medium-emphasis text-center py-10">
                         <v-icon size="36" class="mb-2">mdi-inbox-outline</v-icon>
@@ -273,7 +285,7 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
                                 stateIcon(selectedAttempt?.state || '') }}</v-icon>
                         </template>
                         <template #title>
-                            <span class="text-body-2 font-weight-bold">#{{ selectedAttemptId.slice(-8) }}</span>
+                            <span class="text-body-2 font-weight-bold id-full">#{{ selectedAttemptId }}</span>
                             <v-chip v-if="selectedAttempt" :color="stateColor(selectedAttempt.state)" size="x-small"
                                 variant="flat" class="ml-2">
                                 {{ stateLabel(selectedAttempt.state) }}
@@ -281,7 +293,7 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
                         </template>
                         <template #subtitle>
                             <span class="text-caption">
-                                {{ selectedAttempt?.accountId?.slice(0, 16) || '—' }}
+                                <span class="id-full">{{ selectedAttempt?.accountId || '—' }}</span>
                                 ·
                                 <span class="worker-id-full">{{ selectedAttempt?.workerId || '—' }}</span>
                                 <template v-if="selectedAttempt?.orderId">
@@ -370,9 +382,21 @@ function jumpToBottom() { isFollowing.value = true; scrollToBottom() }
     z-index: 1;
 }
 
+.compact-id {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.id-full,
 .worker-id-full {
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
+    display: inline-block;
+    max-width: min(420px, 38vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    white-space: nowrap;
 }
 </style>

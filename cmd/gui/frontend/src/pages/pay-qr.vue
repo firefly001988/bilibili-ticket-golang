@@ -223,10 +223,10 @@ const displayOrderTime = computed(() => {
     font-size: 0.8rem;
     font-weight: 500;
     text-align: right;
-    max-width: 60%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    max-width: 70%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 </style>
 

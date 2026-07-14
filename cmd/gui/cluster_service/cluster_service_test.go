@@ -30,6 +30,29 @@ func document(t *testing.T, value any) string {
 	return string(b)
 }
 
+func TestSaveOrderRecordsPersistsEachSubOrderState(t *testing.T) {
+	service := testClusterService(t)
+	intent := domain.LogicalOrderIntent{ID: "intent", MacroTaskID: "macro"}
+	result := domain.ExecutionResult{
+		AttemptID: "attempt", State: domain.AttemptPartial, Partial: true,
+		SubOrders: []domain.SubOrderResult{
+			{BuyerIndex: 0, BuyerID: 7, BuyerName: "A", State: domain.SubOrderSucceeded, OrderID: "order-1"},
+			{BuyerIndex: 1, BuyerID: 8, BuyerName: "B", State: domain.SubOrderFailed, Code: 100016},
+		},
+	}
+	records, err := service.saveOrderRecords(intent, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 2 || records[0].Status != domain.SubOrderSucceeded || records[1].Status != domain.SubOrderFailed || records[1].BuyerID != 8 {
+		t.Fatalf("unexpected records: %#v", records)
+	}
+	stored, err := service.repository.ListOrderRecords(context.Background(), 10)
+	if err != nil || len(stored) != 2 {
+		t.Fatalf("stored records: %#v, err=%v", stored, err)
+	}
+}
+
 func TestClusterServiceValidatesRunnableMacroAndPurchaseShape(t *testing.T) {
 	service := testClusterService(t)
 	if err := service.SaveTaskGroup(`{"id":"group","name":"test"}`); err != nil {

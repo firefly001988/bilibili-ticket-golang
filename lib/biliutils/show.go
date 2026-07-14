@@ -232,6 +232,7 @@ func (c *BiliClient) GetConfirmInformation(tokens *r.RequestTokenAndPToken, proj
 			"projectId":     projectID,
 			"requestSource": "neul-next",
 			"voucher":       "",
+			"timestamp":     c.Now().UnixMilli(),
 		}).Encode()).
 		Get("https://show.bilibili.com/api/ticket/order/confirmInfo")
 	if err != nil {
@@ -271,8 +272,10 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 	if count == 0 {
 		return fmt.Errorf("no buyers provided"), -1, "", api.TicketOrderStruct{}
 	}
-	// pay_money = unit_price × count
-	payMoney := ticket.Price * count
+	// confirmInfo.pay_money is the authoritative total for the prepared
+	// transaction. Falling back to unit price keeps compatibility with older
+	// responses that did not include it.
+	payMoney := resolvePayMoney(ticket.Price, count, confirmInfo.PayMoney)
 
 	form := map[string]any{
 		"again":          1,
@@ -282,7 +285,7 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 		"pay_money":      payMoney,
 		"order_type":     1,
 		"timestamp":      c.Now().UnixMilli(),
-		"deviceId":       c.fingerprint.Buvidfp,
+		"deviceId":       c.GetInfocUUID(),
 		"sku_id":         ticket.SkuID,
 		"requestSource":  "neul-next",
 		"token":          tokens.RequestToken,
@@ -402,6 +405,13 @@ func (c *BiliClient) SubmitOrder(ctx context.Context, tokenGen token.Generator, 
 	}
 
 	return nil, apiResp.GetCode(), apiResp.GetMessage(), apiResp.Data
+}
+
+func resolvePayMoney(unitPrice, count, confirmedTotal int) int {
+	if confirmedTotal > 0 {
+		return confirmedTotal
+	}
+	return unitPrice * count
 }
 
 func (c *BiliClient) GetOrderStatus(ctx context.Context, projectID, token string, orderID int64) (error, *api.OrderStatusStruct) {

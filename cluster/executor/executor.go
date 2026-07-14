@@ -9,8 +9,10 @@ import (
 	"bilibili-ticket-golang/cluster/domain"
 )
 
-// Backend owns the Bilibili prepare/confirm/createV2/confirmation transaction.
-// A call must preserve the complete buyer list: partial orders are forbidden.
+// Backend owns the Bilibili prepare/confirm/createV2 transaction. Backends that
+// split one intent into independent orders must return every child state in
+// Outcome.SubOrders; callers treat a mix of succeeded and incomplete children
+// as an explicit partial result rather than an atomic success.
 type Backend interface {
 	Attempt(context.Context, domain.ExecutionSpec) Outcome
 	Credentials() domain.Credentials
@@ -24,6 +26,13 @@ type Outcome struct {
 	Code          int
 	Message       string
 	Err           error
+	SubOrders     []domain.SubOrderResult
+}
+
+// ProgressBackend reports durable child-order snapshots as split execution
+// advances. The worker installs the sink before the first Attempt call.
+type ProgressBackend interface {
+	SetProgressSink(func([]domain.SubOrderResult))
 }
 
 type Classification struct {
@@ -120,6 +129,9 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 	}
 	result := domain.ExecutionResult{AttemptID: spec.AttemptID, IntentID: spec.IntentID, SpecHash: spec.Hash(), State: domain.AttemptRunning, StartedAt: now()}
 	finish := func(state domain.AttemptState, reason domain.FailureReason, message string, retryable bool) domain.ExecutionResult {
+		if state != domain.AttemptSucceeded && result.Partial {
+			state = domain.AttemptPartial
+		}
 		result.State, result.Reason, result.Message, result.Retryable = state, reason, message, retryable
 		result.FinishedAt = now()
 		if e.Backend != nil {
@@ -173,6 +185,10 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 		}
 		emit("request", "starting purchase API transaction", 0, false)
 		outcome := e.Backend.Attempt(ctx, spec)
+		if outcome.SubOrders != nil {
+			result.SubOrders = append([]domain.SubOrderResult(nil), outcome.SubOrders...)
+			result.Partial = hasPartialSuccess(result.SubOrders)
+		}
 		classification := e.Classifier.Classify(outcome)
 		message := outcome.Message
 		if outcome.Err != nil {
@@ -217,4 +233,14 @@ func (e Engine) Run(ctx context.Context, spec domain.ExecutionSpec) domain.Execu
 			return finish(domain.AttemptStopped, domain.FailureStopped, err.Error(), false)
 		}
 	}
+}
+
+func hasPartialSuccess(subOrders []domain.SubOrderResult) bool {
+	succeeded := 0
+	for _, subOrder := range subOrders {
+		if subOrder.State == domain.SubOrderSucceeded {
+			succeeded++
+		}
+	}
+	return succeeded > 0 && succeeded < len(subOrders)
 }

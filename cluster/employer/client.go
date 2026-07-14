@@ -743,6 +743,8 @@ func attemptStateFromProto(s pb.AttemptState) domain.AttemptState {
 		return domain.AttemptStopped
 	case pb.AttemptState_ATTEMPT_SUCCEEDED:
 		return domain.AttemptSucceeded
+	case pb.AttemptState_ATTEMPT_PARTIAL:
+		return domain.AttemptPartial
 	case pb.AttemptState_ATTEMPT_FAILED:
 		return domain.AttemptFailed
 	case pb.AttemptState_ATTEMPT_COOLDOWN:
@@ -794,6 +796,22 @@ func executionResultFromProto(r *pb.ExecutionResult) domain.ExecutionResult {
 		PaymentURL:    r.PaymentUrl,
 		PaymentExpire: r.PaymentExpire,
 		OrderTime:     r.OrderTime,
+		Partial:       r.Partial,
+	}
+	for _, child := range r.SubOrders {
+		state := domain.SubOrderPending
+		switch child.State {
+		case pb.SubOrderState_SUB_ORDER_SUCCEEDED:
+			state = domain.SubOrderSucceeded
+		case pb.SubOrderState_SUB_ORDER_FAILED:
+			state = domain.SubOrderFailed
+		}
+		er.SubOrders = append(er.SubOrders, domain.SubOrderResult{
+			BuyerIndex: int(child.BuyerIndex), BuyerID: child.BuyerId, BuyerName: child.BuyerName,
+			State: state, OrderID: child.OrderId, PaymentURL: child.PaymentUrl,
+			PaymentExpire: child.PaymentExpire, OrderTime: child.OrderTime,
+			Code: int(child.Code), Message: child.Message,
+		})
 	}
 	if r.Credentials != nil {
 		er.Credentials = credentialsFromProto(r.Credentials)

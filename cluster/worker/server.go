@@ -166,7 +166,17 @@ func NewServer(config Config, factory BackendFactory) (*Server, error) {
 	}
 	s := &Server{config: config, factory: factory, store: store, tasks: make(map[string]*task), now: time.Now}
 	for id, result := range store.All() {
-		s.tasks[id] = &task{spec: domain.ExecutionSpec{AttemptID: id, IntentID: result.IntentID}, specHash: result.SpecHash, state: domain.AttemptSucceeded, result: result}
+		if !result.State.Terminal() {
+			if !result.Partial {
+				continue
+			}
+			result.State = domain.AttemptPartial
+			result.Reason = domain.FailureWorkerLost
+			result.Retryable = false
+			result.Message = "worker restarted after partially creating split orders"
+			result.FinishedAt = time.Now()
+		}
+		s.tasks[id] = &task{spec: domain.ExecutionSpec{AttemptID: id, IntentID: result.IntentID}, specHash: result.SpecHash, state: result.State, result: result}
 	}
 	go s.reapLeases()
 	return s, nil
@@ -894,17 +904,22 @@ func (ws *workerService) Heartbeat(stream pb.WorkerService_HeartbeatServer) erro
 		return stream.Send(msg)
 	}
 
-	// Register a notifier so complete() can push finished tasks immediately.
+	// Register a notifier so progress snapshots and terminal results can be
+	// pushed immediately over the heartbeat stream.
 	s.mu.Lock()
 	s.notifierGeneration++
 	generation := s.notifierGeneration
 	s.completedNotifier = func(t *task) {
+		s.mu.Lock()
+		result := t.result
+		activeAttemptID := s.active
+		s.mu.Unlock()
 		msg := &pb.HeartbeatMsg{
 			WorkerId:        s.config.WorkerID,
-			ActiveAttemptId: "",
+			ActiveAttemptId: activeAttemptID,
 			Sequence:        0,
 			Time:            timestamppb.New(s.now()),
-			CompletedTask:   executionResultToProto(t.result),
+			CompletedTask:   executionResultToProto(result),
 		}
 		_ = send(msg)
 	}
@@ -1121,6 +1136,8 @@ func attemptStateToProto(s domain.AttemptState) pb.AttemptState {
 		return pb.AttemptState_ATTEMPT_STOPPED
 	case domain.AttemptSucceeded:
 		return pb.AttemptState_ATTEMPT_SUCCEEDED
+	case domain.AttemptPartial:
+		return pb.AttemptState_ATTEMPT_PARTIAL
 	case domain.AttemptFailed:
 		return pb.AttemptState_ATTEMPT_FAILED
 	case domain.AttemptCooldown:
@@ -1144,12 +1161,16 @@ func executionResultToProto(r domain.ExecutionResult) *pb.ExecutionResult {
 		PaymentUrl:    r.PaymentURL,
 		PaymentExpire: r.PaymentExpire,
 		OrderTime:     r.OrderTime,
+		Partial:       r.Partial,
 		Credentials: &pb.Credentials{
 			Cookies:       r.Credentials.Cookies,
 			RefreshToken:  r.Credentials.RefreshToken,
 			Version:       r.Credentials.Version,
 			DeviceProfile: r.Credentials.DeviceProfile,
 		},
+	}
+	for _, child := range r.SubOrders {
+		er.SubOrders = append(er.SubOrders, subOrderResultToProto(child))
 	}
 	if len(r.Credentials.CookieJar) > 0 {
 		for _, hc := range r.Credentials.CookieJar {
@@ -1171,6 +1192,22 @@ func executionResultToProto(r domain.ExecutionResult) *pb.ExecutionResult {
 		er.FinishedAt = timestamppb.New(r.FinishedAt)
 	}
 	return er
+}
+
+func subOrderResultToProto(child domain.SubOrderResult) *pb.SubOrderResult {
+	state := pb.SubOrderState_SUB_ORDER_PENDING
+	switch child.State {
+	case domain.SubOrderSucceeded:
+		state = pb.SubOrderState_SUB_ORDER_SUCCEEDED
+	case domain.SubOrderFailed:
+		state = pb.SubOrderState_SUB_ORDER_FAILED
+	}
+	return &pb.SubOrderResult{
+		BuyerIndex: int32(child.BuyerIndex), BuyerId: child.BuyerID, BuyerName: child.BuyerName,
+		State: state, OrderId: child.OrderID, PaymentUrl: child.PaymentURL,
+		PaymentExpire: child.PaymentExpire, OrderTime: child.OrderTime,
+		Code: int32(child.Code), Message: child.Message,
+	}
 }
 
 func failureReasonToProto(r domain.FailureReason) pb.FailureReason {
@@ -1232,6 +1269,35 @@ func (s *Server) run(ctx context.Context, t *task) {
 		s.complete(t, domain.ExecutionResult{AttemptID: t.spec.AttemptID, IntentID: t.spec.IntentID, State: domain.AttemptFailed, Reason: domain.FailureInternal, Message: err.Error(), FinishedAt: s.now()})
 		return
 	}
+	if progressBackend, ok := backend.(executor.ProgressBackend); ok {
+		progressBackend.SetProgressSink(func(subOrders []domain.SubOrderResult) {
+			progress := domain.ExecutionResult{
+				AttemptID: t.spec.AttemptID, IntentID: t.spec.IntentID, SpecHash: t.specHash,
+				State: domain.AttemptRunning, SubOrders: append([]domain.SubOrderResult(nil), subOrders...),
+				StartedAt: s.now(),
+			}
+			succeeded := 0
+			for _, child := range subOrders {
+				if child.State == domain.SubOrderSucceeded {
+					succeeded++
+				}
+			}
+			// Until Engine emits its terminal success, any durable child order is
+			// partial progress. This also preserves an all-children-created snapshot
+			// if the worker exits in the narrow window before finalization.
+			progress.Partial = succeeded > 0
+			s.mu.Lock()
+			t.result = progress
+			s.mu.Unlock()
+			_ = s.store.Append(progress)
+			s.mu.Lock()
+			notify := s.completedNotifier
+			s.mu.Unlock()
+			if notify != nil {
+				notify(t)
+			}
+		})
+	}
 	s.mu.Lock()
 	if t.state == domain.AttemptWaiting {
 		t.state = domain.AttemptRunning
@@ -1273,9 +1339,14 @@ func (s *Server) run(ctx context.Context, t *task) {
 			return ms
 		},
 	}).Run(ctx, t.spec)
-	if result.Success {
+	if result.Success || result.Partial || len(result.SubOrders) > 0 {
 		if err := s.store.Append(result); err != nil {
-			result.Success, result.State, result.Reason, result.Message = false, domain.AttemptFailed, domain.FailureInternal, "persist success: "+err.Error()
+			result.Success, result.Reason, result.Message = false, domain.FailureInternal, "persist order result: "+err.Error()
+			if result.Partial {
+				result.State = domain.AttemptPartial
+			} else {
+				result.State = domain.AttemptFailed
+			}
 		}
 	}
 	s.complete(t, result)

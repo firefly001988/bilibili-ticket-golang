@@ -19,6 +19,13 @@ enum AttemptState {
   ATTEMPT_SUCCEEDED = 5;
   ATTEMPT_FAILED    = 6;
   ATTEMPT_COOLDOWN  = 7;
+  ATTEMPT_PARTIAL   = 8;
+}
+
+enum SubOrderState {
+  SUB_ORDER_PENDING   = 0;
+  SUB_ORDER_SUCCEEDED = 1;
+  SUB_ORDER_FAILED    = 2;
 }
 
 enum StartMode {
@@ -114,6 +121,21 @@ message ExecutionResult {
   string                    payment_url    = 13;
   int64                     payment_expire = 14;
   int64                     order_time     = 15;
+  repeated SubOrderResult   sub_orders     = 16;
+  bool                      partial        = 17;
+}
+
+message SubOrderResult {
+  int32         buyer_index    = 1;
+  int64         buyer_id       = 2;
+  string        buyer_name     = 3;
+  SubOrderState state          = 4;
+  string        order_id       = 5;
+  string        payment_url    = 6;
+  int64         payment_expire = 7;
+  int64         order_time     = 8;
+  int32         code           = 9;
+  string        message        = 10;
 }
 
 message LogEntry {

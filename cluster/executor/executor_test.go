@@ -66,3 +66,17 @@ func TestExpiredDeadlineDoesNotCallBackend(t *testing.T) {
 		t.Fatalf("unexpected result: %#v", r)
 	}
 }
+
+func TestPartialSubOrdersProduceExplicitPartialTerminalResult(t *testing.T) {
+	b := &fakeBackend{outcomes: []Outcome{{
+		Code: 100016,
+		SubOrders: []domain.SubOrderResult{
+			{BuyerIndex: 0, State: domain.SubOrderSucceeded, OrderID: "order-1"},
+			{BuyerIndex: 1, State: domain.SubOrderFailed, Code: 100016},
+		},
+	}}}
+	r := (Engine{Backend: b}).Run(context.Background(), validSpec())
+	if r.State != domain.AttemptPartial || !r.Partial || r.Success || len(r.SubOrders) != 2 {
+		t.Fatalf("unexpected partial result: %#v", r)
+	}
+}

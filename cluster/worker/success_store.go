@@ -34,7 +34,7 @@ func OpenSuccessStore(path string) (*SuccessStore, error) {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 {
 			var result domain.ExecutionResult
-			if json.Unmarshal(line, &result) == nil && result.Success {
+			if json.Unmarshal(line, &result) == nil && result.AttemptID != "" {
 				s.results[result.AttemptID] = result
 			}
 		}
@@ -51,9 +51,6 @@ func OpenSuccessStore(path string) (*SuccessStore, error) {
 func (s *SuccessStore) Append(result domain.ExecutionResult) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.results[result.AttemptID]; ok {
-		return nil
-	}
 	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err

@@ -107,6 +107,17 @@ func TestRemoveTerminalAttemptsKeepsNonTerminalAttempts(t *testing.T) {
 	}
 }
 
+func TestPartialResultTerminatesIntentToPreventDuplicateReplacement(t *testing.T) {
+	r := &repo{}
+	d := New(&client{}, r, nil)
+	d.plans["intent"] = &IntentPlan{Intent: domain.LogicalOrderIntent{ID: "intent"}}
+	current := &attempt{planID: "intent", value: domain.ExecutionAttempt{ID: "attempt"}}
+	d.applyFailure(context.Background(), current, domain.ExecutionResult{Partial: true, Reason: domain.FailureDeadline})
+	if !d.plans["intent"].Intent.Terminal || len(r.intents) != 1 {
+		t.Fatalf("partial result did not terminate intent: %#v", d.plans["intent"].Intent)
+	}
+}
+
 func TestDispatcherSkipsBuyerDayAlreadyOccupiedBySuccess(t *testing.T) {
 	c := &client{}
 	r := &repo{occupied: true}
@@ -645,5 +656,36 @@ func TestWinnerTerminalsAllConflictingIntents(t *testing.T) {
 	}
 	if len(r.intents) != 1 || r.intents[0].ID != "low-i" || !r.intents[0].Terminal {
 		t.Fatalf("terminal conflict intent was not persisted: %#v", r.intents)
+	}
+}
+
+func TestReportNewSubOrdersOnlyEmitsEachSuccessfulChildOnce(t *testing.T) {
+	d := New(nil, nil, nil)
+	plan := &IntentPlan{Intent: domain.LogicalOrderIntent{ID: "intent-1"}}
+	var updates []domain.ExecutionResult
+	d.SetProgressHandler(func(_ domain.LogicalOrderIntent, result domain.ExecutionResult) {
+		updates = append(updates, result)
+	})
+
+	result := domain.ExecutionResult{
+		AttemptID: "attempt-1",
+		SubOrders: []domain.SubOrderResult{
+			{BuyerIndex: 0, OrderID: "order-1", State: domain.SubOrderSucceeded},
+			{BuyerIndex: 1, State: domain.SubOrderPending},
+		},
+	}
+	d.reportNewSubOrders(plan, result)
+	d.reportNewSubOrders(plan, result)
+	if len(updates) != 1 || len(updates[0].SubOrders) != 1 || updates[0].SubOrders[0].OrderID != "order-1" {
+		t.Fatalf("expected one deduplicated progress update, got %#v", updates)
+	}
+	if !updates[0].Partial {
+		t.Fatal("progress update must be marked partial")
+	}
+
+	result.SubOrders[1] = domain.SubOrderResult{BuyerIndex: 1, OrderID: "order-2", State: domain.SubOrderSucceeded}
+	d.reportNewSubOrders(plan, result)
+	if len(updates) != 2 || len(updates[1].SubOrders) != 1 || updates[1].SubOrders[0].OrderID != "order-2" {
+		t.Fatalf("expected only the newly completed child, got %#v", updates)
 	}
 }

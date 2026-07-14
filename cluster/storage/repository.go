@@ -308,9 +308,9 @@ func (r *Repository) resetMacroExecution(ctx context.Context, macroID string, fo
 		return err
 	}
 	// Mark all non-terminal attempts as stopped so they don't interfere.
-	if _, err = tx.ExecContext(ctx, `UPDATE attempts SET state=? WHERE state NOT IN (?,?,?) AND intent_id IN (SELECT id FROM intents WHERE macro_task_id=?)`,
+	if _, err = tx.ExecContext(ctx, `UPDATE attempts SET state=? WHERE state NOT IN (?,?,?,?) AND intent_id IN (SELECT id FROM intents WHERE macro_task_id=?)`,
 		domain.AttemptStopped,
-		domain.AttemptSucceeded, domain.AttemptFailed, domain.AttemptStopped,
+		domain.AttemptSucceeded, domain.AttemptPartial, domain.AttemptFailed, domain.AttemptStopped,
 		macroID,
 	); err != nil {
 		return err
@@ -348,7 +348,7 @@ func (r *Repository) DeleteAttempts(ctx context.Context, attemptIDs []string) er
 			}
 			return err
 		}
-		if state != string(domain.AttemptSucceeded) && state != string(domain.AttemptFailed) && state != string(domain.AttemptStopped) {
+		if state != string(domain.AttemptSucceeded) && state != string(domain.AttemptPartial) && state != string(domain.AttemptFailed) && state != string(domain.AttemptStopped) {
 			continue
 		}
 		// Clean up related rows.

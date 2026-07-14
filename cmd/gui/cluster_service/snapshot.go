@@ -203,7 +203,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 	// ── Attempts: merge dispatcher in-memory + DB historical records ──────────
 	seen := make(map[string]bool)
 	for _, value := range s.dispatcher.Attempts() {
-		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, PaymentURL: value.Result.PaymentURL, Reason: value.Result.Reason, CooldownRemainingMs: cooldownRemaining(s.dispatcher, value.ID)})
+		result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, PaymentURL: value.Result.PaymentURL, Partial: value.Result.Partial, SubOrders: value.Result.SubOrders, Reason: value.Result.Reason, CooldownRemainingMs: cooldownRemaining(s.dispatcher, value.ID)})
 		seen[value.ID] = true
 	}
 	// Also load terminal attempts from DB that were purged from dispatcher
@@ -214,7 +214,7 @@ func (s *ClusterService) Snapshot() (ClusterSnapshot, error) {
 			if seen[value.ID] {
 				continue
 			}
-			result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, PaymentURL: value.Result.PaymentURL, Reason: value.Result.Reason})
+			result.Attempts = append(result.Attempts, AttemptSummary{ID: value.ID, IntentID: value.IntentID, AccountID: value.AccountID, WorkerID: value.WorkerID, State: value.State, OrderID: value.Result.OrderID, PaymentURL: value.Result.PaymentURL, Partial: value.Result.Partial, SubOrders: value.Result.SubOrders, Reason: value.Result.Reason})
 		}
 	}
 	return result, nil

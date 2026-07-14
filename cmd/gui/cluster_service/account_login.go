@@ -525,8 +525,9 @@ func (s *ClusterService) persistLoggedInAccount(client *biliutils.BiliClient, ja
 	}
 	reportCtx, cancelReport := context.WithTimeout(context.Background(), 30*time.Second)
 	reportErr := client.ReportGaiaAfterLogin(reportCtx, api.GaiaPostLoginReportOptions{
+		//SPM update at 26-07-14
 		ExClimbWuzhi: api.GaiaFingerprintOptions{
-			SPMPrefix: "333.1007",
+			SPMPrefix: "111.121",
 			PageURL:   "https://www.bilibili.com/index.html",
 		},
 		ExClimbCongLing: api.GaiaSecureFingerprintOptions{

@@ -757,7 +757,7 @@ function accountSummarySuffix(accounts: BuyerAccountBadge[]) {
                             <div class="sync-progress-panel">
                                 <div v-for="job in activeSyncBatch.jobs" :key="job.id" class="sync-progress-row">
                                     <div style="min-width:0;flex:1">
-                                        <div class="text-body-2 text-truncate">
+                                        <div class="text-body-2 id-data-full">
                                             {{ job.buyerName || job.buyerId }}
                                             <span class="text-medium-emphasis">→</span>
                                             {{ job.accountName || job.accountId }}
@@ -862,6 +862,11 @@ function accountSummarySuffix(accounts: BuyerAccountBadge[]) {
 .sync-progress-row:last-child,
 .sync-log-row:last-child {
     border-bottom: 0;
+}
+
+.id-data-full {
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .sync-log-row {

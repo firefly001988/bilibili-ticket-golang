@@ -92,7 +92,10 @@ func (s *ClusterService) RecordHeartbeatLatency(workerID string, latencyMs int64
 func (s *ClusterService) RecordTaskCompleted(workerID string, result domain.ExecutionResult) {
 	kind := EventTaskCompleted
 	stage := "complete"
-	if !result.Success && taskSupersededByWinner(result) {
+	if result.Partial {
+		kind = EventTaskFailed
+		stage = "partial"
+	} else if !result.Success && taskSupersededByWinner(result) {
 		kind = EventTaskSuperseded
 		stage = "superseded"
 	} else if !result.Success && taskStopped(result) {

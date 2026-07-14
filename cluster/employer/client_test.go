@@ -18,6 +18,19 @@ import (
 
 type employerBackend struct{}
 
+func TestExecutionResultFromProtoPreservesSubOrders(t *testing.T) {
+	r := executionResultFromProto(&pb.ExecutionResult{
+		AttemptId: "attempt", State: pb.AttemptState_ATTEMPT_PARTIAL, Partial: true,
+		SubOrders: []*pb.SubOrderResult{
+			{BuyerIndex: 0, BuyerId: 7, BuyerName: "A", State: pb.SubOrderState_SUB_ORDER_SUCCEEDED, OrderId: "order-1"},
+			{BuyerIndex: 1, BuyerId: 8, BuyerName: "B", State: pb.SubOrderState_SUB_ORDER_FAILED, Code: 100016},
+		},
+	})
+	if r.State != domain.AttemptPartial || !r.Partial || len(r.SubOrders) != 2 || r.SubOrders[0].OrderID != "order-1" || r.SubOrders[1].State != domain.SubOrderFailed {
+		t.Fatalf("unexpected result: %#v", r)
+	}
+}
+
 func (employerBackend) Attempt(context.Context, domain.ExecutionSpec) executor.Outcome {
 	return executor.Outcome{OrderID: "order"}
 }

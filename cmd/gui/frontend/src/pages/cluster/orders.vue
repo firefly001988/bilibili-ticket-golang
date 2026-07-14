@@ -24,6 +24,9 @@ interface OrderRecord {
     skuId?: number
     skuName?: string
     buyerNames?: string[]
+    buyerIndex?: number
+    buyerId?: number
+    status?: 'pending' | 'succeeded' | 'failed'
     paymentUrl: string
     paymentExpire?: number
     orderTime?: number
@@ -36,25 +39,62 @@ const opening = ref<Record<string, boolean>>({})
 const search = ref('')
 const nowSec = ref(Math.floor(Date.now() / 1000))
 let statusTimer: ReturnType<typeof setInterval> | null = null
+let refreshTimer: ReturnType<typeof setInterval> | null = null
+let loadInFlight = false
 
-const headers = computed(() => [
-    { title: t('orders.colOrder'), key: 'summary', minWidth: 420, sortable: false },
-    { title: t('orders.colBuyers'), key: 'buyers', width: 150, sortable: false },
-    { title: t('orders.colTime'), key: 'time', width: 180, sortable: false },
-    { title: t('orders.colActions'), key: 'actions', width: 150, sortable: false },
-])
+interface OrderTreeItem {
+    id: string
+    title: string
+    kind: 'root' | 'child'
+    record: OrderRecord
+    children?: OrderTreeItem[]
+}
 
-async function load() {
-    loading.value = true
+const orderTrees = computed<OrderTreeItem[]>(() => {
+    const query = search.value.trim().toLocaleLowerCase()
+    const filtered = records.value.filter(record => {
+        if (!query) return true
+        return JSON.stringify(record).toLocaleLowerCase().includes(query)
+    })
+    const groups = new Map<string, OrderRecord[]>()
+    for (const record of filtered) {
+        const key = record.attemptId || record.intentId || record.id
+        const group = groups.get(key) || []
+        group.push(record)
+        groups.set(key, group)
+    }
+    return [...groups.entries()].map(([key, group]) => {
+        group.sort((a, b) => (a.buyerIndex ?? 0) - (b.buyerIndex ?? 0))
+        const main = group[0]
+        return {
+            id: `root:${key}`,
+            title: mainOrderName(main),
+            kind: 'root',
+            record: main,
+            children: group.map(record => ({
+                id: record.id,
+                title: childOrderName(record),
+                kind: 'child',
+                record,
+            })),
+        }
+    })
+})
+
+async function load(silent = false) {
+    if (loadInFlight) return
+    loadInFlight = true
+    if (!silent) loading.value = true
     try {
         const resp = await ListOrderRecords()
         records.value = ((resp.records || []) as OrderRecord[]).slice().sort((a, b) => {
             return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         })
     } catch (e: any) {
-        messages.addError(e, t('orders.loadFailed', { error: String(e) }))
+        if (!silent) messages.addError(e, t('orders.loadFailed', { error: String(e) }))
     }
-    loading.value = false
+    if (!silent) loading.value = false
+    loadInFlight = false
 }
 
 async function openPayment(record: OrderRecord) {
@@ -98,6 +138,19 @@ function canPay(record: OrderRecord): boolean {
     return !!record.paymentUrl && !isExpired(record)
 }
 
+function subOrderStatusText(status?: OrderRecord['status']): string {
+    if (status === 'succeeded') return t('orders.statusSucceeded')
+    if (status === 'failed') return t('orders.statusFailed')
+    if (status === 'pending') return t('orders.statusPending')
+    return ''
+}
+
+function subOrderStatusColor(status?: OrderRecord['status']): string {
+    if (status === 'succeeded') return 'success'
+    if (status === 'failed') return 'error'
+    return 'warning'
+}
+
 function displayValue(value?: string | number): string {
     if (value === undefined || value === null || String(value) === '') return '—'
     return String(value)
@@ -110,13 +163,20 @@ function buyerText(record: OrderRecord): string {
 }
 
 function accountText(record: OrderRecord): string {
-    if (record.accountName && record.accountId) return `${record.accountName} (${compactID(record.accountId, 14)})`
-    return record.accountName || compactID(record.accountId, 14)
+    if (record.accountName && record.accountId) return `${record.accountName} (${record.accountId})`
+    return record.accountName || record.accountId || '—'
 }
 
-function compactID(id?: string, max = 18): string {
-    if (!id) return '—'
-    return id.length > max ? `${id.slice(0, max)}…` : id
+function mainOrderName(record: OrderRecord): string {
+    const project = displayValue(record.projectName || record.projectId)
+    const screen = displayValue(record.screenName || record.screenId)
+    const sku = displayValue(record.skuName || record.skuId)
+    return `${project} · ${screen} · ${sku}`
+}
+
+function childOrderName(record: OrderRecord): string {
+    const buyer = buyerText(record)
+    return `${t('orders.subOrder')} ${Number(record.buyerIndex ?? 0) + 1} · ${buyer}`
 }
 
 onMounted(() => {
@@ -124,19 +184,21 @@ onMounted(() => {
     statusTimer = setInterval(() => {
         nowSec.value = Math.floor(Date.now() / 1000)
     }, 1000)
+    refreshTimer = setInterval(() => load(true), 3000)
 })
 
 onUnmounted(() => {
     if (statusTimer) clearInterval(statusTimer)
+    if (refreshTimer) clearInterval(refreshTimer)
 })
 </script>
 
 <template>
-    <v-container>
+    <v-container class="orders-page">
         <div class="page-title-bar">
             <h1 class="page-title">{{ t('orders.title') }}</h1>
             <v-spacer />
-            <v-btn size="small" variant="text" :loading="loading" prepend-icon="mdi-refresh" @click="load">
+            <v-btn size="small" variant="text" :loading="loading" prepend-icon="mdi-refresh" @click="load()">
                 {{ t('common.refresh') }}
             </v-btn>
         </div>
@@ -151,56 +213,52 @@ onUnmounted(() => {
             <v-text-field v-model="search" density="compact" variant="outlined" hide-details
                 :placeholder="t('orders.searchPlaceholder')" prepend-inner-icon="mdi-magnify" clearable
                 class="mx-4 mb-2" />
-            <v-data-table v-if="records.length > 0" :headers="headers" :items="records" :search="search"
-                :items-per-page="20" :items-per-page-options="[10, 20, 50, 100]" density="comfortable"
-                class="orders-table">
-                <template #item.summary="{ item }">
-                    <div class="order-summary py-1">
-                        <div class="d-flex align-center ga-2 min-w-0">
-                            <span class="font-monospace text-caption text-primary text-no-wrap">#{{ item.orderId || '—'
-                            }}</span>
-                            <span class="text-caption text-medium-emphasis text-truncate">
-                                {{ displayValue(item.projectName || item.projectId) }}
-                            </span>
+            <v-treeview v-if="orderTrees.length > 0" :items="orderTrees" item-title="title" item-value="id"
+                density="compact" class="orders-tree">
+                <template #title="{ item }">
+                    <div v-if="item.kind === 'root'" class="tree-root py-1">
+                        <div class="order-title font-weight-bold wrap-anywhere">{{ item.title }}</div>
+                        <div class="tree-id-grid order-meta text-medium-emphasis">
+                            <span>TaskGroup ID: <b>{{ displayValue(item.record.taskGroupId) }}</b></span>
+                            <span>Macro ID: <b>{{ displayValue(item.record.macroTaskId) }}</b></span>
+                            <span>Intent ID: <b>{{ displayValue(item.record.intentId) }}</b></span>
+                            <span>Attempt ID: <b>{{ displayValue(item.record.attemptId) }}</b></span>
+                            <span>Account ID: <b>{{ accountText(item.record) }}</b></span>
+                            <span>Worker ID: <b>{{ displayValue(item.record.workerId) }}</b></span>
                         </div>
-                        <div class="order-item-line text-caption mt-1">
-                            <span class="order-label">场次</span>
-                            <span class="text-truncate">{{ displayValue(item.screenName || item.screenId) }}</span>
-                            <span class="order-sep">·</span>
-                            <span class="order-label">SKU</span>
-                            <span class="text-truncate">{{ displayValue(item.skuName || item.skuId) }}</span>
+                    </div>
+                    <div v-else class="tree-child py-1">
+                        <div class="d-flex align-center flex-wrap ga-1">
+                            <span class="order-child-title font-weight-medium">{{ item.title }}</span>
+                            <v-chip v-if="item.record.status" size="x-small"
+                                :color="subOrderStatusColor(item.record.status)" variant="tonal">
+                                {{ subOrderStatusText(item.record.status) }}
+                            </v-chip>
                         </div>
-                        <div class="order-meta text-caption text-medium-emphasis mt-1">
-                            <span>A {{ accountText(item) }}</span>
-                            <span class="order-worker-id">W {{ displayValue(item.workerId) }}</span>
+                        <div class="tree-id-grid order-meta">
+                            <span>Order ID: <b class="text-primary">{{ displayValue(item.record.orderId) }}</b></span>
+                            <span>Buyer ID: <b>{{ displayValue(item.record.buyerId) }}</b></span>
+                            <span>{{ t('orders.recordedAt') }}: {{ fmtDate(item.record.createdAt) }}</span>
+                            <span>{{ t('orders.expireAt') }}: {{ fmtExpire(item.record.paymentExpire) }}</span>
                         </div>
                     </div>
                 </template>
-                <template #item.buyers="{ item }">
-                    <span class="text-caption buyer-cell">{{ buyerText(item) }}</span>
-                </template>
-                <template #item.time="{ item }">
-                    <div class="text-caption text-no-wrap">{{ fmtDate(item.createdAt) }}</div>
-                    <div class="text-caption text-medium-emphasis text-no-wrap">{{ t('orders.expireAt') }}: {{
-                        fmtExpire(item.paymentExpire) }}</div>
-                </template>
-                <template #item.actions="{ item }">
-                    <div class="d-flex align-center action-cell"
-                        :class="isExpired(item) ? 'justify-start' : 'justify-end'">
-                        <template v-if="canPay(item)">
-                        <v-btn size="small" color="primary" variant="tonal"
-                            :loading="opening[item.id]" @click="openPayment(item)">
-                            {{ t('orders.openPayment') }}
-                        </v-btn>
-                        <v-btn size="small" icon="mdi-content-copy" variant="text"
-                            class="ml-1" @click="copyPaymentURL(item)" />
+                <template #append="{ item }">
+                    <div v-if="item.kind === 'child'" class="d-flex align-center ga-1 mr-2">
+                        <template v-if="canPay(item.record)">
+                            <v-btn size="x-small" color="primary" variant="tonal"
+                                :loading="opening[item.record.id]" @click.stop="openPayment(item.record)">
+                                {{ t('orders.openPayment') }}
+                            </v-btn>
+                            <v-btn size="x-small" icon="mdi-content-copy" variant="text"
+                                @click.stop="copyPaymentURL(item.record)" />
                         </template>
-                        <v-chip v-else-if="isExpired(item)" size="small" color="error" variant="tonal">
+                        <v-chip v-else-if="isExpired(item.record)" size="x-small" color="error" variant="tonal">
                             {{ t('orders.statusExpired') }}
                         </v-chip>
                     </div>
                 </template>
-            </v-data-table>
+            </v-treeview>
             <div v-else-if="!loading" class="text-center py-10">
                 <v-icon size="40" color="medium-emphasis" class="mb-2">mdi-receipt-text-outline</v-icon>
                 <p class="text-caption text-medium-emphasis">{{ t('orders.empty') }}</p>
@@ -214,63 +272,64 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.orders-table :deep(td) {
-    vertical-align: middle;
-    white-space: nowrap;
+.orders-tree :deep(.v-list-item) {
+    min-height: 36px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    align-items: flex-start;
 }
 
-.orders-table :deep(th) {
-    white-space: nowrap;
+.orders-tree :deep(.v-list-item-title) {
+    white-space: normal;
+    overflow: visible;
 }
 
-.orders-table :deep(table) {
-    min-width: 960px;
+.orders-tree :deep(.v-list-item__prepend) {
+    padding-top: 1px;
 }
 
-.order-summary {
+.orders-tree :deep(.v-list-item__append) {
+    align-self: center;
+}
+
+.tree-root,
+.tree-child {
+    width: 100%;
     min-width: 0;
-    max-width: 100%;
 }
 
-.order-item-line {
+.tree-id-grid {
     display: grid;
-    grid-template-columns: auto minmax(80px, 1fr) auto auto minmax(120px, 1.35fr);
-    align-items: center;
-    column-gap: 6px;
-    min-width: 0;
-}
-
-.order-label {
-    color: rgba(var(--v-theme-on-surface), 0.56);
-    flex: none;
-}
-
-.order-sep {
-    color: rgba(var(--v-theme-on-surface), 0.38);
-}
-
-.order-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 12px;
     line-height: 1.35;
 }
 
-.order-worker-id {
+.order-title {
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.order-child-title {
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.order-meta {
+    font-size: 10px;
+}
+
+.tree-id-grid span,
+.tree-id-grid b,
+.wrap-anywhere {
     white-space: normal;
     overflow-wrap: anywhere;
     word-break: break-word;
 }
 
-.buyer-cell {
-    display: inline-block;
-    max-width: 150px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.action-cell {
-    min-width: 116px;
+@media (max-width: 800px) {
+    .tree-id-grid {
+        grid-template-columns: 1fr;
+    }
 }
 </style>

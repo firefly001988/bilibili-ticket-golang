@@ -15,15 +15,74 @@ import (
 
 const maxOrderRecords = 1000
 
+func (s *ClusterService) openOrderRecordPaymentWindowOnce(record domain.OrderRecord) {
+	if record.PaymentURL == "" || record.Status == domain.SubOrderFailed || record.Status == domain.SubOrderPending {
+		return
+	}
+	key := record.ID
+	if record.OrderID != "" {
+		key = record.OrderID
+	}
+	s.paymentWindowMu.Lock()
+	if s.openedPaymentWindows[key] {
+		s.paymentWindowMu.Unlock()
+		return
+	}
+	s.openedPaymentWindows[key] = true
+	s.paymentWindowMu.Unlock()
+	s.openOrderRecordPaymentWindow(record)
+}
+
+func successfulSubOrderCount(subOrders []domain.SubOrderResult) int {
+	count := 0
+	for _, child := range subOrders {
+		if child.State == domain.SubOrderSucceeded {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *ClusterService) saveOrderRecords(intent domain.LogicalOrderIntent, result domain.ExecutionResult) ([]domain.OrderRecord, error) {
+	if len(result.SubOrders) == 0 {
+		record, err := s.saveOrderRecord(intent, result)
+		if err != nil {
+			return nil, err
+		}
+		return []domain.OrderRecord{record}, nil
+	}
+	records := make([]domain.OrderRecord, 0, len(result.SubOrders))
+	for _, child := range result.SubOrders {
+		childResult := result
+		childResult.OrderID = child.OrderID
+		childResult.PaymentURL = child.PaymentURL
+		childResult.PaymentExpire = child.PaymentExpire
+		childResult.OrderTime = child.OrderTime
+		childResult.SubOrders = []domain.SubOrderResult{child}
+		record, err := s.saveOrderRecord(intent, childResult)
+		if err != nil {
+			return records, err
+		}
+		records = append(records, record)
+	}
+	return records, nil
+}
+
 func (s *ClusterService) saveOrderRecord(intent domain.LogicalOrderIntent, result domain.ExecutionResult) (domain.OrderRecord, error) {
-	if result.OrderID == "" && result.PaymentURL == "" {
+	var child *domain.SubOrderResult
+	if len(result.SubOrders) == 1 {
+		child = &result.SubOrders[0]
+	}
+	if result.OrderID == "" && result.PaymentURL == "" && child == nil {
 		return domain.OrderRecord{}, fmt.Errorf("order result has neither order id nor payment url")
 	}
 	recordID := result.AttemptID
 	if recordID == "" {
 		recordID = intent.ID
 	}
-	if result.OrderID != "" {
+	if child != nil {
+		recordID += fmt.Sprintf(":sub:%d", child.BuyerIndex)
+	} else if result.OrderID != "" {
 		recordID += ":" + result.OrderID
 	}
 	record := domain.OrderRecord{
@@ -37,9 +96,18 @@ func (s *ClusterService) saveOrderRecord(intent domain.LogicalOrderIntent, resul
 		OrderTime:     result.OrderTime,
 		CreatedAt:     time.Now(),
 	}
-	for _, buyer := range intent.Buyers {
-		if buyer.Name != "" {
-			record.BuyerNames = append(record.BuyerNames, buyer.Name)
+	if child != nil {
+		record.BuyerIndex = child.BuyerIndex
+		record.BuyerID = child.BuyerID
+		record.Status = child.State
+		if child.BuyerName != "" {
+			record.BuyerNames = []string{child.BuyerName}
+		}
+	} else {
+		for _, buyer := range intent.Buyers {
+			if buyer.Name != "" {
+				record.BuyerNames = append(record.BuyerNames, buyer.Name)
+			}
 		}
 	}
 	if result.FinishedAt.IsZero() {
