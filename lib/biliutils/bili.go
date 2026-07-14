@@ -22,11 +22,12 @@ const model = "SM-S9080"
 
 // Fingerprint holds device fingerprint data for anti-detection.
 type Fingerprint struct {
-	BuvidLocal string
-	Buvidfp    string
-	Webglfp    string
-	Canvasfp   string
-	Browser    utils.FingerprintData `json:"browser,omitempty"`
+	BuvidLocal        string
+	Buvidfp           string
+	Webglfp           string
+	Canvasfp          string
+	DeviceFingerprint string
+	Browser           utils.FingerprintData `json:"browser,omitempty"`
 }
 
 type DeviceProfile struct {
@@ -109,11 +110,12 @@ func newBiliClient(jar http.CookieJar, profile *DeviceProfile) (*BiliClient, err
 	infocUUID := utils.GenerateUUIDInfoc()
 	browserFP := utils.GenerateRandomMobileFingerprint(browserUA(ver))
 	fp := &Fingerprint{
-		BuvidLocal: utils.GetFpLocal(buvid, model, ""),
-		Buvidfp:    utils.CalculateFingerprintID(browserFP),
-		Webglfp:    browserFP.WebGLRenderer,
-		Canvasfp:   browserFP.CanvasFingerprint,
-		Browser:    browserFP,
+		BuvidLocal:        utils.GetFpLocal(buvid, model, ""),
+		Buvidfp:           utils.CalculateFingerprintID(browserFP),
+		Webglfp:           browserFP.WebGLRenderer,
+		Canvasfp:          browserFP.CanvasFingerprint,
+		DeviceFingerprint: getFeSign(browserUA(ver), browserFP.CanvasFingerprint, browserFP.WebGLRenderer),
+		Browser:           browserFP,
 	}
 	if profile != nil {
 		buvid, infocUUID = profile.Buvid, profile.InfocUUID
@@ -124,6 +126,12 @@ func newBiliClient(jar http.CookieJar, profile *DeviceProfile) (*BiliClient, err
 	// Fill the new source data without rotating those stable identifiers.
 	if fp.Browser.UserAgent == "" {
 		fp.Browser = utils.MobileFingerprintFromLegacy(browserUA(ver), fp.Canvasfp, fp.Webglfp)
+	}
+	// Profiles created before DeviceFingerprint became part of Fingerprint don't
+	// contain the field. Derive it from their stable legacy components without
+	// rotating the rest of the device profile.
+	if fp.DeviceFingerprint == "" {
+		fp.DeviceFingerprint = getFeSign(browserUA(ver), fp.Canvasfp, fp.Webglfp)
 	}
 
 	biliClient := &BiliClient{
@@ -173,7 +181,7 @@ func newBiliClient(jar http.CookieJar, profile *DeviceProfile) (*BiliClient, err
 					&http.Cookie{Name: "mSource", Value: "bilibiliapp"},
 					&http.Cookie{Name: "feSign", Value: getFeSign(ua, biliClient.fingerprint.Canvasfp, biliClient.fingerprint.Webglfp)},
 					&http.Cookie{Name: "screenInfo", Value: screenInfo},
-					&http.Cookie{Name: "deviceFingerprint", Value: getFeSign(ua, biliClient.fingerprint.Canvasfp, biliClient.fingerprint.Webglfp)},
+					&http.Cookie{Name: "deviceFingerprint", Value: biliClient.fingerprint.DeviceFingerprint},
 					&http.Cookie{Name: "browser_resolution", Value: fmt.Sprintf("%d-%d", 1699, 834)},
 				)
 			} else {
@@ -288,6 +296,12 @@ func (c *BiliClient) GetAccountStatus() (*api.GetLoginInfoStruct, error) {
 // GetBUVID returns the current BUVID.
 func (c *BiliClient) GetBUVID() string {
 	return c.buvid
+}
+
+// GetBuvid3 returns the buvid3 value from the client's cookie jar.
+// It returns an empty string when the cookie jar or cookie is unavailable.
+func (c *BiliClient) GetBuvid3() string {
+	return c.secureCookie("buvid3")
 }
 
 // GetFingerprint returns the current device fingerprint.
